@@ -71,6 +71,7 @@ head -c 24 /dev/urandom | base64 >"$work/token"
 systemd-run --unit=osh-fakemodel /usr/libexec/cockpit-agentic/tests/fakemodel --listen 0.0.0.0:8008 >/dev/null
 systemd-run --unit=osh-fakegateway /usr/libexec/cockpit-agentic/tests/fakegateway --listen 0.0.0.0:18443 --admin 127.0.0.1:18444 --token-file "$work/token" >/dev/null
 check "the fake gateway answers" eventually 20 bash -c 'curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:18443/mcp | grep -q 401'
+admin /tokens/reset -X POST >/dev/null
 
 section "Creating the agent"
 cat >"$work/sb.yaml" <<EOF

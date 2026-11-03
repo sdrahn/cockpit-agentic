@@ -71,6 +71,8 @@ func New(token string) (*testutil.Gateway, http.Handler, *Seen) {
 func adminMux(g *testutil.Gateway, seen *Seen) http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /tokens", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(seen) })
+	// The tests' own probes (without a token) are not the agent's.
+	m.HandleFunc("POST /tokens/reset", func(w http.ResponseWriter, r *http.Request) { *seen = Seen{} })
 	m.HandleFunc("GET /executed", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(g.Ran()) })
 	m.HandleFunc("POST /approve/{id}", func(w http.ResponseWriter, r *http.Request) { g.Decide(r.PathValue("id"), true) })
 	m.HandleFunc("POST /decline/{id}", func(w http.ResponseWriter, r *http.Request) { g.Decide(r.PathValue("id"), false) })

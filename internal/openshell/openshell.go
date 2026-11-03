@@ -59,7 +59,7 @@ type endpoint struct {
 	Access      string `yaml:"access,omitempty"`
 	// MCP: OpenShell inspects the traffic as MCP; which tools are allowed
 	// is the gateway's decision, so every known MCP method may pass.
-	MCP        map[string]bool `yaml:"mcp,omitempty"`
+	MCP        map[string]any `yaml:"mcp,omitempty"`
 	Credential *struct {
 		Provider string `yaml:"provider"`
 	} `yaml:"credential_binding,omitempty"`
@@ -184,8 +184,15 @@ func hostURL(raw string) string {
 
 // allMCP lets every known MCP method through OpenShell's MCP inspection
 // (OpenShell requires rules or this for protocol mcp); the tools are
-// mcp-gateway's to decide.
-var allMCP = map[string]bool{"allow_all_known_mcp_methods": true}
+// mcp-gateway's to decide. The protocol revisions are the agent's (MCP
+// go-sdk v1.4 negotiates 2025-06-18): OpenShell allows only 2025-11-25
+// unless they are listed, and answers a request with another
+// Mcp-Protocol-Version 403 (notifications/initialized, the first).
+var allMCP = map[string]any{"allow_all_known_mcp_methods": true, "versions": MCPVersions}
+
+// MCPVersions are the MCP protocol revisions the agent may speak through
+// OpenShell.
+var MCPVersions = []string{"2025-06-18", "2025-11-25"}
 
 type hp struct {
 	host, path string

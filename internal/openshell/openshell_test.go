@@ -65,7 +65,7 @@ func TestProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(b)
-	for _, want := range []string{"id: cockpit-agentic-gateway-pp", "AGENT_GATEWAY_TOKEN", "auth_style: bearer", "host: gw.example.com", "port: 8443", "allow_all_known_mcp_methods: true", "protocol: mcp", "- " + Launcher} {
+	for _, want := range []string{"id: cockpit-agentic-gateway-pp", "AGENT_GATEWAY_TOKEN", "auth_style: bearer", "host: gw.example.com", "port: 8443", "allow_all_known_mcp_methods: true", "- \"2025-06-18\"", "protocol: mcp", "- " + Launcher} {
 		if !strings.Contains(s, want) {
 			t.Errorf("profile lacks %q:\n%s", want, s)
 		}
