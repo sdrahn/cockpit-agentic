@@ -70,7 +70,7 @@ test_paused_and_stopped if {
 		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
 	authz.decision.effect == "deny" with input as call(pp, "zypp", "list_updates", {})
 		with data.mcp.agents as agents("bounded")
-		with data.mcp.agents_control as {"stopped": true}
+		with data.mcp.agents._control as {"stopped": true}
 		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
 }
 
@@ -90,5 +90,5 @@ test_humans_unaffected if {
 	alice := {"sub": "alice", "groups": ["wheel"], "transport": "unix", "session_id": "s1"}
 	authz.decision.effect == "allow" with input as call(alice, "zypp", "install_patches", {})
 		with data.mcp.agents as agents("advisory")
-		with data.mcp.agents_control as {"stopped": true}
+		with data.mcp.agents._control as {"stopped": true}
 }

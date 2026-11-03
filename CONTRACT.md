@@ -179,14 +179,15 @@ Each agent has an **autonomy mode**. The gateway enforces it, from data
 the host never writes itself:
 
 ```yaml
-# /etc/mcp-gateway/policy/agents/<name>/data.yaml  →  data.mcp.agents.<name>
-mode: supervised          # advisory | supervised | bounded
-paused: false             # true: the gateway denies every call (§8)
-paused_by: "alice 2026-11-03T12:00:00Z"
-permissions:              # gateway permissions, with two flags
-  - {server: zypp, tool: 'list_*', read_only: true}
-  - {server: zypp, tool: install_patches}
-  - {server: systemd, tool: restart_unit, autonomous: true, args: {unit: '^nginx\.service$'}}
+# /etc/mcp-gateway/policy/agents/<name>.yaml  →  data.mcp.agents.<name>
+<name>:
+  mode: supervised        # advisory | supervised | bounded
+  paused: false           # true: the gateway denies every call (§8)
+  paused_by: "alice 2026-11-03T12:00:00Z"
+  permissions:            # gateway permissions, with two flags
+    - {server: zypp, tool: 'list_*', read_only: true}
+    - {server: zypp, tool: install_patches}
+    - {server: systemd, tool: restart_unit, autonomous: true, args: {unit: '^nginx\.service$'}}
 ```
 
 | Mode | Read-only permissions | Other permissions | `autonomous: true` ones |
@@ -268,7 +269,7 @@ user, who is not necessarily allowed to approve.
 | **Pause** | one agent | the agent data's `paused: true` (the gateway denies every call) **and** `POST /v1/pause` (the host holds activities and refuses new ones) | gateway; host for the graceful part |
 | **Stop** | one agent | by its `lifecycle` (§3a): `systemctl stop agent@<name>.socket agent@<name>.service`, or `openshell sandbox stop agent-<name>` and `systemctl stop agent-openshell@<name>.service` | systemd; OpenShell |
 | **Disable a schedule** | one schedule | `systemctl disable --now agent-schedule@<name>_<schedule>.timer` | systemd |
-| **Emergency stop** | every agent | `/etc/mcp-gateway/policy/agents_control/data.yaml` with `stopped: true` (the gateway denies every agent everything, on every backend), then stop every agent by its lifecycle and every schedule timer | gateway, systemd, OpenShell |
+| **Emergency stop** | every agent | `/etc/mcp-gateway/policy/agents/_control.yaml` with `_control: {stopped: true}` (the gateway denies every agent everything, on every backend), then stop every agent by its lifecycle and every schedule timer | gateway, systemd, OpenShell |
 
 `agent-admin` implements pause, resume, `stop-all` and `release-all`
 (Part II). The emergency stop works even if an agent's host ignores
@@ -431,7 +432,7 @@ and fleet scope is out of scope for SLES 16.2. Nothing here precludes it:
 | `/usr/share/cockpit-agentic/gateway/servers.d/agents.yaml` | root 0644 | the `agents` server definition; copy to `/etc/mcp-gateway/servers.d/` to allow delegation |
 | `/etc/cockpit-agentic/agents/<name>/agent.yaml` | root:agent-`<name>` 0640 | configuration (§14) |
 | `/etc/sysusers.d/agent-<name>.conf` | root 0644 | the agent's user |
-| `/etc/mcp-gateway/policy/agents/<name>/data.yaml` | root 0644 | mode, pause, permissions (§6) |
+| `/etc/mcp-gateway/policy/agents/<name>.yaml` | root 0644 | mode, pause, permissions (§6). All agents' files and the emergency stop's `_control.yaml` (shipped by the package) are in this one directory: mcp-gateway's OPA (`--watch`) watches only directories it loaded a file from when it started |
 | `/etc/credstore.encrypted/agent-<name>.<cred>` | root 0600 | secrets (`systemd-creds encrypt`) |
 | `/etc/systemd/system/agent@<name>.service.d/` | root | sandbox changes; Cockpit writes `50-cockpit.conf` only |
 | `/etc/systemd/system/agent-schedule@<name>_<schedule>.timer.d/schedule.conf` | root | a schedule's `OnCalendar=` |
