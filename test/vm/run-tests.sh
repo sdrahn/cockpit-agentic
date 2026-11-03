@@ -190,6 +190,15 @@ check "the gateway is running" eventually 30 test -S /run/mcp-gateway/mcp.sock
 check "the agents' policy module is installed for the gateway" test -f /usr/share/mcp-gateway/policy/cockpit-agentic/agents.rego
 check "group agent-clients exists" getent group agent-clients
 
+section Labels
+for d in /run/agents /var/lib/agents /etc/cockpit-agentic; do
+	if enforcing; then
+		check "$d has the module's label" grep -qE 'agent_(runtime|var_lib|conf)_t' <<<"$(stat -c %C "$d" 2>/dev/null)"
+	else
+		skip "$d has the module's label (SELinux is not enforcing)"
+	fi
+done
+
 section Setup
 systemctl stop agentic-fakemodel.service >/dev/null 2>&1
 systemd-run --unit=agentic-fakemodel --property=DynamicUser=yes "$dir/fakemodel" --listen 127.0.0.1:8008 >/dev/null 2>&1
@@ -361,9 +370,13 @@ check "and calls are allowed again" eventually 30 runs_with t1 PROBE 'probe ok'
 
 section SELinux
 if enforcing; then
-	avc=$(ausearch -m AVC,USER_AVC -ts "$(date -d "@$t0" '+%m/%d/%Y %H:%M:%S')" 2>/dev/null | grep -E 'agent_t|mcpsrv_agents_t|agent_sock_t|agent_var_lib_t|agent_conf_t')
+	# Every denial that names our domains or types, our programs or our
+	# paths, whatever the other side's type (a directory labelled before
+	# the module was loaded has a generic one).
+	avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$t0" '+%m/%d/%Y %H:%M:%S')" 2>/dev/null |
+		grep -E 'agent_|mcpsrv_agents_t|comm="agent-|name="(agents|api\.sock|t1|t2)"|/run/agents|/var/lib/agents|cockpit-agentic')
 	check "no SELinux denials for the agents" test -z "$avc"
-	[ -n "$avc" ] && sed 's/^/    | /' <<<"$avc" | head -20
+	[ -n "$avc" ] && sed 's/^/    | /' <<<"$avc" | head -30
 else
 	skip "no SELinux denials (SELinux is not enforcing)"
 fi
@@ -380,7 +393,11 @@ systemctl stop agentic-fakemodel.service >/dev/null 2>&1
 
 # --- results --------------------------------------------------------------------
 
-[ -n "$results" ] && write_results "$results"
+if [ -n "$results" ]; then
+	write_results "$results"
+	ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$t0" '+%m/%d/%Y %H:%M:%S')" >"$results/avc.txt" 2>&1
+	journalctl --no-pager --since "@$t0" -o short-precise >"$results/journal.txt" 2>&1
+fi
 n_fail=$(printf '%s\n' "${results_list[@]}" | awk -F'\t' '$2 == "fail"' | wc -l)
 n_skip=$(printf '%s\n' "${results_list[@]}" | awk -F'\t' '$2 == "skip"' | wc -l)
 printf '\n%d checks, %d failed, %d skipped\n' "${#results_list[@]}" "$n_fail" "$n_skip"
