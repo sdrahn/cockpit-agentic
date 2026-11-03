@@ -79,19 +79,13 @@ type binary struct {
 // The agent runs as OpenShell's unprivileged sandbox user, which owns the
 // sandbox's working directory (where its state lives).
 func Policy(cfg *config.Config) ([]byte, error) {
-	gw, err := hostPort(cfg.Gateway.URL)
-	if err != nil {
+	if _, err := hostPort(cfg.Gateway.URL); err != nil {
 		return nil, fmt.Errorf("gateway.url: %w", err)
 	}
-	// Host and port only: whether a path glob such as /mcp/** matches /mcp
-	// itself is not settled in OpenShell's documentation.
-	gwEP := endpoint{Host: gw.host, Port: gw.port, Protocol: "mcp", Enforcement: "enforce", MCP: allMCP}
-	gwEP.Credential = &struct {
-		Provider string `yaml:"provider"`
-	}{ProviderName(cfg.Name)}
-	rules := map[string]rule{
-		"mcp_gateway": {Name: "mcp-gateway", Endpoints: []endpoint{gwEP}, Binaries: []binary{{Launcher}}},
-	}
+	// The gateway's rule comes with the provider (Profile): OpenShell adds
+	// the profile's endpoint, with the credential bound, when the provider
+	// is attached, and refuses a second rule for the same endpoint.
+	rules := map[string]rule{}
 	if cfg.Model.Provider == "openai" {
 		m, err := hostPort(cfg.Model.Endpoint)
 		if err != nil {
@@ -118,7 +112,8 @@ func Policy(cfg *config.Config) ([]byte, error) {
 }
 
 // Profile is the provider profile that binds the gateway token to the
-// gateway's endpoint only.
+// gateway's endpoint only. Attaching the provider adds this endpoint to
+// the sandbox's network policy, for agent-launcher only.
 func Profile(cfg *config.Config) ([]byte, error) {
 	gw, err := hostPort(cfg.Gateway.URL)
 	if err != nil {

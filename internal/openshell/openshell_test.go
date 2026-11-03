@@ -44,18 +44,15 @@ func TestPolicy(t *testing.T) {
 	if p.Version != 1 || p.Process["run_as_user"] != "sandbox" || p.Landlock["compatibility"] != "hard_requirement" {
 		t.Errorf("policy %s", b)
 	}
-	gw := p.Network_policies["mcp_gateway"].Endpoints[0]
-	if gw["host"] != "gw.example.com" || gw["port"] != 8443 || gw["path"] != nil || gw["protocol"] != "mcp" ||
-		gw["credential_binding"].(map[string]any)["provider"] != "agent-pp-gateway" ||
-		gw["mcp"].(map[string]any)["allow_all_known_mcp_methods"] != true || gw["access"] != nil {
-		t.Errorf("gateway endpoint %v", gw)
+	if _, ok := p.Network_policies["mcp_gateway"]; ok {
+		t.Error("the gateway's rule belongs to the provider profile; OpenShell refuses it twice")
 	}
 	m := p.Network_policies["model"].Endpoints[0]
 	if m["host"] != HostAlias || m["port"] != 8008 {
 		t.Errorf("model on loopback must be the host's: %v", m)
 	}
-	if len(p.Network_policies) != 2 {
-		t.Errorf("only the gateway and the model: %v", p.Network_policies)
+	if len(p.Network_policies) != 1 {
+		t.Errorf("only the model (the gateway comes with the provider): %v", p.Network_policies)
 	}
 	if p.Network_policies["model"].Binaries[0]["path"] != Launcher {
 		t.Error("binaries")
@@ -68,7 +65,7 @@ func TestProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(b)
-	for _, want := range []string{"id: cockpit-agentic-gateway-pp", "AGENT_GATEWAY_TOKEN", "auth_style: bearer", "host: gw.example.com", "port: 8443", "allow_all_known_mcp_methods: true"} {
+	for _, want := range []string{"id: cockpit-agentic-gateway-pp", "AGENT_GATEWAY_TOKEN", "auth_style: bearer", "host: gw.example.com", "port: 8443", "allow_all_known_mcp_methods: true", "protocol: mcp", "- " + Launcher} {
 		if !strings.Contains(s, want) {
 			t.Errorf("profile lacks %q:\n%s", want, s)
 		}
