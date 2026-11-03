@@ -68,3 +68,25 @@ func TestLoad(t *testing.T) {
 		t.Errorf("name/dir mismatch: %v", err)
 	}
 }
+
+func TestSandbox(t *testing.T) {
+	c, err := Parse([]byte(sample))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l := c.Lifecycle(); l["kind"] != "systemd" || l["service"] != "agent@patch-pilot.service" || l["socket"] != "agent@patch-pilot.socket" {
+		t.Errorf("default lifecycle %v", l)
+	}
+	c, err = Parse([]byte(sample + "sandbox: {kind: openshell}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l := c.Lifecycle(); l["kind"] != "openshell" || l["sandbox"] != "agent-patch-pilot" || l["gateway"] != "local" || l["service"] != "agent-openshell@patch-pilot.service" {
+		t.Errorf("openshell lifecycle %v", l)
+	}
+	for _, bad := range []string{"sandbox: {kind: docker}\n", "sandbox: {kind: systemd, openshell_gateway: x}\n"} {
+		if _, err := Parse([]byte(sample + bad)); err == nil || !strings.Contains(err.Error(), "sandbox.") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}
