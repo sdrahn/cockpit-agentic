@@ -72,6 +72,8 @@ open items.
 | `selinux/` | the `cockpit_agentic` module |
 | `packaging/` | OBS packaging for SLES 16.0/16.1 and Leap 16.0/16.1 (`suse/`), sysusers.d, tmpfiles.d |
 | `examples/patch-pilot` | an example agent and its gateway permissions |
+| `test/vm` | the functional tests on an installed system (`run-tests.sh`) and their helpers (`fakemodel`, `testsrv`), packaged as `cockpit-agentic-tests` |
+| `test/openqa` | the openQA test module and how to run the functional tests |
 | `docs/` | the mockup and its screenshots |
 
 ## Development
@@ -86,7 +88,10 @@ make policy-test GATEWAY_POLICY=../mcp-gateway/policy
 ```
 
 The end-to-end tests run a whole agent against a scripted model and a
-fake gateway, so they need no network and no model.
+fake gateway, so they need no network and no model. The functional
+tests run on an installed SLES 16 / Leap 16 system with mcp-gateway, as
+the package `cockpit-agentic-tests` in openQA
+([test/openqa/README.md](test/openqa/README.md)).
 
 Run an agent from a checkout:
 
@@ -105,7 +110,8 @@ curl --unix-socket /tmp/pp.sock http://agent/v1/status
 | Delegation bridge | implemented; not yet tested against a running gateway |
 | systemd units | written, `systemd-analyze verify` clean |
 | SELinux module | written, not yet built or run on SLES 16 / Leap 16 |
-| OBS packaging | spec and services written; first OBS build to do |
+| OBS packaging | spec and services written, with the `-tests` subpackage; first OBS build to do |
+| Functional tests (`cockpit-agentic-tests`, openQA) | written; not yet run on SLES 16 / Leap 16 |
 | Cockpit page | designed (mockup); to do |
 
 See [packaging/suse/README.md](packaging/suse/README.md) for building on OBS.

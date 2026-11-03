@@ -78,6 +78,7 @@ spec, `_service` and the rpmlintrc again whenever they change here.
 |---|---|
 | `cockpit-agentic` | `agent-launcher`, `agent-delegate`, `agent-admin`, the unit templates `agent@` and `agent-schedule@`, the group `agent-clients`, the autonomy-mode policy module for the gateway (`/usr/share/mcp-gateway/policy/cockpit-agentic/agents.rego`), the gateway's `agents` server definition (opt-in), an example agent |
 | `cockpit-agentic-selinux` | the `cockpit_agentic` module; pulled in where `selinux-policy-targeted` is installed |
+| `cockpit-agentic-tests` | the functional tests for openQA and other test systems (`/usr/libexec/cockpit-agentic/tests/run-tests.sh --disposable --results DIR`: TAP and JUnit), with a scripted model server and an MCP test server; they change the system for good, so only for test systems ([test/openqa](../../test/openqa/README.md)) |
 
 There is no `-cockpit` subpackage yet. The Cockpit control plane is
 designed (CONTRACT.md Part I, the mockup in `docs/`) but not yet
@@ -105,5 +106,6 @@ endpoint and the gateway's socket is needed.
 - **Go version:** check that each target repository's `golang(API)`
   satisfies `>= 1.25` (ADK Go 1.9 needs it), or add the path above.
 - **Tests on the target:** `%check` runs the unit and end-to-end tests
-  (scripted model, fake gateway). A VM test against a real mcp-gateway
-  and OPA is still to do.
+  (scripted model, fake gateway). The functional tests
+  (`cockpit-agentic-tests`) have not run on SLES 16 / Leap 16 yet: run
+  them in openQA or a VM first (test/openqa/README.md).

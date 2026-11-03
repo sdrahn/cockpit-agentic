@@ -17,8 +17,10 @@ GATEWAY_POLICY ?= $(DATADIR)/mcp-gateway/policy
 
 LDFLAGS := -X github.com/sdrahn/cockpit-agentic/internal/launcher.Version=$(VERSION)
 BINS := agent-launcher agent-admin agent-delegate
+# The functional tests' helpers (package cockpit-agentic-tests).
+TESTBINS := fakemodel testsrv
 
-.PHONY: all build test check fmt-check vet policy-test selinux install install-selinux clean
+.PHONY: all build build-tests test check fmt-check vet policy-test selinux install install-selinux install-tests clean
 
 all: build
 
@@ -26,6 +28,11 @@ build: $(BINS:%=bin/%)
 
 bin/%: FORCE
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $@ ./cmd/$*
+
+build-tests: $(TESTBINS:%=bin/tests/%)
+
+bin/tests/%: FORCE
+	$(GO) build -trimpath -o $@ ./test/vm/$*
 
 FORCE:
 
@@ -68,6 +75,12 @@ install: build
 	install -D -m 0644 examples/patch-pilot/agent.yaml $(DESTDIR)$(DATADIR)/cockpit-agentic/examples/patch-pilot/agent.yaml
 	install -D -m 0644 examples/patch-pilot/permissions.yaml $(DESTDIR)$(DATADIR)/cockpit-agentic/examples/patch-pilot/permissions.yaml
 	install -d -m 0755 $(DESTDIR)$(SYSCONFDIR)/cockpit-agentic/agents
+
+# The functional tests, for openQA (test/openqa/README.md).
+install-tests: build-tests
+	install -Dm0755 test/vm/run-tests.sh $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/tests/run-tests.sh
+	install -Dm0755 bin/tests/fakemodel $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/tests/fakemodel
+	install -Dm0755 bin/tests/testsrv $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/tests/testsrv
 
 install-selinux: selinux
 	install -d $(DESTDIR)$(SELINUXDIR)
