@@ -95,20 +95,30 @@ check "the relay socket is active" systemctl is-active -q agent-openshell@sb.soc
 
 section "Supervising through the relay"
 diagnose() {
-	echo "    | --- why the relay gets no answer"
+	# Each step writes to a file, with a timeout and no stdin: a process a
+	# step leaves running (forward start -d) must not hold a pipe open.
+	local d=$work/diagnose port
+	mkdir -p "$d"
+	port=$(sed -n 's/^FORWARD_PORT=//p' /etc/cockpit-agentic/agents/sb/openshell.env)
+	step() { # step <title> <command...>
+		echo "--- $1"
+		shift
+		timeout -k 5 40 "$@" </dev/null >"$d/out" 2>&1
+		tail -n 25 "$d/out"
+	}
 	{
-		systemctl status --no-pager agent-openshell@sb.socket agent-openshell@sb.service 2>&1 | tail -n 20
-		journalctl --no-pager -o short-precise --since "@$t0" -u agent-openshell@sb.service 2>&1 | grep -v 'proxy error' | tail -n 30
-		port=$(sed -n 's/^FORWARD_PORT=//p' /etc/cockpit-agentic/agents/sb/openshell.env)
-		echo "--- openshell forward start $port agent-sb -d (by hand)"; timeout 30 openshell -g openshell forward start "$port" agent-sb -d 2>&1 | tail -n 15
-		echo "--- the agent, started by hand in the sandbox for 10 s"
-		timeout 30 openshell -g openshell sandbox exec -n agent-sb -- /bin/sh -c \
-			'timeout 10 /usr/libexec/cockpit-agentic/agent-launcher serve --config-env AGENTIC_CONFIG --listen-tcp 127.0.0.1:47999 --idle-exit 0; echo "exit status $?"' 2>&1 | tail -n 25
-		echo "--- openshell sandbox get agent-sb"; osh sandbox get agent-sb 2>&1 | grep -vE '^ +(- |host|port|protocol|enforcement|access|path|name|binaries|endpoints|versions|mcp|allow_all)' | tail -n 20
-		echo "--- openshell forward list"; osh forward list 2>&1 | tail -n 10
-		echo "--- openshell logs agent-sb"; timeout 20 openshell -g openshell logs agent-sb 2>&1 | tail -n 40
-		echo "--- listening on the host"; ss -ltnp 2>/dev/null | grep -E ':(47[0-9]{3})\b' || true
-	} | sed 's/^/    | /'
+		step "relay units" systemctl status --no-pager agent-openshell@sb.socket agent-openshell@sb.service
+		step "relay journal" bash -c "journalctl --no-pager -o short-precise --since @$t0 -u agent-openshell@sb.service | grep -v 'proxy error'"
+		step "openshell forward start $port agent-sb -d (by hand)" openshell -g openshell forward start "$port" agent-sb -d
+		step "the agent, started by hand in the sandbox for 10 s" openshell -g openshell sandbox exec -n agent-sb -- /bin/sh -c \
+			'timeout 10 /usr/libexec/cockpit-agentic/agent-launcher serve --config-env AGENTIC_CONFIG --listen-tcp 127.0.0.1:47999 --idle-exit 0; echo "exit status $?"'
+		step "openshell sandbox get agent-sb" openshell -g openshell sandbox get agent-sb
+		step "openshell forward list" openshell -g openshell forward list
+		step "openshell logs agent-sb" openshell -g openshell logs agent-sb
+		step "listening on the host" bash -c "ss -ltnp | grep -E ':47[0-9]{3}\\b'"
+	} >"$d/all" 2>&1
+	echo "    | --- why the relay gets no answer"
+	sed 's/^/    | /' "$d/all"
 }
 if eventually 180 bash -c 'curl -sf --max-time 10 --unix-socket /run/agents/sb/api.sock http://agent/v1/status >/dev/null'; then
 	pass "the agent answers through the relay"
