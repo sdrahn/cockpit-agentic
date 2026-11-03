@@ -8,9 +8,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,6 +46,10 @@ type Admin struct {
 	Image string
 	// Secret makes the relay secrets.
 	Secret func() string
+	// OPAData reads a document of the gateway's OPA (GET /v1/data/<path>);
+	// nil: changes are not waited for. PolicyWait bounds the wait.
+	OPAData    func(path string) (any, error)
+	PolicyWait time.Duration
 }
 
 func New() *Admin {
@@ -67,6 +74,8 @@ func New() *Admin {
 			rand.Read(b)
 			return hex.EncodeToString(b)
 		},
+		OPAData:    opaData,
+		PolicyWait: 20 * time.Second,
 	}
 }
 
@@ -370,7 +379,15 @@ func (a *Admin) writeGateway(name string, d *GatewayData) error {
 		return err
 	}
 	head := "# Written by agent-admin: the autonomy mode and permissions of agent " + name + "\n# (cockpit-agentic CONTRACT.md §6). mcp-gateway's OPA reloads it by itself.\n"
-	return writeFile(a.gatewayFile(name), append([]byte(head), b...), 0o644)
+	if err := writeFile(a.gatewayFile(name), append([]byte(head), b...), 0o644); err != nil {
+		return err
+	}
+	return a.waitPolicy("mcp/agents/"+name, func(v any) bool {
+		m, _ := v.(map[string]any)
+		perms, _ := m["permissions"].([]any)
+		paused, _ := m["paused"].(bool)
+		return m != nil && m["mode"] == d.Mode && paused == d.Paused && len(perms) == len(d.Permissions)
+	})
 }
 
 // SetMode sets the autonomy mode, enforced by the gateway.
@@ -474,7 +491,67 @@ func (a *Admin) StopAll(by string) error {
 func (a *Admin) writeStop(stopped bool, by string) error {
 	b := fmt.Sprintf("# The emergency stop of every agent (agent-admin stop-all, release-all;\n# cockpit-agentic CONTRACT.md §8).\n_control:\n  stopped: %t\n  by: %q\n  at: %q\n",
 		stopped, by, a.Now().UTC().Format(time.RFC3339))
-	return writeFile(a.p(GatewayStop), []byte(b), 0o644)
+	if err := writeFile(a.p(GatewayStop), []byte(b), 0o644); err != nil {
+		return err
+	}
+	return a.waitPolicy("mcp/agents/_control/stopped", func(v any) bool { return v == stopped })
+}
+
+// waitPolicy waits until the gateway's OPA has loaded what was just
+// written, so that a mode, a pause or the emergency stop is in force when
+// agent-admin returns. Without the gateway's OPA it only says so.
+func (a *Admin) waitPolicy(path string, loaded func(any) bool) error {
+	if a.OPAData == nil {
+		return nil
+	}
+	deadline := a.Now().Add(a.PolicyWait)
+	var last error
+	for {
+		v, err := a.OPAData(path)
+		if err == nil && loaded(v) {
+			return nil
+		}
+		if err != nil {
+			last = err
+			if errors.Is(err, errNoOPA) {
+				fmt.Fprintf(a.Out, "agent-admin: mcp-gateway's OPA is not running; the change is in force when it loads %s\n", GatewayAgents)
+				return nil
+			}
+		}
+		if !a.Now().Before(deadline) {
+			if last != nil {
+				return fmt.Errorf("the gateway's policy did not load the change within %s: %w", a.PolicyWait, last)
+			}
+			return fmt.Errorf("the gateway's policy did not load the change within %s (%s)", a.PolicyWait, path)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+// OPASocket is mcp-gateway's OPA (mcp-opa.service).
+const OPASocket = "/run/mcp-gateway/opa.sock"
+
+var errNoOPA = errors.New("mcp-gateway's OPA is not running")
+
+func opaData(path string) (any, error) {
+	if _, err := os.Stat(OPASocket); err != nil {
+		return nil, errNoOPA
+	}
+	c := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", OPASocket)
+	}}}
+	res, err := c.Get("http://opa/v1/data/" + path)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	var out struct {
+		Result any `json:"result"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out.Result, nil
 }
 
 // ReleaseAll undoes StopAll: sockets and timers that are enabled start again.

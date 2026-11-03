@@ -121,6 +121,42 @@ func TestCreateModePauseDelete(t *testing.T) {
 	}
 }
 
+// agent-admin returns when the gateway's OPA has the change (here an OPA
+// that lags behind), and says so when OPA never gets it.
+func TestWaitsForThePolicy(t *testing.T) {
+	a, _ := newAdmin(t)
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	a.Now = func() time.Time { now = now.Add(100 * time.Millisecond); return now }
+	a.PolicyWait = 5 * time.Second
+	reads := 0
+	a.OPAData = func(path string) (any, error) {
+		reads++
+		if path == "mcp/agents/_control/stopped" {
+			return reads > 3, nil // loaded on the fourth read
+		}
+		return nil, nil
+	}
+	if err := a.StopAll("alice"); err != nil || reads != 4 {
+		t.Errorf("stop-all: %v after %d reads", err, reads)
+	}
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(yml), 0o644)
+	a.OPAData = func(string) (any, error) { return nil, nil } // never loads
+	if err := a.Create("patch-pilot", f); err == nil || !strings.Contains(err.Error(), "did not load the change") {
+		t.Errorf("create with a stale gateway: %v", err)
+	}
+	a.OPAData = func(string) (any, error) { return nil, errNoOPA }
+	if err := a.SetMode("patch-pilot", "advisory"); err != nil {
+		t.Errorf("without the gateway's OPA: %v", err)
+	}
+	a.OPAData = func(string) (any, error) {
+		return map[string]any{"mode": "bounded", "paused": false, "permissions": []any{}}, nil
+	}
+	if err := a.SetMode("patch-pilot", "bounded"); err != nil {
+		t.Errorf("loaded at once: %v", err)
+	}
+}
+
 func TestNames(t *testing.T) {
 	a, _ := newAdmin(t)
 	for _, bad := range []string{"../etc", "Root", "a", "x/y"} {

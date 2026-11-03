@@ -92,6 +92,7 @@ needs_agent() {
 section() {
 	printf '\n=== %s\n' "$*"
 	current_section=$*
+	last_answer=
 }
 eventually() { # eventually <seconds> <command...>
 	local deadline=$((SECONDS + $1))
@@ -359,7 +360,9 @@ check "journal: activity.cancel" eventually 10 journal_has t1 activity.cancel ".
 [ -n "$aid" ] && gw "/v1/approvals/$aid" -X POST -d '{"decision":"deny","scope":"once"}' >/dev/null 2>&1
 
 section Schedules
-systemctl start 'agent-schedule@t1_check.service'
+if ! systemctl start 'agent-schedule@t1_check.service'; then
+	journalctl --no-pager -o cat --since "@$t0" -u 'agent-schedule@t1_check.service' 2>&1 | tail -n 15 | sed 's/^/    | /'
+fi
 check "the schedule's run is an activity of origin schedule" eventually 30 journal_has t1 invocation.start '.AGENT_ORIGIN == "schedule" and .AGENT_SCHEDULE == "check" and .AGENT_USER == "system:schedule"'
 
 section AG-UI
