@@ -59,7 +59,10 @@ skip() { echo "SKIP: $*"; record skip "$*"; }
 fail_context() {
 	journalctl --since -20s --no-pager -o short-precise 2>/dev/null |
 		grep -E 'agent-|agent@|mcp-gateway' | grep -iE 'error|fail|denied|status=[0-9]' |
-		tail -10 | sed 's/^/    | /'
+		tail -6 | sed 's/^/    | /'
+	# The SELinux denials behind a "Permission denied", in the log itself.
+	ausearch -m AVC,USER_AVC,SELINUX_ERR -ts recent 2>/dev/null | grep -E '^type=(AVC|USER_AVC|SELINUX_ERR)' |
+		sed -E 's/^type=[A-Z_]+ msg=audit\([^)]*\): //' | sort -u | tail -6 | sed 's/^/    | avc: /'
 }
 check() { # check <description> <command...>
 	local desc=$1
