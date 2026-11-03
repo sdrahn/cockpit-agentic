@@ -15,7 +15,8 @@ die() {
 
 zypper -n --gpg-auto-import-keys ref >/tmp/zypper.log 2>&1 ||
 	{ tail -n 30 /tmp/zypper.log; die "refreshing the repositories failed"; }
-deps="audit policycoreutils selinux-tools polkit jq curl util-linux shadow"
+# policycoreutils-python-utils: the %selinux_* macros of the -selinux packages.
+deps="audit policycoreutils policycoreutils-python-utils selinux-tools polkit jq curl util-linux shadow"
 # shellcheck disable=SC2086 # deps is a list of package names
 zypper -n in --no-recommends $deps selinux-policy-targeted >/tmp/zypper.log 2>&1 ||
 	{ tail -n 30 /tmp/zypper.log; die "installing dependencies failed"; }
