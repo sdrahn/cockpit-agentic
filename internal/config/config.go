@@ -45,6 +45,7 @@ type Config struct {
 	Interaction     Interaction `yaml:"interaction"`
 	Sessions        Sessions    `yaml:"sessions"`
 	Schedules       []Schedule  `yaml:"schedules"`
+	Sandbox         Sandbox     `yaml:"sandbox"`
 
 	// Dir is the directory the file was read from (not in the file).
 	Dir string `yaml:"-"`
@@ -111,6 +112,22 @@ func (c ClientTools) Allowed(name string) bool {
 		}
 	}
 	return false
+}
+
+// Sandbox is the agent's sandbox backend (CONTRACT.md §3a).
+type Sandbox struct {
+	Kind string `yaml:"kind"` // systemd (default) | openshell
+	// OpenShellGateway names the OpenShell gateway (openshell only).
+	OpenShellGateway string `yaml:"openshell_gateway"`
+}
+
+// Lifecycle is /v1/status's lifecycle (CONTRACT.md §3a).
+func (c *Config) Lifecycle() map[string]string {
+	if c.Sandbox.Kind == "openshell" {
+		return map[string]string{"kind": "openshell", "sandbox": "agent-" + c.Name, "gateway": c.Sandbox.OpenShellGateway,
+			"service": "agent-openshell@" + c.Name + ".service"}
+	}
+	return map[string]string{"kind": "systemd", "service": "agent@" + c.Name + ".service", "socket": "agent@" + c.Name + ".socket"}
 }
 
 // Schedule is a recurring activity, run by a systemd timer
@@ -187,6 +204,12 @@ func (c *Config) defaults() {
 	if c.Sessions.RetentionDays == 0 {
 		c.Sessions.RetentionDays = 30
 	}
+	if c.Sandbox.Kind == "" {
+		c.Sandbox.Kind = "systemd"
+	}
+	if c.Sandbox.Kind == "openshell" && c.Sandbox.OpenShellGateway == "" {
+		c.Sandbox.OpenShellGateway = "local"
+	}
 }
 
 // Check returns all problems at once, so an editor can show them together.
@@ -243,6 +266,15 @@ func (c *Config) Check() error {
 		if v < 0 {
 			bad("limits.%s: %d: must be positive", k, v)
 		}
+	}
+	switch c.Sandbox.Kind {
+	case "systemd":
+		if c.Sandbox.OpenShellGateway != "" {
+			bad("sandbox.openshell_gateway: only for kind openshell")
+		}
+	case "openshell":
+	default:
+		bad("sandbox.kind: %q: want systemd or openshell", c.Sandbox.Kind)
 	}
 	seen := map[string]bool{}
 	for i, s := range c.Schedules {

@@ -359,7 +359,7 @@ func TestPauseCancelAndLimits(t *testing.T) {
 		t.Errorf("start while paused: %d", res.StatusCode)
 	}
 	_, b = e.do("GET", "/v1/status", "", nil)
-	if !testutil.Has(string(b), `"paused":true`, `"contract":1`, `"service":"agent@patch-pilot.service"`, `"max_tool_calls":5`) {
+	if !testutil.Has(string(b), `"paused":true`, `"contract":1`, `"units":{"service":"agent@patch-pilot.service","socket":"agent@patch-pilot.socket"}`, `"lifecycle":{"kind":"systemd"`, `"max_tool_calls":5`) {
 		t.Errorf("status %s", b)
 	}
 	e.do("POST", "/v1/resume", "0:root", nil)
