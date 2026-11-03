@@ -20,6 +20,7 @@ const usage = `usage: agent-admin COMMAND …
   mode NAME advisory|supervised|bounded  set the autonomy mode (enforced by mcp-gateway)
   permissions NAME                       replace its gateway permissions (YAML list on stdin)
   pause NAME | resume NAME               hold an agent / let it go on
+  trigger NAME_SCHEDULE                  start a schedule's activity (agent-schedule@.service)
   stop-all                               emergency stop: every agent, every schedule
   release-all                            undo stop-all`
 
@@ -109,6 +110,11 @@ func run(a *admin.Admin, args []string) error {
 			return err
 		}
 		return a.Pause(args[0], by(), cmd == "pause")
+	case "trigger":
+		if err := need(1); err != nil {
+			return err
+		}
+		return a.Trigger(args[0])
 	case "stop-all":
 		return a.StopAll(by())
 	case "release-all":

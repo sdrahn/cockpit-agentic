@@ -31,6 +31,8 @@ type Admin struct {
 	Now func() time.Time
 	// Control posts to an agent's control API (pause, resume).
 	Control func(sock, path string) error
+	// Start starts an activity on an agent's socket (schedules).
+	Start func(sock string, body map[string]any) error
 }
 
 func New() *Admin {
@@ -42,6 +44,7 @@ func New() *Admin {
 		},
 		Out: os.Stdout, Now: time.Now,
 		Control: func(sock, path string) error { return delegate.Post(context.Background(), sock, path) },
+		Start:   func(sock string, body map[string]any) error { return delegate.Start(context.Background(), sock, body) },
 	}
 }
 
@@ -352,6 +355,31 @@ func (a *Admin) ReleaseAll() error {
 		return nil
 	}
 	return a.Run(nil, "systemctl", append([]string{"start"}, units...)...)
+}
+
+// Trigger starts a schedule's activity on the agent's socket, as root
+// with origin schedule (CONTRACT.md §4). agent-schedule@<name>_<schedule>.service
+// (instance NAME_SCHEDULE) runs it; it is here and not in agent-launcher because systemd would
+// run the launcher's program in agent_t, which may not reach agents'
+// sockets (§13 of the contract, SELinux).
+func (a *Admin) Trigger(instance string) error {
+	name, sched, ok := strings.Cut(instance, "_")
+	if !ok || checkName(name) != nil {
+		return fmt.Errorf("%q: want NAME_SCHEDULE", instance)
+	}
+	cfg, err := config.Load(a.agentDir(name))
+	if err != nil {
+		return err
+	}
+	for _, s := range cfg.Schedules {
+		if s.Name == sched {
+			return a.Start(filepath.Join(SocketDir, name, "api.sock"), map[string]any{
+				"prompt": s.Prompt,
+				"origin": map[string]any{"kind": "schedule", "by": "agent-schedule@" + instance + ".timer", "schedule": sched},
+			})
+		}
+	}
+	return fmt.Errorf("agent %s has no schedule %q", name, sched)
 }
 
 // List returns the agents' names (§11: an agent exists when its agent.yaml does).

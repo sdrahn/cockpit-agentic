@@ -1,8 +1,7 @@
 // agent-launcher runs one agent on its systemd socket (CONTRACT.md Part
-// II), and has two helper modes:
+// II):
 //
 //	agent-launcher [serve] [--config DIR]       the agent (agent@<name>.service)
-//	agent-launcher trigger NAME_SCHEDULE        a scheduled activity (agent-schedule@.service)
 package main
 
 import (
@@ -15,12 +14,10 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/sdrahn/cockpit-agentic/internal/config"
-	"github.com/sdrahn/cockpit-agentic/internal/delegate"
 	"github.com/sdrahn/cockpit-agentic/internal/journal"
 	"github.com/sdrahn/cockpit-agentic/internal/launcher"
 	"github.com/sdrahn/cockpit-agentic/internal/peercred"
@@ -39,12 +36,10 @@ func main() {
 	switch mode {
 	case "serve":
 		err = serve(args)
-	case "trigger":
-		err = trigger(args)
 	case "version":
 		fmt.Println(launcher.Version)
 	default:
-		err = fmt.Errorf("unknown mode %q (serve, trigger, version)", mode)
+		err = fmt.Errorf("unknown mode %q (serve, version)", mode)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "agent-launcher:", err)
@@ -130,32 +125,6 @@ func listener(path string) (net.Listener, error) {
 	f := os.NewFile(3, "agent.sock")
 	syscall.CloseOnExec(3)
 	return net.FileListener(f)
-}
-
-// trigger starts a scheduled activity on the agent's socket, as root.
-func trigger(args []string) error {
-	if len(args) == 1 {
-		if n, s, ok := strings.Cut(args[0], "_"); ok {
-			args = []string{n, s}
-		}
-	}
-	if len(args) != 2 {
-		return errors.New("usage: agent-launcher trigger NAME SCHEDULE (or NAME_SCHEDULE)")
-	}
-	name, sched := args[0], args[1]
-	cfg, err := config.Load(config.ConfigRoot + "/" + name)
-	if err != nil {
-		return err
-	}
-	for _, s := range cfg.Schedules {
-		if s.Name == sched {
-			return delegate.Start(context.Background(), SocketDir+"/"+name+"/api.sock", map[string]any{
-				"prompt": s.Prompt,
-				"origin": map[string]any{"kind": "schedule", "by": "agent-schedule@" + name + "_" + sched + ".timer", "schedule": sched},
-			})
-		}
-	}
-	return fmt.Errorf("agent %s has no schedule %q", name, sched)
 }
 
 func filepathBase(p string) string {

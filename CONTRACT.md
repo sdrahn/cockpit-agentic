@@ -458,8 +458,10 @@ runs `agent-launcher serve` with:
 
 The launcher exits after 10 minutes without requests or running
 activities, and the socket starts it again. `agent-schedule@<name>_<schedule>.timer`
-runs `agent-launcher trigger <name>:<schedule>`, which posts the
-schedule's prompt as root with `origin.kind: schedule`.
+runs `agent-admin trigger <name>_<schedule>`, which posts the
+schedule's prompt as root with `origin.kind: schedule`. (Not
+`agent-launcher`: systemd would run its program in `agent_t`, which may
+not reach agents' sockets.)
 
 ## 16. The launcher
 
@@ -493,9 +495,23 @@ Run as root, by hand or by Cockpit with administrative access:
 | `pause NAME`, `resume NAME` | §8 (gateway data and `/v1/pause`) |
 | `stop-all`, `release-all` | the emergency stop (§8) and its end |
 | `delete NAME [--keep-state]` | disables and stops units; removes configuration, gateway data, credentials, drop-ins, timers and, unless kept, state. The user stays, since uids are not reused while files may still belong to them |
+| `trigger NAME_SCHEDULE` | starts the schedule's activity (run by `agent-schedule@.service`) |
 | `list` | the agents |
 
 ## 18. SELinux (`cockpit_agentic` module)
+
+SLES 16 and Leap 16 run SELinux enforcing, so every program this
+repository ships runs in a domain the policy accounts for:
+
+| Program | Started by | Domain |
+|---|---|---|
+| `agent-launcher` | systemd (`agent@.service`) | `agent_t` |
+| `agent-delegate` | mcp-gateway (the `agents` server) | `mcpsrv_agents_t` |
+| `agent-admin` | an administrator, Cockpit, `agent-schedule@.service` | the caller's (`unconfined_t`, `unconfined_service_t`) |
+| `fakemodel`, `testsrv` (`-tests`) | the functional tests; mcp-gateway | `unconfined_service_t`; `mcpsrv_generic_t` |
+
+CI builds the module and runs the functional tests on Leap 16 with SELinux
+enforcing; they fail on any denial for the module's types.
 
 `agent_exec_t` → `agent_t` (`init_daemon_domain`), with `agent_conf_t`,
 `agent_var_lib_t`, `agent_runtime_t` and `agent_sock_t`. `agent_t` gets
