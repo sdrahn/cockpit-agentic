@@ -98,8 +98,13 @@ diagnose() {
 	echo "    | --- why the relay gets no answer"
 	{
 		systemctl status --no-pager agent-openshell@sb.socket agent-openshell@sb.service 2>&1 | tail -n 20
-		journalctl --no-pager -o short-precise --since "@$t0" -u agent-openshell@sb.service 2>&1 | tail -n 30
-		echo "--- openshell sandbox get agent-sb"; osh sandbox get agent-sb 2>&1 | tail -n 20
+		journalctl --no-pager -o short-precise --since "@$t0" -u agent-openshell@sb.service 2>&1 | grep -v 'proxy error' | tail -n 30
+		port=$(sed -n 's/^FORWARD_PORT=//p' /etc/cockpit-agentic/agents/sb/openshell.env)
+		echo "--- openshell forward start $port agent-sb -d (by hand)"; timeout 30 openshell -g openshell forward start "$port" agent-sb -d 2>&1 | tail -n 15
+		echo "--- the agent, started by hand in the sandbox for 10 s"
+		timeout 30 openshell -g openshell sandbox exec -n agent-sb -- /bin/sh -c \
+			'timeout 10 /usr/libexec/cockpit-agentic/agent-launcher serve --config-env AGENTIC_CONFIG --listen-tcp 127.0.0.1:47999 --idle-exit 0; echo "exit status $?"' 2>&1 | tail -n 25
+		echo "--- openshell sandbox get agent-sb"; osh sandbox get agent-sb 2>&1 | grep -vE '^ +(- |host|port|protocol|enforcement|access|path|name|binaries|endpoints|versions|mcp|allow_all)' | tail -n 20
 		echo "--- openshell forward list"; osh forward list 2>&1 | tail -n 10
 		echo "--- openshell logs agent-sb"; timeout 20 openshell -g openshell logs agent-sb 2>&1 | tail -n 40
 		echo "--- listening on the host"; ss -ltnp 2>/dev/null | grep -E ':(47[0-9]{3})\b' || true

@@ -193,6 +193,10 @@ func newModel(ctx context.Context, cfg *config.Config, creds string) (model.LLM,
 func openSessions(dir string) (session.Service, *gorm.DB, error) {
 	dsn := "file::memory:?cache=shared"
 	if dir != "" {
+		// systemd makes StateDirectory=; in a sandbox, nobody does.
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, nil, fmt.Errorf("state directory: %w", err)
+		}
 		dsn = filepath.Join(dir, "sessions.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
 	}
 	dial := sqlite.Open(dsn)
