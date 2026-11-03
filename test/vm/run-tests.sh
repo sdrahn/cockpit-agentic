@@ -366,7 +366,7 @@ fi
 check "the schedule's run is an activity of origin schedule" eventually 30 journal_has t1 invocation.start '.AGENT_ORIGIN == "schedule" and .AGENT_SCHEDULE == "check" and .AGENT_USER == "system:schedule"'
 
 section AG-UI
-out=$(api t1 /agui -N -X POST -d '{"threadId":"agentic-test-1","messages":[{"role":"user","content":"PROBE"}],"tools":[{"name":"evil","parameters":{"type":"object"}}]}')
+out=$(api t1 /agui -N -w '\nHTTP %{http_code}\n' -X POST -d '{"threadId":"agentic-test-1","messages":[{"role":"user","content":"PROBE"}],"tools":[{"name":"evil","parameters":{"type":"object"}}]}')
 agui_ok=1
 for ev in RUN_STARTED STATE_SNAPSHOT TOOL_CALL_START TOOL_CALL_RESULT TEXT_MESSAGE_CONTENT RUN_FINISHED; do
 	check "the stream has $ev" grep -q "\"type\":\"$ev\"" <<<"$out" || agui_ok=
@@ -374,6 +374,8 @@ done
 if [ -z "$agui_ok" ]; then
 	# What the stream had instead: its events, and a RUN_ERROR's message.
 	echo "    | stream: $(sed -n 's/^data: //p' <<<"$out" | jq -rs 'map(.type) | join(",")' 2>/dev/null)"
+	# Not a stream at all (an HTTP error's body), as it came.
+	grep -q '^data: ' <<<"$out" || echo "    | answer: $(head -c 400 <<<"$out")"
 	sed -n 's/^data: //p' <<<"$out" | jq -c 'select(.type == "RUN_ERROR")' 2>/dev/null | sed 's/^/    | /'
 	journalctl --since -60s --no-pager -o cat -u agent@t1.service 2>/dev/null | tail -n 20 | sed 's/^/    | t1: /'
 fi
