@@ -84,7 +84,7 @@ started them.
   "agent": "patch-pilot",
   "session": "t1",
   "user": "system:schedule",
-  "origin": {"kind": "schedule", "by": "agent-schedule@patch-pilot:compliance.timer", "schedule": "compliance"},
+  "origin": {"kind": "schedule", "by": "agent-schedule@patch-pilot_compliance.timer", "schedule": "compliance"},
   "parent": {"agent": "triage", "activity": "e-12ab…"},
   "root":   {"agent": "triage", "activity": "e-0f00…"},
   "state": "waiting_approval",
@@ -237,7 +237,7 @@ user, who is not necessarily allowed to approve.
 | **Cancel** | one running activity | `POST /v1/activities/{id}/cancel` | host |
 | **Pause** | one agent | the agent data's `paused: true` (the gateway denies every call) **and** `POST /v1/pause` (the host holds activities and refuses new ones) | gateway; host for the graceful part |
 | **Stop** | one agent | `systemctl stop agent@<name>.socket agent@<name>.service` (or the units `/v1/status` names) | systemd |
-| **Disable a schedule** | one schedule | `systemctl disable --now agent-schedule@<name>:<schedule>.timer` | systemd |
+| **Disable a schedule** | one schedule | `systemctl disable --now agent-schedule@<name>_<schedule>.timer` | systemd |
 | **Emergency stop** | every agent | `/etc/mcp-gateway/policy/agents_control/data.yaml` with `stopped: true` (the gateway denies every agent everything), then stop every agent unit and schedule timer | gateway and systemd |
 
 `agent-admin` implements pause, resume, `stop-all` and `release-all`
@@ -404,7 +404,7 @@ and fleet scope is out of scope for SLES 16.2. Nothing here precludes it:
 | `/etc/mcp-gateway/policy/agents/<name>/data.yaml` | root 0644 | mode, pause, permissions (§6) |
 | `/etc/credstore.encrypted/agent-<name>.<cred>` | root 0600 | secrets (`systemd-creds encrypt`) |
 | `/etc/systemd/system/agent@<name>.service.d/` | root | sandbox changes; Cockpit writes `50-cockpit.conf` only |
-| `/etc/systemd/system/agent-schedule@<name>:<schedule>.timer.d/schedule.conf` | root | a schedule's `OnCalendar=` |
+| `/etc/systemd/system/agent-schedule@<name>_<schedule>.timer.d/schedule.conf` | root | a schedule's `OnCalendar=` |
 | `/var/lib/agents/<name>/sessions.db` | agent-`<name>` 0600 | ADK sessions (SQLite) |
 
 ## 14. Agent configuration (`agent.yaml`)
@@ -457,7 +457,7 @@ runs `agent-launcher serve` with:
   agents).
 
 The launcher exits after 10 minutes without requests or running
-activities, and the socket starts it again. `agent-schedule@<name>:<schedule>.timer`
+activities, and the socket starts it again. `agent-schedule@<name>_<schedule>.timer`
 runs `agent-launcher trigger <name>:<schedule>`, which posts the
 schedule's prompt as root with `origin.kind: schedule`.
 

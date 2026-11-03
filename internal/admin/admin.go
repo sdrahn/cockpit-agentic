@@ -177,7 +177,7 @@ func (a *Admin) Delete(name string, keepState bool) error {
 	rm := []string{a.agentDir(name), a.p(filepath.Join(GatewayAgents, name)), a.p(filepath.Join(UnitDir, "agent@"+name+".service.d"))}
 	matches, _ := filepath.Glob(a.p(filepath.Join(CredstoreDir, "agent-"+name+".*")))
 	rm = append(rm, matches...)
-	timers, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "agent-schedule@"+name+":*")))
+	timers, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "agent-schedule@"+name+"_*")))
 	rm = append(rm, timers...)
 	if !keepState {
 		rm = append(rm, a.p("/var/lib/agents/"+name))
@@ -370,7 +370,7 @@ func (a *Admin) List() ([]string, error) {
 	return out, nil
 }
 
-func scheduleUnit(agent, sched string) string { return "agent-schedule@" + agent + ":" + sched }
+func scheduleUnit(agent, sched string) string { return "agent-schedule@" + agent + "_" + sched }
 
 // syncSchedules writes a timer drop-in per schedule and removes the
 // ones of schedules that are gone.
@@ -384,7 +384,7 @@ func (a *Admin) syncSchedules(cfg *config.Config) error {
 			return err
 		}
 	}
-	old, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "agent-schedule@"+cfg.Name+":*.timer.d")))
+	old, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "agent-schedule@"+cfg.Name+"_*.timer.d")))
 	for _, d := range old {
 		unit := strings.TrimSuffix(filepath.Base(d), ".timer.d")
 		if !want[unit] {

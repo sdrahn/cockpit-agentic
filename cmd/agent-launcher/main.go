@@ -2,7 +2,7 @@
 // II), and has two helper modes:
 //
 //	agent-launcher [serve] [--config DIR]       the agent (agent@<name>.service)
-//	agent-launcher trigger NAME:SCHEDULE        a scheduled activity (agent-schedule@.service)
+//	agent-launcher trigger NAME_SCHEDULE        a scheduled activity (agent-schedule@.service)
 package main
 
 import (
@@ -135,12 +135,12 @@ func listener(path string) (net.Listener, error) {
 // trigger starts a scheduled activity on the agent's socket, as root.
 func trigger(args []string) error {
 	if len(args) == 1 {
-		if n, s, ok := strings.Cut(args[0], ":"); ok {
+		if n, s, ok := strings.Cut(args[0], "_"); ok {
 			args = []string{n, s}
 		}
 	}
 	if len(args) != 2 {
-		return errors.New("usage: agent-launcher trigger NAME SCHEDULE (or NAME:SCHEDULE)")
+		return errors.New("usage: agent-launcher trigger NAME SCHEDULE (or NAME_SCHEDULE)")
 	}
 	name, sched := args[0], args[1]
 	cfg, err := config.Load(config.ConfigRoot + "/" + name)
@@ -151,7 +151,7 @@ func trigger(args []string) error {
 		if s.Name == sched {
 			return delegate.Start(context.Background(), SocketDir+"/"+name+"/api.sock", map[string]any{
 				"prompt": s.Prompt,
-				"origin": map[string]any{"kind": "schedule", "by": "agent-schedule@" + name + ":" + sched + ".timer", "schedule": sched},
+				"origin": map[string]any{"kind": "schedule", "by": "agent-schedule@" + name + "_" + sched + ".timer", "schedule": sched},
 			})
 		}
 	}

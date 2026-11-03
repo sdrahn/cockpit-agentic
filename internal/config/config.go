@@ -114,7 +114,7 @@ func (c ClientTools) Allowed(name string) bool {
 }
 
 // Schedule is a recurring activity, run by a systemd timer
-// (agent-schedule@<name>:<schedule>.timer, CONTRACT.md §11).
+// (agent-schedule@<name>_<schedule>.timer, CONTRACT.md §11).
 type Schedule struct {
 	Name       string `yaml:"name" json:"name"`
 	OnCalendar string `yaml:"on_calendar" json:"on_calendar"`

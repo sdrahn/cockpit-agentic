@@ -220,7 +220,7 @@ check "the configuration is root:agent-t1 0640" stat_is /etc/cockpit-agentic/age
 check "the socket unit is active" systemctl is-active -q agent@t1.socket
 check "the gateway data says supervised" grep -q "mode: supervised" /etc/mcp-gateway/policy/agents/t1/data.yaml
 check "the gateway data grants nothing" grep -q "permissions: \[\]" /etc/mcp-gateway/policy/agents/t1/data.yaml
-check "the schedule's timer is enabled" systemctl is-enabled -q 'agent-schedule@t1:check.timer'
+check "the schedule's timer is enabled" systemctl is-enabled -q 'agent-schedule@t1_check.timer'
 check "agent-admin list names t1" bash -c 'agent-admin list | grep -qx t1'
 
 section Discovery
@@ -311,7 +311,7 @@ check "journal: activity.cancel" eventually 10 journal_has t1 activity.cancel ".
 [ -n "$aid" ] && gw "/v1/approvals/$aid" -X POST -d '{"decision":"deny","scope":"once"}' >/dev/null 2>&1
 
 section Schedules
-systemctl start 'agent-schedule@t1:check.service'
+systemctl start 'agent-schedule@t1_check.service'
 check "the schedule's run is an activity of origin schedule" eventually 30 journal_has t1 invocation.start '.AGENT_ORIGIN == "schedule" and .AGENT_SCHEDULE == "check" and .AGENT_USER == "system:schedule"'
 
 section AG-UI
@@ -349,7 +349,7 @@ check "the gateway audited the denial" eventually 10 gw_audit_has '.sub == "agen
 section "Emergency stop"
 check "agent-admin stop-all" agent-admin stop-all
 check "the gateway's agents_control says stopped" grep -q 'stopped: true' /etc/mcp-gateway/policy/agents_control/data.yaml
-for u in agent@t1.socket agent@t1.service agent@t2.socket agent@t2.service agent-schedule@t1:check.timer; do
+for u in agent@t1.socket agent@t1.service agent@t2.socket agent@t2.service agent-schedule@t1_check.timer; do
 	check "$u is stopped" not systemctl is-active -q "$u"
 done
 systemctl start agent@t1.socket
@@ -373,7 +373,7 @@ check "agent-admin delete t1" agent-admin delete t1
 check "t1's configuration is gone" not test -e /etc/cockpit-agentic/agents/t1
 check "t1's gateway data is gone" not test -e /etc/mcp-gateway/policy/agents/t1
 check "t1's state is gone" not test -e /var/lib/agents/t1
-check "t1's schedule is gone" not systemctl is-enabled -q 'agent-schedule@t1:check.timer'
+check "t1's schedule is gone" not systemctl is-enabled -q 'agent-schedule@t1_check.timer'
 rm -f /etc/mcp-gateway/servers.d/agentic-test.yaml /etc/mcp-gateway/servers.d/agents.yaml
 systemctl stop agentic-fakemodel.service >/dev/null 2>&1
 

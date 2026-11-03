@@ -50,11 +50,11 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if s := read("/etc/mcp-gateway/policy/agents/patch-pilot/data.yaml"); !strings.Contains(s, "mode: supervised") || !strings.Contains(s, "permissions: []") {
 		t.Errorf("gateway data %q", s)
 	}
-	if s := read("/etc/systemd/system/agent-schedule@patch-pilot:compliance.timer.d/schedule.conf"); !strings.Contains(s, "OnCalendar=Mon..Fri 06:00") {
+	if s := read("/etc/systemd/system/agent-schedule@patch-pilot_compliance.timer.d/schedule.conf"); !strings.Contains(s, "OnCalendar=Mon..Fri 06:00") {
 		t.Errorf("timer %q", s)
 	}
 	all := strings.Join(r.cmds, "\n")
-	for _, want := range []string{"systemd-sysusers", "systemctl enable --now agent@patch-pilot.socket", "systemctl enable --now agent-schedule@patch-pilot:compliance.timer"} {
+	for _, want := range []string{"systemd-sysusers", "systemctl enable --now agent@patch-pilot.socket", "systemctl enable --now agent-schedule@patch-pilot_compliance.timer"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("missing %q in\n%s", want, all)
 		}

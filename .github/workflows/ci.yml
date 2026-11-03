@@ -29,7 +29,14 @@ jobs:
       - name: go test
         run: go test -race -count=1 ./...
       - name: Units
-        run: systemd-analyze verify systemd/*.service systemd/*.socket systemd/*.timer 2>&1 | grep -v 'is not executable' | (! grep .)
+        # A schedule's timer as agent-admin makes it: the template and its
+        # OnCalendar= drop-in (the template alone has none, on purpose).
+        run: |
+          d=$(mktemp -d)
+          cp systemd/* "$d/"
+          { cat systemd/agent-schedule@.timer; printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* 03:00\n'; } >"$d/agent-schedule@t1_check.timer"
+          rm "$d/agent-schedule@.timer"
+          systemd-analyze verify "$d"/*.service "$d"/*.socket "$d"/*.timer 2>&1 | grep -v 'is not executable' | (! grep .)
 
   policy:
     runs-on: ubuntu-24.04

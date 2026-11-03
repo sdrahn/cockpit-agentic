@@ -278,7 +278,7 @@ func TestScheduledActivityAndSessionsGuard(t *testing.T) {
 		t.Errorf("non-root could set its origin: %+v", a.Origin)
 	}
 
-	res, b = e.do("POST", "/v1/activities", "0:root", map[string]any{"prompt": "Run the compliance check.", "origin": map[string]any{"kind": "schedule", "by": "agent-schedule@patch-pilot:compliance.timer", "schedule": "compliance"}, "wait": true})
+	res, b = e.do("POST", "/v1/activities", "0:root", map[string]any{"prompt": "Run the compliance check.", "origin": map[string]any{"kind": "schedule", "by": "agent-schedule@patch-pilot_compliance.timer", "schedule": "compliance"}, "wait": true})
 	if res.StatusCode != 200 {
 		t.Fatalf("%d %s", res.StatusCode, b)
 	}
