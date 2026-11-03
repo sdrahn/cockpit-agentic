@@ -131,9 +131,10 @@ fi
 
 %posttrans selinux
 %selinux_relabel_post -s %{selinuxtype}
-# Directories made before the module was loaded (the main package's
-# tmpfiles, agents' state) get the module's labels.
-for d in /run/agents /var/lib/agents /etc/cockpit-agentic; do
+# What was installed or made before the module was loaded (the programs,
+# the main package's tmpfiles, agents' state) gets the module's labels:
+# a launcher left bin_t would run outside agent_t.
+for d in %{_libexecdir}/cockpit-agentic /run/agents /var/lib/agents /etc/cockpit-agentic; do
     [ -e "$d" ] && restorecon -R "$d" || :
 done
 
