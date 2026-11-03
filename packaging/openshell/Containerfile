@@ -6,7 +6,11 @@
 #   make build
 #   podman build -t localhost/cockpit-agentic-agent:latest -f packaging/openshell/Containerfile .
 FROM registry.opensuse.org/opensuse/leap:16.0
-RUN zypper -n in --no-recommends ca-certificates && zypper -n clean -a
+# OpenShell runs the workload as the image's user "sandbox" (the sandbox
+# policy's run_as_user), whose home is the working directory.
+RUN zypper -n in --no-recommends ca-certificates shadow && \
+    useradd -r -U -m -d /sandbox -s /usr/sbin/nologin sandbox && \
+    zypper -n rm -u shadow && zypper -n clean -a
 COPY bin/agent-launcher /usr/libexec/cockpit-agentic/agent-launcher
 LABEL org.opencontainers.image.title="cockpit-agentic agent" \
       org.opencontainers.image.source="https://github.com/sdrahn/cockpit-agentic"
