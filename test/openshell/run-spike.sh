@@ -155,7 +155,13 @@ if [ -n "$relay_ok" ]; then
 	check "nothing ran before the decision" json_ok "$(admin /executed)" 'index("agentic-test__change") == null'
 	admin /approve/a-osh-1 -X POST >/dev/null
 	check "the activity finishes after the approval" eventually 60 bash -c "curl -s --unix-socket /run/agents/sb/api.sock http://agent/v1/activities/$id | jq -e '.state == \"finished\" and (.summary | contains(\"agentic-test__change done\"))' >/dev/null"
-	check "journal (from OpenShell's log stream): approval.pending" eventually 60 journal_has approval.pending '.AGENT_APPROVAL_ID == "a-osh-1"'
+	check "journal (from the sandbox's output): approval.pending" eventually 60 journal_has approval.pending '.AGENT_APPROVAL_ID == "a-osh-1"' || {
+		# Where the relay's bridge reads the agent's records from.
+		echo "    | relay: $(journalctl --no-pager -o cat --since "@$t0" -u agent-openshell@sb.service 2>&1 | grep -v 'proxy error' | tail -n 8 | tr '\n' '|')"
+		echo "    | containers: $(timeout 10 docker ps --format '{{.Names}} ({{.Image}})' </dev/null 2>&1 | tr '\n' ' ')"
+		echo "    | helper: $(timeout 5 /usr/libexec/cockpit-agentic/agent-openshell-logs agent-sb </dev/null 2>&1 | tail -n 5 | tr '\n' '|')"
+		echo "    | journal AGENT_NAME=sb: $(journalctl --no-pager -o cat --since "@$t0" AGENT_NAME=sb 2>&1 | wc -l) records"
+	}
 	check "journal: approval.resolved approved" eventually 60 journal_has approval.resolved '.AGENT_OUTCOME == "approved"'
 
 	section "AG-UI through the relay"
