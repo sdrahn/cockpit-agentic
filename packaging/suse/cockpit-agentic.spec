@@ -109,6 +109,12 @@ go test ./internal/... ./test/...
 
 %post
 %tmpfiles_create %{_tmpfilesdir}/%{name}.conf
+# mcp-gateway's OPA watches only the directories it loaded a file from
+# when it started: once restarted, it watches the agents' directory
+# (with _control.yaml) and loads agent-admin's changes there by itself.
+if [ $1 -eq 1 ]; then
+    systemctl try-restart mcp-opa.service >/dev/null 2>&1 || :
+fi
 # Agents are template instances, enabled by agent-admin create.
 
 %postun
@@ -155,6 +161,10 @@ done
 %dir %{_datadir}/mcp-gateway
 %dir %{_datadir}/mcp-gateway/policy
 %{_datadir}/mcp-gateway/policy/cockpit-agentic
+%dir %{_sysconfdir}/mcp-gateway
+%dir %{_sysconfdir}/mcp-gateway/policy
+%dir %{_sysconfdir}/mcp-gateway/policy/agents
+%config(noreplace) %{_sysconfdir}/mcp-gateway/policy/agents/_control.yaml
 %{_datadir}/cockpit-agentic
 
 %files tests

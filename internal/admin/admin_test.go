@@ -47,7 +47,7 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if s := read("/etc/sysusers.d/agent-patch-pilot.conf"); !strings.Contains(s, "u agent-patch-pilot -") || !strings.Contains(s, "m agent-patch-pilot mcp-users") {
 		t.Errorf("sysusers %q", s)
 	}
-	if s := read("/etc/mcp-gateway/policy/agents/patch-pilot/data.yaml"); !strings.Contains(s, "mode: supervised") || !strings.Contains(s, "permissions: []") {
+	if s := read("/etc/mcp-gateway/policy/agents/patch-pilot.yaml"); !strings.Contains(s, "patch-pilot:\n    mode: supervised") || !strings.Contains(s, "permissions: []") {
 		t.Errorf("gateway data %q", s)
 	}
 	if s := read("/etc/systemd/system/agent-schedule@patch-pilot_compliance.timer.d/schedule.conf"); !strings.Contains(s, "OnCalendar=Mon..Fri 06:00") {
@@ -77,7 +77,7 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if err := a.Pause("patch-pilot", "alice", true); err != nil {
 		t.Fatal(err)
 	}
-	s := read("/etc/mcp-gateway/policy/agents/patch-pilot/data.yaml")
+	s := read("/etc/mcp-gateway/policy/agents/patch-pilot.yaml")
 	if !testHas(s, "mode: bounded", "paused: true", "paused_by: alice 2026-11-03T12:00:00Z", "install_patches", "autonomous: true") {
 		t.Errorf("gateway data %q", s)
 	}
@@ -90,14 +90,14 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if err := a.StopAll("alice"); err != nil {
 		t.Fatal(err)
 	}
-	if s := read(GatewayStop); !strings.Contains(s, "stopped: true") {
+	if s := read(GatewayStop); !strings.Contains(s, "_control:\n  stopped: true") {
 		t.Errorf("stop file %q", s)
 	}
 	if err := a.ReleaseAll(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(a.p(GatewayStop)); !os.IsNotExist(err) {
-		t.Error("stop file stays")
+	if s := read(GatewayStop); !strings.Contains(s, "stopped: false") {
+		t.Errorf("after release-all: %q", s)
 	}
 	if err := a.Delete("patch-pilot", false); err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if _, err := os.Stat(a.agentDir("patch-pilot")); !os.IsNotExist(err) {
 		t.Error("config stays")
 	}
-	if _, err := os.Stat(a.p("/etc/mcp-gateway/policy/agents/patch-pilot")); !os.IsNotExist(err) {
+	if _, err := os.Stat(a.p("/etc/mcp-gateway/policy/agents/patch-pilot.yaml")); !os.IsNotExist(err) {
 		t.Error("gateway data stays")
 	}
 }
