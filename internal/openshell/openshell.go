@@ -57,7 +57,10 @@ type endpoint struct {
 	Protocol    string `yaml:"protocol"`
 	Enforcement string `yaml:"enforcement"`
 	Access      string `yaml:"access,omitempty"`
-	Credential  *struct {
+	// MCP: OpenShell inspects the traffic as MCP; which tools are allowed
+	// is the gateway's decision, so every known MCP method may pass.
+	MCP        map[string]bool `yaml:"mcp,omitempty"`
+	Credential *struct {
 		Provider string `yaml:"provider"`
 	} `yaml:"credential_binding,omitempty"`
 }
@@ -82,7 +85,7 @@ func Policy(cfg *config.Config) ([]byte, error) {
 	}
 	// Host and port only: whether a path glob such as /mcp/** matches /mcp
 	// itself is not settled in OpenShell's documentation.
-	gwEP := endpoint{Host: gw.host, Port: gw.port, Protocol: "mcp", Enforcement: "enforce", Access: "full"}
+	gwEP := endpoint{Host: gw.host, Port: gw.port, Protocol: "mcp", Enforcement: "enforce", MCP: allMCP}
 	gwEP.Credential = &struct {
 		Provider string `yaml:"provider"`
 	}{ProviderName(cfg.Name)}
@@ -130,7 +133,7 @@ func Profile(cfg *config.Config) ([]byte, error) {
 			"name": "gateway_token", "description": "OAuth access token whose subject is agent-" + cfg.Name,
 			"env_vars": []string{TokenEnv}, "required": true, "auth_style": "bearer", "header_name": "authorization",
 		}},
-		"endpoints": []map[string]any{{"host": gw.host, "port": gw.port, "protocol": "mcp", "enforcement": "enforce"}},
+		"endpoints": []map[string]any{{"host": gw.host, "port": gw.port, "protocol": "mcp", "enforcement": "enforce", "mcp": allMCP}},
 		"binaries":  []string{Launcher},
 	})
 }
@@ -183,6 +186,11 @@ func hostURL(raw string) string {
 	}
 	return u.String()
 }
+
+// allMCP lets every known MCP method through OpenShell's MCP inspection
+// (OpenShell requires rules or this for protocol mcp); the tools are
+// mcp-gateway's to decide.
+var allMCP = map[string]bool{"allow_all_known_mcp_methods": true}
 
 type hp struct {
 	host, path string

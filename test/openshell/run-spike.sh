@@ -49,7 +49,7 @@ osh() { openshell -g openshell "$@"; }
 section Preconditions
 check "openshell is installed" command -v openshell
 check "the local OpenShell gateway answers" eventually 60 osh status
-check "docker runs" docker info -q
+check "docker runs" bash -c "docker info >/dev/null"
 
 section Install
 # What the package installs (packaging/suse), into this system.

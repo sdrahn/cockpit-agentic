@@ -46,7 +46,8 @@ func TestPolicy(t *testing.T) {
 	}
 	gw := p.Network_policies["mcp_gateway"].Endpoints[0]
 	if gw["host"] != "gw.example.com" || gw["port"] != 8443 || gw["path"] != nil || gw["protocol"] != "mcp" ||
-		gw["credential_binding"].(map[string]any)["provider"] != "agent-pp-gateway" {
+		gw["credential_binding"].(map[string]any)["provider"] != "agent-pp-gateway" ||
+		gw["mcp"].(map[string]any)["allow_all_known_mcp_methods"] != true || gw["access"] != nil {
 		t.Errorf("gateway endpoint %v", gw)
 	}
 	m := p.Network_policies["model"].Endpoints[0]
@@ -67,7 +68,7 @@ func TestProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(b)
-	for _, want := range []string{"id: cockpit-agentic-gateway-pp", "AGENT_GATEWAY_TOKEN", "auth_style: bearer", "host: gw.example.com", "port: 8443"} {
+	for _, want := range []string{"id: cockpit-agentic-gateway-pp", "AGENT_GATEWAY_TOKEN", "auth_style: bearer", "host: gw.example.com", "port: 8443", "allow_all_known_mcp_methods: true"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("profile lacks %q:\n%s", want, s)
 		}
