@@ -127,3 +127,11 @@ gen_require(`
 ')
 allow init_t mcpgw_ctl_sock_t:sock_file { getattr mounton };
 allow init_t agent_runtime_t:dir mounton;
+
+# The agents' unit has NoNewPrivileges=yes: without nnp_transition the
+# kernel refuses systemd's transition to agent_t, and the launcher would
+# run in init_t (as the first VM run showed).
+gen_require(`
+	class process2 { nnp_transition nosuid_transition };
+')
+allow init_t agent_t:process2 { nnp_transition nosuid_transition };
