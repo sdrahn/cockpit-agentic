@@ -179,6 +179,8 @@ jobs:
             ${{ runner.temp }}/vm/test.log
             ${{ runner.temp }}/vm/results.tap
             ${{ runner.temp }}/vm/results.xml
+            ${{ runner.temp }}/vm/avc.txt
+            ${{ runner.temp }}/vm/journal.txt
           if-no-files-found: ignore
       - if: always()
         name: Test summary

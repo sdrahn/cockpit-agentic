@@ -153,7 +153,8 @@ set +e
 vm "/usr/libexec/cockpit-agentic/tests/run-tests.sh $args" 2>&1 | tee "$work/test.log"
 status=${PIPESTATUS[0]}
 scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
-	root@127.0.0.1:/root/agentic-vm/results/results.tap root@127.0.0.1:/root/agentic-vm/results/results.xml "$work/"
+	root@127.0.0.1:/root/agentic-vm/results/results.tap root@127.0.0.1:/root/agentic-vm/results/results.xml \
+	root@127.0.0.1:/root/agentic-vm/results/avc.txt root@127.0.0.1:/root/agentic-vm/results/journal.txt "$work/"
 set -e
 log "tests exited with $status"
 exit "$status"
