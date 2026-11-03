@@ -61,13 +61,28 @@ fail_context() {
 		grep -E 'agent-|agent@|mcp-gateway' | grep -iE 'error|fail|denied|status=[0-9]' |
 		tail -6 | sed 's/^/    | /'
 	# The SELinux denials behind a "Permission denied", in the log itself.
-	ausearch -m AVC,USER_AVC,SELINUX_ERR -ts recent 2>/dev/null | grep -E '^type=(AVC|USER_AVC|SELINUX_ERR)' |
-		sed -E 's/^type=[A-Z_]+ msg=audit\([^)]*\): //' | sort -u | tail -6 | sed 's/^/    | avc: /'
+	# (ausearch when auditd runs, the kernel log when it does not).
+	{
+		ausearch -m AVC,USER_AVC,SELINUX_ERR -ts recent 2>/dev/null | grep -E '^type=(AVC|USER_AVC|SELINUX_ERR)'
+		journalctl -k --since -30s --no-pager -o cat 2>/dev/null | grep -E 'avc: +denied'
+	} | sed -E 's/^type=[A-Z_]+ msg=audit\([^)]*\): //; s/^.*(avc: +denied)/\1/' | sort -u | tail -6 | sed 's/^/    | avc: /'
 }
 check() { # check <description> <command...>
 	local desc=$1
 	shift
+	# Without a running agent, the checks that need one are skipped: they
+	# would only wait for their timeouts (no_agent is set by Discovery).
+	if [ -n "${no_agent:-}" ] && needs_agent; then
+		skip "$desc (no agent is running: see Discovery)"
+		return
+	fi
 	if "$@"; then pass "$desc"; else fail "$desc"; fi
+}
+needs_agent() {
+	case $current_section in
+	"Supervised by default" | Approval:* | "Autonomy modes" | Pause | Cancel | Schedules | AG-UI | "Access to the socket" | Delegation) return 0 ;;
+	esac
+	return 1
 }
 section() {
 	printf '\n=== %s\n' "$*"
@@ -133,7 +148,7 @@ write_results() {
 # --- helpers -----------------------------------------------------------------
 
 # api <agent> <path> [curl args...]: the agent's socket, as root.
-api() { local a=$1 p=$2; shift 2; curl -sS --max-time 120 --unix-socket "/run/agents/$a/api.sock" "http://agent$p" "$@"; }
+api() { local a=$1 p=$2; shift 2; curl -sS --max-time 60 --unix-socket "/run/agents/$a/api.sock" "http://agent$p" "$@"; }
 # gw <path> [curl args...]: the gateway's control API, as root.
 gw() { local p=$1; shift; curl -sS --max-time 30 --unix-socket /run/mcp-gateway/control.sock "http://localhost$p" "$@"; }
 # run_activity <agent> <prompt>: starts an activity and waits; prints it.
@@ -237,7 +252,13 @@ check "agent-admin list names t1" bash -c 'agent-admin list | grep -qx t1'
 
 section Discovery
 st=$(api t1 /v1/status)
-check "GET /v1/status answers contract 1 (starts the agent)" json_ok "$st" '.contract == 1 and .name == "t1"'
+if json_ok "$st" '.contract == 1 and .name == "t1"'; then
+	pass "GET /v1/status answers contract 1 (starts the agent)"
+else
+	fail "GET /v1/status answers contract 1 (starts the agent)"
+	no_agent=1
+	systemctl status --no-pager agent@t1.service 2>&1 | tail -n 15 | sed 's/^/    | /'
+fi
 check "status names the units" json_ok "$st" '.units.service == "agent@t1.service"'
 check "status says the lifecycle is systemd" json_ok "$st" '.lifecycle.kind == "systemd" and .lifecycle.socket == "agent@t1.socket"'
 check "the socket is root:agent-clients 0660" stat_is /run/agents/t1/api.sock root:agent-clients:660
