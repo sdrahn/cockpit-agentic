@@ -14,6 +14,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -56,7 +57,9 @@ func New(token string) (*testutil.Gateway, http.Handler, *Seen) {
 		}
 		if got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "); got != token {
 			seen.Wrong++
-			seen.Wrongs = append(seen.Wrongs, got)
+			// The request and what it carried: which of the agent's requests
+			// came without the token (or with the placeholder).
+			seen.Wrongs = append(seen.Wrongs, fmt.Sprintf("%s %s session=%t %q", r.Method, r.URL.Path, r.Header.Get("Mcp-Session-Id") != "", got))
 			http.Error(w, "invalid token", http.StatusUnauthorized)
 			return
 		}

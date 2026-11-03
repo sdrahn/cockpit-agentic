@@ -134,10 +134,15 @@ if [ -n "$relay_ok" ]; then
 	check "status through the relay says lifecycle openshell" json_ok "$st" '.lifecycle.kind == "openshell" and .lifecycle.sandbox == "agent-sb"'
 	check "the relay passed root on (status is for supervisors)" json_ok "$st" '.contract == 1'
 	a=$(run_activity PROBE)
-	check "a read-only call runs" summary_has "$a" "probe ok"
+	check "a read-only call runs" summary_has "$a" "probe ok" ||
+		{
+			echo "    | the agent answered: $(jq -c '{state, summary, reason, calls: [.calls[]? | {tool, state, reason}]}' <<<"$a" 2>/dev/null || head -c 400 <<<"$a")"
+			journalctl --no-pager -o cat --since "@$t0" AGENT_NAME=sb 2>/dev/null | tail -n 15 | sed 's/^/    | agent: /'
+		}
 	tok=$(admin /tokens)
 	check "the gateway saw the real token" json_ok "$tok" '.Right > 0'
-	check "and never the placeholder or no token" json_ok "$tok" '.Wrong == 0'
+	check "and never the placeholder or no token" json_ok "$tok" '.Wrong == 0' ||
+		echo "    | the gateway saw: $(jq -c '{Right, Wrong, Wrongs: .Wrongs[:8]}' <<<"$tok" 2>/dev/null || head -c 400 <<<"$tok")"
 	check "the sandbox's environment has no real token" bash -c "! openshell -g openshell sandbox exec -n agent-sb -- env 2>/dev/null | grep -qF \"\$(cat $work/token)\""
 
 	section "Approval"
