@@ -177,6 +177,7 @@ loop:
 		runErr = ctx.Err()
 	}
 	if runErr != nil {
+		h.Governor.Failed(s.invocation, runErr)
 		s.emit("RUN_ERROR", map[string]any{"message": runErr.Error()})
 		return
 	}
@@ -284,6 +285,7 @@ type stream struct {
 	fl          http.Flusher
 	thread, run string
 	textID      string // open text message
+	invocation  string // the ADK invocation (activity) of the run
 }
 
 func (s *stream) emit(typ string, fields map[string]any) {
@@ -304,6 +306,9 @@ func (s *stream) endText() {
 }
 
 func (s *stream) event(ev *session.Event) {
+	if s.invocation == "" {
+		s.invocation = ev.InvocationID
+	}
 	if ev.Content != nil && ev.Author != "user" {
 		for _, p := range ev.Content.Parts {
 			switch {
