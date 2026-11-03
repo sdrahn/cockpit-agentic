@@ -86,3 +86,48 @@ func TestCancelThenAGUI(t *testing.T) {
 		}
 	}
 }
+
+// As on the VM: the cancelled call's approval is denied while the next
+// run (AG-UI) is going, so the gateway answers the cancelled call late,
+// on the MCP session the next run shares.
+func TestLateAnswerToCancelledCall(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		e := newEnv(t,
+			testutil.Call("c1", "zypp__install_patches", map[string]any{}),
+			testutil.Call("c2", "zypp__list_updates", map[string]any{}),
+			testutil.Text("listed"),
+		)
+		e.gw.Ask["zypp__install_patches"] = "a-1"
+		_, b := e.do("POST", "/v1/activities", "0:root", map[string]any{"prompt": "install"})
+		var st struct{ ID string }
+		json.Unmarshal(b, &st)
+		waitFor(t, func() bool {
+			a, _ := e.l.Governor.Activity(st.ID)
+			return a.State == governance.StateWaiting
+		})
+		e.do("POST", "/v1/activities/"+st.ID+"/cancel", "0:root", nil)
+		ch := e.agui(map[string]any{"threadId": "agentic-test-1", "messages": []any{map[string]any{"role": "user", "content": "PROBE"}}})
+		go func() { time.Sleep(time.Duration(i) * time.Millisecond); e.gw.Decide("a-1", false) }()
+		var types []string
+		timeout := time.After(20 * time.Second)
+	read:
+		for {
+			select {
+			case ev, ok := <-ch:
+				if !ok {
+					break read
+				}
+				types = append(types, ev["type"].(string))
+				if ev["type"] == "RUN_ERROR" {
+					t.Logf("RUN_ERROR %v", ev)
+				}
+			case <-timeout:
+				t.Fatalf("stream did not end: %v", types)
+			}
+		}
+		s := strings.Join(types, ",")
+		if !strings.Contains(s, "TOOL_CALL_RESULT") || !strings.Contains(s, "RUN_FINISHED") {
+			t.Fatalf("run %d: %s", i, s)
+		}
+	}
+}
