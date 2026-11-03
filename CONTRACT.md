@@ -26,8 +26,9 @@ the version it implements in `GET /v1/status` (`contract`).
 | Part | Role | Enforces |
 |---|---|---|
 | **mcp-gateway** (≥ 1.12) | the agents' only tools; OPA policy (autonomy modes, §6); approvals and grants (§7) | *may this agent call this tool with these arguments now* |
-| **systemd** | runs, sandboxes, schedules and stops agents | what an agent process can touch; that a stopped agent stays stopped |
-| **SELinux** | confines agents | that an agent reaches the gateway's MCP socket, never its control socket nor another agent's socket |
+| **systemd** | runs, schedules and stops agents; sandboxes them with the `systemd` backend | what an agent process can touch; that a stopped agent stays stopped |
+| **SELinux** | confines agents (`systemd` backend: `agent_t`; `openshell` backend: the container runtime's domain) | that an agent reaches the gateway's MCP socket, never its control socket nor another agent's socket |
+| **sandbox backend** (§3a) | `systemd` (the default) or `openshell` (NVIDIA OpenShell) | files, processes and network egress of the agent process |
 | **journald** | holds the audit record (§10) next to the gateway's | — (it is the record) |
 | **agent host** | runs agents; serves the control API (§5); writes audit records | local limits only; not a security boundary |
 | **Cockpit control plane** | shows activity, approvals, policy and history; intervenes | — (it shows things; decisions go to the gateway and systemd) |
@@ -45,7 +46,7 @@ agent and enriches the record.
 |---|---|
 | agent name | `^[a-z][a-z0-9-]{0,30}[a-z0-9]$`, unique on the host |
 | agent user | `agent-<name>`: a static system user without a password, member of `mcp-users` and `agent-clients`. The prefix `agent-` is reserved for agents |
-| gateway principal | `sub: agent-<name>`, `transport: unix`. The gateway identifies the agent by `SO_PEERCRED`, never by what the agent says |
+| gateway principal | `sub: agent-<name>`. With the `systemd` backend: `transport: unix`, identified by `SO_PEERCRED`. With the `openshell` backend: `transport: http`, identified by an OAuth bearer token whose subject is `agent-<name>` (gateway `http.local_user_claim` maps it to the agent's local user). Never by what the agent says |
 | journal identifier | `SYSLOG_IDENTIFIER=agent-<name>`, `AGENT_NAME=<name>` |
 | activity id | unique on the host; in the journal as `AGENT_INVOCATION` |
 
@@ -59,17 +60,46 @@ as the session user.
 
 An agent is a directory `/run/agents/<name>/` holding `api.sock`, where
 `GET /v1/status` answers with `"contract": 1`. That is all a control
-plane needs to find agents. `/v1/status` names the systemd units that
-start and stop the agent (`units.service`, `units.socket`) and the
-host implementation (`implementation`). The ADK launcher reports
-`cockpit-agentic/adk-go`. A host that is not socket-activated still
-creates the socket while it runs, and names its unit.
+plane needs to find agents. `/v1/status` says how the agent is started
+and stopped (`lifecycle`, §3a) and names the host implementation
+(`implementation`). The ADK launcher reports `cockpit-agentic/adk-go`.
+A host that is not socket-activated still creates the socket while it
+runs, and names its lifecycle. (`units` is the `systemd` lifecycle's
+units, kept for version 1 clients.)
 
 `/run/agents/` is `root:root 0755`. Each socket is `root:agent-clients
 0660`. Members of `agent-clients` (supervisors) and root (Cockpit with
 administrative access) can reach the sockets. Agents are members too,
 but only for delegation through the gateway's bridge (§9): their own
 units cannot see `/run/agents`.
+
+## 3a. Sandbox backends and lifecycle
+
+Where an agent process runs, and what starts, sandboxes and stops it, is
+its **sandbox backend**. Everything else in Part I (identity at the
+gateway, activities, the control API, modes, approvals, audit) is the
+same for every backend.
+
+| `lifecycle` in `/v1/status` | Starts / stops | Sandbox | Reaches the gateway |
+|---|---|---|---|
+| `{"kind": "systemd", "service": "agent@<name>.service", "socket": "agent@<name>.socket"}` | systemd | the unit's sandbox and SELinux `agent_t` (§15, §18) | `/run/mcp-gateway/mcp.sock`, `SO_PEERCRED` |
+| `{"kind": "openshell", "sandbox": "agent-<name>", "gateway": "<openshell gateway name>", "service": "agent-openshell@<name>.service"}` | OpenShell (`openshell sandbox start/stop`), with a systemd unit on the host that owns the agent's socket | OpenShell: Landlock, seccomp, an unprivileged user, a network fence; egress only through OpenShell's supervisor and its network policy | mcp-gateway's Streamable HTTP listener at `host.openshell.internal`, with a bearer token the supervisor adds (the agent never holds it) |
+
+Rules for every backend:
+
+- **The gateway stays the only source of tools.** Network policy of
+  the backend must allow the gateway and the model endpoint, and nothing
+  else, unless an administrator adds it.
+- **Approvals stay the gateway's.** A backend's own review of policy
+  changes (OpenShell's policy prover) is not an approval of an action.
+- **The control API stays a Unix socket on the host**
+  (`/run/agents/<name>/api.sock`), owned by a host process that
+  identifies callers by `SO_PEERCRED`. For a sandboxed agent, that
+  process relays to the agent (Part II, §16a) and passes the caller on
+  as `X-Agentic-Caller: <uid>:<name>` with a secret the relay and the
+  agent share; the agent believes the header only with the secret.
+- **Stop works without the agent.** `lifecycle` names what the control
+  plane stops (§8); the emergency stop also denies at the gateway.
 
 ## 4. Activities
 
@@ -128,7 +158,7 @@ by `SO_PEERCRED`.
 
 | Request | Who | Meaning |
 |---|---|---|
-| `GET /v1/status` | supervisors, root | `{"contract":1, "implementation", "units":{"service","socket"}, "name", "version", "model", "paused", "gateway":{"socket","reachable"}, "running", "in_flight":[call…], "started", "limits", "interaction":{"agui","client_tools"}, "schedules":[{"name","on_calendar","prompt"}]}` |
+| `GET /v1/status` | supervisors, root | `{"contract":1, "implementation", "lifecycle":{"kind",…} (§3a), "units":{"service","socket"} (systemd only), "name", "version", "model", "paused", "gateway":{"socket","reachable"}, "running", "in_flight":[call…], "started", "limits", "interaction":{"agui","client_tools"}, "schedules":[{"name","on_calendar","prompt"}]}` |
 | `GET /v1/activities` | supervisors, root | `{"activities": [activity…]}`, running first, then ended, newest first |
 | `GET /v1/activities/{id}` | supervisors, root; an agent only for activities it delegated | one activity |
 | `POST /v1/activities` | root (schedules, events, api); supervisors (`api`); agents (`delegation`, §9) | `{"prompt", "session"?, "user"? (root only), "origin"? (root only), "trace"? (agents only), "wait"?}`: `202 {"id","session"}`, or with `wait` the ended activity; `409` while paused |
@@ -236,9 +266,9 @@ user, who is not necessarily allowed to approve.
 | **Revoke** | a grant | gateway `DELETE /v1/grants/{id}` | gateway |
 | **Cancel** | one running activity | `POST /v1/activities/{id}/cancel` | host |
 | **Pause** | one agent | the agent data's `paused: true` (the gateway denies every call) **and** `POST /v1/pause` (the host holds activities and refuses new ones) | gateway; host for the graceful part |
-| **Stop** | one agent | `systemctl stop agent@<name>.socket agent@<name>.service` (or the units `/v1/status` names) | systemd |
+| **Stop** | one agent | by its `lifecycle` (§3a): `systemctl stop agent@<name>.socket agent@<name>.service`, or `openshell sandbox stop agent-<name>` and `systemctl stop agent-openshell@<name>.service` | systemd; OpenShell |
 | **Disable a schedule** | one schedule | `systemctl disable --now agent-schedule@<name>:<schedule>.timer` | systemd |
-| **Emergency stop** | every agent | `/etc/mcp-gateway/policy/agents_control/data.yaml` with `stopped: true` (the gateway denies every agent everything), then stop every agent unit and schedule timer | gateway and systemd |
+| **Emergency stop** | every agent | `/etc/mcp-gateway/policy/agents_control/data.yaml` with `stopped: true` (the gateway denies every agent everything, on every backend), then stop every agent by its lifecycle and every schedule timer | gateway, systemd, OpenShell |
 
 `agent-admin` implements pause, resume, `stop-all` and `release-all`
 (Part II). The emergency stop works even if an agent's host ignores
@@ -431,6 +461,7 @@ interaction:
 schedules:
   - {name: compliance, on_calendar: "Mon..Fri 06:00", prompt: "List pending security patches; install nothing."}
 sessions: {retention_days: 30}
+sandbox: {kind: systemd}             # or {kind: openshell, openshell_gateway: local} (§3a, §16a)
 ```
 
 Unknown keys are errors. `servers` and `tools` only decide what the
@@ -559,6 +590,19 @@ is installed). There is no Cockpit page package yet.
 - **O8 — second host.** Demonstrating host independence: a mock host
   (or a kit adapter) serving §5, §10 and §11 for the Cockpit page to run
   against.
+- **O10 — OpenShell backend.** §3a is a draft until the spike
+  (`spike/openshell`) has run on SLES 16 / Leap 16: an agent in an
+  OpenShell sandbox on Podman, reaching mcp-gateway over HTTPS with a
+  token the supervisor adds, its control API relayed to the host
+  socket, approvals, journal records and the emergency stop working as
+  with the `systemd` backend. Open questions:
+  - which OAuth issuer mints the agents' tokens: a local one, or the
+    site's IdP with a client per agent;
+  - how the agent's records reach the host journal (OpenShell's log
+    stream relayed to the host, or journald's remote protocol);
+  - SELinux for the containers (`container_t` with MCS) instead of
+    `agent_t`;
+  - OpenShell's packaging for SLES and Leap, and its maturity (0.1.x).
 - **O9 — Cockpit page.** The control plane itself: the views of the
   mockup (`docs/mockup.png`), built only on Part I and the gateway's
   control API.
