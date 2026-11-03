@@ -118,3 +118,12 @@ files_var_lib_filetrans(init_t, agent_var_lib_t, dir, "agents")
 allow init_t agent_var_lib_t:dir { relabelfrom relabelto };
 list_dirs_pattern(init_t, agent_conf_t, agent_conf_t)
 read_files_pattern(init_t, agent_conf_t, agent_conf_t)
+
+# The agents' unit hides the gateway's control socket and the other
+# agents' sockets (InaccessiblePaths=, TemporaryFileSystem=): systemd
+# mounts over them in the agent's namespace.
+gen_require(`
+	type mcpgw_ctl_sock_t;
+')
+allow init_t mcpgw_ctl_sock_t:sock_file { getattr mounton };
+allow init_t agent_runtime_t:dir mounton;
