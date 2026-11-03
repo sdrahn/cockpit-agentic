@@ -1,0 +1,10 @@
+# The package creates its group through sysusers; agents' users are
+# created at run time by agent-admin (sysusers.d files in /etc).
+addFilter("non-standard-gid")
+# Template units: enabled per agent by agent-admin, not by presets.
+addFilter("systemd-service-without-service_add_pre")
+addFilter("systemd-service-without-service_add_post")
+addFilter("systemd-service-without-service_del_preun")
+addFilter("systemd-service-without-service_del_postun")
+# agent-admin in libexec is a link to the one in sbin, for Cockpit.
+addFilter("symlink-should-be-relative")

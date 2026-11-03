@@ -1,0 +1,92 @@
+policy_module(cockpit_agentic, 1.0.0)
+
+# cockpit-agentic agents (CONTRACT.md §13). Each agent's launcher runs in
+# agent_t. It may reach mcp-gateway's MCP socket, its model endpoint over
+# HTTP(S), journald and its own files. It may never reach the gateway's
+# control socket or another agent's socket: delegation goes through the
+# gateway, whose agents server runs in mcpsrv_agents_t.
+#
+# Not yet built against SLES 16 / Leap 16 policy: see
+# packaging/suse/README.md, "Before the first release".
+
+gen_require(`
+	type unconfined_t;
+	type init_t;
+')
+
+type agent_t;
+type agent_exec_t;
+init_daemon_domain(agent_t, agent_exec_t)
+
+type agent_conf_t;
+files_config_file(agent_conf_t)
+
+type agent_var_lib_t;
+files_type(agent_var_lib_t)
+
+type agent_runtime_t;
+files_pid_file(agent_runtime_t)
+
+type agent_sock_t;
+files_type(agent_sock_t)
+
+## <desc><p>Allow agents to connect to any TCP port (model servers on unusual ports).</p></desc>
+gen_tunable(agent_connect_any, false)
+
+# Own files.
+read_files_pattern(agent_t, agent_conf_t, agent_conf_t)
+list_dirs_pattern(agent_t, agent_conf_t, agent_conf_t)
+manage_files_pattern(agent_t, agent_var_lib_t, agent_var_lib_t)
+manage_dirs_pattern(agent_t, agent_var_lib_t, agent_var_lib_t)
+list_dirs_pattern(agent_t, agent_runtime_t, agent_runtime_t)
+
+# The listening socket systemd passes, and serving on it.
+allow agent_t agent_sock_t:sock_file getattr;
+allow agent_t init_t:unix_stream_socket { accept read write getattr getopt setopt shutdown };
+allow agent_t self:unix_stream_socket create_stream_socket_perms;
+allow agent_t self:tcp_socket create_stream_socket_perms;
+allow agent_t self:udp_socket create_socket_perms;
+allow agent_t self:process { getsched signal };
+allow agent_t self:fifo_file rw_fifo_file_perms;
+
+# Go runtime and libraries.
+kernel_read_system_state(agent_t)
+kernel_read_kernel_sysctls(agent_t)
+files_read_etc_files(agent_t)
+files_read_usr_files(agent_t)
+miscfiles_read_localization(agent_t)
+miscfiles_read_generic_certs(agent_t)
+sysnet_dns_name_resolve(agent_t)
+auth_use_nsswitch(agent_t)
+dev_read_urand(agent_t)
+dev_read_sysfs(agent_t)
+
+# Journal (native protocol) and credentials.
+logging_send_syslog_msg(agent_t)
+init_read_state(agent_t)
+
+# Model endpoints.
+corenet_tcp_connect_http_port(agent_t)
+corenet_tcp_connect_http_cache_port(agent_t)
+tunable_policy(`agent_connect_any',`
+	corenet_tcp_connect_all_ports(agent_t)
+')
+
+# The gateway's MCP socket. Deliberately not mcp_gateway_control_client.
+mcp_gateway_client(agent_t)
+
+# The delegation bridge: run by the gateway as the delegating agent's
+# user, connects to the callee's socket (held by systemd until the
+# callee starts, then by the callee).
+mcp_gateway_backend_template(agents)
+list_dirs_pattern(mcpsrv_agents_t, agent_runtime_t, agent_runtime_t)
+read_files_pattern(mcpsrv_agents_t, agent_conf_t, agent_conf_t)
+stream_connect_pattern(mcpsrv_agents_t, agent_runtime_t, agent_sock_t, init_t)
+stream_connect_pattern(mcpsrv_agents_t, agent_runtime_t, agent_sock_t, agent_t)
+allow mcpsrv_agents_t self:unix_stream_socket create_stream_socket_perms;
+
+# Cockpit: the bridge of a logged-in user (unconfined_t) reaches the
+# agents' sockets.
+list_dirs_pattern(unconfined_t, agent_runtime_t, agent_runtime_t)
+stream_connect_pattern(unconfined_t, agent_runtime_t, agent_sock_t, init_t)
+stream_connect_pattern(unconfined_t, agent_runtime_t, agent_sock_t, agent_t)

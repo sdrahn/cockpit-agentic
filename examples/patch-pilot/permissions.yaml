@@ -1,0 +1,11 @@
+# What patch-pilot may do at the gateway (data.mcp.agents.patch-pilot).
+# Read-only only where it says so; everything else changes the system and
+# needs an approval in supervised mode (CONTRACT.md §6).
+- {server: zypp, tool: 'list_*', read_only: true}
+- {server: zypp, tool: 'search_*', read_only: true}
+- {server: zypp, tool: 'info_*', read_only: true}
+- {server: zypp, tool: install_patches}
+- {server: systemd, tool: 'list_*', read_only: true}
+- {server: systemd, tool: get_unit_status, read_only: true}
+# In bounded mode, this one runs without an approval:
+- {server: systemd, tool: restart_unit, autonomous: true, args: {unit: '^nginx\.service$'}}

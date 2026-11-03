@@ -1,0 +1,137 @@
+// Package peercred identifies callers on the agent's unix socket by
+// SO_PEERCRED and limits what they may reach (CONTRACT.md §10).
+package peercred
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net"
+	"net/http"
+	"os/user"
+	"regexp"
+	"strconv"
+	"syscall"
+)
+
+type ctxKey struct{}
+
+// Caller is the local account on the other end of the connection.
+type Caller struct {
+	UID  int
+	Name string
+}
+
+// Root reports whether the caller is root (Cockpit's administrative access).
+func (c Caller) Root() bool { return c.UID == 0 }
+
+// Agent returns the agent name if the caller is an agent's user
+// (agent-<name>, CONTRACT.md §2): in practice the delegation bridge, which
+// the gateway runs as the delegating agent's user.
+func (c Caller) Agent() (string, bool) {
+	if len(c.Name) > 6 && c.Name[:6] == "agent-" {
+		return c.Name[6:], true
+	}
+	return "", false
+}
+
+// ConnContext is http.Server.ConnContext: it records the peer's uid.
+func ConnContext(ctx context.Context, c net.Conn) context.Context {
+	uc, ok := c.(*net.UnixConn)
+	if !ok {
+		return ctx
+	}
+	raw, err := uc.SyscallConn()
+	if err != nil {
+		return ctx
+	}
+	var cred *syscall.Ucred
+	raw.Control(func(fd uintptr) {
+		cred, err = syscall.GetsockoptUcred(int(fd), syscall.SOL_SOCKET, syscall.SO_PEERCRED)
+	})
+	if err != nil || cred == nil {
+		return ctx
+	}
+	name := strconv.Itoa(int(cred.Uid))
+	if u, err := user.LookupId(name); err == nil {
+		name = u.Username
+	}
+	return WithCaller(ctx, Caller{UID: int(cred.Uid), Name: name})
+}
+
+// WithCaller sets the caller (tests, and ConnContext).
+func WithCaller(ctx context.Context, c Caller) context.Context {
+	return context.WithValue(ctx, ctxKey{}, c)
+}
+
+// From returns the caller of a request.
+func From(ctx context.Context) (Caller, bool) {
+	c, ok := ctx.Value(ctxKey{}).(Caller)
+	return c, ok
+}
+
+var (
+	userPath = regexp.MustCompile(`^/apps/([^/]+)/users/([^/]+)/sessions(/[^/]+(/artifacts(/.*)?)?)?$`)
+	open     = map[string]bool{"/health": true, "/version": true, "/list-apps": true}
+	// The control API (CONTRACT.md §5): who may use it is checked by its
+	// handlers, except that agents only delegate.
+	control  = regexp.MustCompile(`^/v1/(status|activities(/[^/]+(/cancel)?)?|pause|resume)$`)
+	agentMay = regexp.MustCompile(`^/v1/activities(/[^/]+)?$`)
+)
+
+// Guard allows only the paths of the contract, and only the caller's own
+// sessions unless the caller is root. Everything else is 404, so the ADK
+// server's builder and debug endpoints are not reachable. Agents (the
+// delegation bridge) may only start and read activities.
+func Guard(app string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, ok := From(r.Context())
+		if !ok {
+			http.Error(w, "caller unknown", http.StatusForbidden)
+			return
+		}
+		p := r.URL.Path
+		if _, isAgent := c.Agent(); isAgent && !agentMay.MatchString(p) && !open[p] {
+			http.Error(w, "agents may only delegate", http.StatusForbidden)
+			return
+		}
+		switch {
+		case open[p], control.MatchString(p), p == "/agui":
+		case p == "/run" || p == "/run_sse":
+			if r.Method != http.MethodPost {
+				http.NotFound(w, r)
+				return
+			}
+			body, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			var req struct {
+				AppName string `json:"appName"`
+				UserID  string `json:"userId"`
+			}
+			if json.Unmarshal(body, &req) != nil {
+				http.Error(w, "bad request", http.StatusBadRequest)
+				return
+			}
+			if req.AppName != app || (!c.Root() && req.UserID != c.Name) {
+				http.Error(w, "not your session", http.StatusForbidden)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+		default:
+			m := userPath.FindStringSubmatch(p)
+			if m == nil || m[1] != app {
+				http.NotFound(w, r)
+				return
+			}
+			if !c.Root() && m[2] != c.Name {
+				http.Error(w, "not your session", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}

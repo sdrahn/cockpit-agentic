@@ -1,0 +1,6 @@
+/usr/libexec/cockpit-agentic/agent-launcher	--	gen_context(system_u:object_r:agent_exec_t,s0)
+/usr/libexec/cockpit-agentic/agent-delegate	--	gen_context(system_u:object_r:mcpsrv_agents_exec_t,s0)
+/etc/cockpit-agentic(/.*)?			gen_context(system_u:object_r:agent_conf_t,s0)
+/var/lib/agents(/.*)?				gen_context(system_u:object_r:agent_var_lib_t,s0)
+/run/agents(/.*)?				gen_context(system_u:object_r:agent_runtime_t,s0)
+/run/agents/[^/]+/api\.sock		-s	gen_context(system_u:object_r:agent_sock_t,s0)

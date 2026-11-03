@@ -1,0 +1,14 @@
+# A scheduled activity: %i is <agent>:<schedule> (CONTRACT.md §4, §11).
+# It asks the agent, as root, to start the schedule's activity.
+[Unit]
+Description=Scheduled activity %i
+Documentation=https://github.com/sdrahn/cockpit-agentic/blob/main/CONTRACT.md
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/cockpit-agentic/agent-launcher trigger %I
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX

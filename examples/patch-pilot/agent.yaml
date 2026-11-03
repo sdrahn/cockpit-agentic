@@ -1,0 +1,28 @@
+# Example agent: keeps the host patched, supervised (CONTRACT.md §4).
+#   agent-admin create patch-pilot --from agent.yaml
+#   agent-admin permissions patch-pilot < permissions.yaml
+version: 1
+name: patch-pilot
+description: Keeps the host patched within the maintenance window.
+model:
+  provider: openai              # an on-premises OpenAI-compatible server
+  name: qwen3-32b
+  endpoint: http://127.0.0.1:8000/v1
+instruction: |
+  You keep this SUSE Linux Enterprise host patched. Look before you
+  change anything: list the pending patches, say which are security
+  relevant, then install them. Installing needs an administrator's
+  approval; say what you will install and why before you ask.
+gateway:
+  servers: [zypp, systemd]
+limits:
+  max_llm_calls: 25
+  max_tool_calls: 40
+  max_invocation_seconds: 1800
+interaction:
+  agui: true
+  client_tools: deny
+schedules:
+  - name: compliance
+    on_calendar: "Mon..Fri 06:00"
+    prompt: List the pending security patches and report them. Do not install anything.

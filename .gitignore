@@ -1,3 +1,5 @@
 bin/
 *.db
 /node_modules/
+selinux/*.pp
+selinux/tmp/

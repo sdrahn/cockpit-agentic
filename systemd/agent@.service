@@ -1,0 +1,56 @@
+# Agent %i: one ADK agent, started by its socket (cockpit-agentic
+# CONTRACT.md §5). Per-agent changes go into
+# /etc/systemd/system/agent@%i.service.d/ (Cockpit writes 50-cockpit.conf).
+[Unit]
+Description=Agent %i
+Documentation=https://github.com/sdrahn/cockpit-agentic/blob/main/CONTRACT.md
+Requires=agent@%i.socket
+After=agent@%i.socket network-online.target mcp-gateway.service
+Wants=network-online.target
+ConditionPathExists=/etc/cockpit-agentic/agents/%i/agent.yaml
+
+[Service]
+Type=exec
+ExecStart=/usr/libexec/cockpit-agentic/agent-launcher serve
+User=agent-%i
+Group=agent-%i
+SupplementaryGroups=mcp-users
+ConfigurationDirectory=cockpit-agentic/agents/%i
+StateDirectory=agents/%i
+StateDirectoryMode=0700
+ImportCredential=agent-%i.*
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=60s
+
+# Sandbox (CONTRACT.md §5). Drop-ins may loosen it; Cockpit marks them.
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# Not the gateway's control socket, not the other agents' sockets:
+# delegation goes through the gateway (§9). SELinux enforces both too.
+InaccessiblePaths=-/run/mcp-gateway/control.sock
+# The agent gets its own socket from systemd as a file descriptor.
+TemporaryFileSystem=/run/agents:ro

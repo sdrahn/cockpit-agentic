@@ -1,0 +1,15 @@
+# The socket of agent %i (cockpit-agentic CONTRACT.md §3, §5).
+[Unit]
+Description=Agent %i (socket)
+Documentation=https://github.com/sdrahn/cockpit-agentic/blob/main/CONTRACT.md
+
+[Socket]
+ListenStream=/run/agents/%i/api.sock
+SocketMode=0660
+SocketUser=root
+SocketGroup=agent-clients
+DirectoryMode=0755
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target
