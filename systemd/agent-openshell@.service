@@ -19,7 +19,7 @@ Environment=HOME=/root
 # Both may find the sandbox running and the forward set up already.
 ExecStartPre=-/usr/bin/openshell -g ${OPENSHELL_GATEWAY} sandbox start agent-%i
 ExecStartPre=-/usr/bin/openshell -g ${OPENSHELL_GATEWAY} forward start ${FORWARD_PORT} agent-%i -d
-ExecStart=/usr/libexec/cockpit-agentic/agent-openshell-relay --name %i --upstream http://127.0.0.1:${FORWARD_PORT} --secret-file /etc/cockpit-agentic/agents/%i/relay.secret --logs "/usr/bin/openshell -g ${OPENSHELL_GATEWAY} logs agent-%i --tail"
+ExecStart=/usr/libexec/cockpit-agentic/agent-openshell-relay --name %i --upstream http://127.0.0.1:${FORWARD_PORT} --secret-file /etc/cockpit-agentic/agents/%i/relay.secret --logs "/usr/libexec/cockpit-agentic/agent-openshell-logs agent-%i"
 ExecStopPost=-/usr/bin/openshell -g ${OPENSHELL_GATEWAY} forward stop ${FORWARD_PORT} agent-%i
 ExecStopPost=-/usr/bin/openshell -g ${OPENSHELL_GATEWAY} sandbox stop agent-%i
 Restart=on-failure

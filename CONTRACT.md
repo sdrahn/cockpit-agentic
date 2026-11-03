@@ -525,7 +525,7 @@ instead of `agent@.service`:
 | sandbox policy | `/etc/cockpit-agentic/agents/<name>/openshell-policy.yaml`: Landlock as a hard requirement; the image's system read-only; the network only to the model endpoint, for `agent-launcher` only (the gateway's rule comes with the provider). The host's loopback is `host.openshell.internal` (in the policy and in the configuration the sandbox gets) |
 | provider profile | `cockpit-agentic-gateway-<name>` (`openshell-profile.yaml`): the bearer token `AGENT_GATEWAY_TOKEN`, valid for the gateway's endpoint only, which attaching the provider adds to the sandbox's network policy (`protocol: mcp`, every known MCP method: the tools are the gateway's decision; the protocol revisions `2025-06-18` and `2025-11-25`, since OpenShell refuses the others; for `agent-launcher` only). The agent sends `Authorization: Bearer $AGENT_GATEWAY_TOKEN` (`gateway.token_env`); the supervisor swaps the placeholder for the token on the way out |
 | relay secret | in the sandbox's environment, which OpenShell flags as readable by the agent. That is intended: it proves to the agent that a request comes from the relay, so the agent must know it; host users who cannot reach the agent's socket must not (`relay.secret` is root's, 0600) |
-| relay | `agent-openshell@<name>.socket` owns `/run/agents/<name>/api.sock`; `agent-openshell@<name>.service` starts the sandbox and `openshell forward`, and runs `agent-openshell-relay` (SELinux `agent_relay_t`): callers by `SO_PEERCRED`, passed on as `X-Agentic-Caller` with `X-Agentic-Relay-Secret` (the agent's `--listen-tcp` mode believes nothing else); and the agent's records from `openshell logs`, written to the journal with their `AGENT_*` fields |
+| relay | `agent-openshell@<name>.socket` owns `/run/agents/<name>/api.sock`; `agent-openshell@<name>.service` starts the sandbox and `openshell forward`, and runs `agent-openshell-relay` (SELinux `agent_relay_t`): callers by `SO_PEERCRED`, passed on as `X-Agentic-Caller` with `X-Agentic-Relay-Secret` (the agent's `--listen-tcp` mode believes nothing else); and the agent's records from its container's output (`agent-openshell-logs`: `docker logs` or `podman logs` of the sandbox's container; `openshell logs` has only the supervisor's lines), written to the journal with their `AGENT_*` fields |
 | openshell CLI | `agent-admin` and the relay unit run it as root with `HOME=/root`: the OpenShell gateway named in `sandbox.openshell_gateway` is registered for root (`openshell gateway add ... --name <gateway>`), and the CLI keeps its forwards there |
 | token | `agent-admin set-credential <name> gateway-token < token` creates the provider and the sandbox; the token is an OAuth access token mcp-gateway accepts with subject `agent-<name>` |
 
@@ -632,7 +632,8 @@ is installed). There is no Cockpit page package yet.
   that only accepts the real token. Settled by the spike: the token
   stays with the supervisor; the control API is relayed with the
   caller; the agent's records reach the host journal through
-  `openshell logs` (the relay's bridge). Still open:
+  the relay's bridge, from the sandbox container's output (OpenShell's
+  own log stream has only the supervisor's lines). Still open:
   - mcp-gateway's own HTTPS listener in place of the stand-in, and the
     OAuth issuer of the agents' tokens (a local one, or the site's IdP
     with a client per agent; `http.local_user_claim` maps the subject to

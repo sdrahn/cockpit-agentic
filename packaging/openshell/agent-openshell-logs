@@ -1,0 +1,17 @@
+#!/bin/sh
+# agent-openshell-logs SANDBOX: follows the agent's own output (its
+# journal records, one JSON object per line) for agent-openshell-relay
+# --logs (CONTRACT.md §16a). OpenShell's "openshell logs" has only the
+# supervisor's lines: the sandbox's main process writes to its
+# container's stdout, which the compute driver's tools read.
+# AGENT_LOGS_SINCE (set by the relay): where the last stream ended.
+set -u
+sandbox=${1:?usage: agent-openshell-logs SANDBOX}
+since=${AGENT_LOGS_SINCE:-0}
+for rt in docker podman; do
+	command -v "$rt" >/dev/null 2>&1 || continue
+	id=$("$rt" ps -q --filter "name=$sandbox" 2>/dev/null | head -n 1)
+	[ -n "$id" ] && exec "$rt" logs --follow --since "$since" "$id" 2>&1
+done
+echo "agent-openshell-logs: no running container for sandbox $sandbox" >&2
+exit 1

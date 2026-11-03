@@ -152,6 +152,7 @@ done
 %{_libexecdir}/cockpit-agentic/agent-launcher
 %{_libexecdir}/cockpit-agentic/agent-delegate
 %{_libexecdir}/cockpit-agentic/agent-openshell-relay
+%{_libexecdir}/cockpit-agentic/agent-openshell-logs
 %{_libexecdir}/cockpit-agentic/agent-admin
 %{_unitdir}/agent@.service
 %{_unitdir}/agent@.socket

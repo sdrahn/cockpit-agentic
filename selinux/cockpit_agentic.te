@@ -138,6 +138,12 @@ dev_read_urand(agent_relay_t)
 logging_send_syslog_msg(agent_relay_t)
 userdom_search_admin_dir(agent_relay_t)
 userdom_read_admin_home_files(agent_relay_t)
+# agent-openshell-logs: docker or podman logs of the sandbox's container
+# (with Docker, through its socket). Podman as root under SELinux is open
+# (CONTRACT.md §21, O10).
+optional_policy(`
+	ifdef(`container_stream_connect', `container_stream_connect(agent_relay_t)')
+')
 # systemd creates the agents' sockets (agent@.socket, DirectoryMode=)
 # and tmpfiles /run/agents: with the right labels even before a relabel
 # (the package's tmpfiles run before this module is loaded).

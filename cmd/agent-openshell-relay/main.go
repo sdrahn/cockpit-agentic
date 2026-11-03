@@ -39,7 +39,7 @@ func run() error {
 	name := flag.String("name", "", "the agent")
 	upstream := flag.String("upstream", "", "the forwarded control API, e.g. http://127.0.0.1:47123")
 	secretFile := flag.String("secret-file", "", "the secret shared with the agent")
-	logs := flag.String("logs", "", "command that streams the sandbox's logs, e.g. 'openshell logs agent-NAME --tail'")
+	logs := flag.String("logs", "", "command that streams the agent's output, e.g. '/usr/libexec/cockpit-agentic/agent-openshell-logs agent-NAME'")
 	flag.Parse()
 	if *name == "" || *upstream == "" || *secretFile == "" {
 		return errors.New("--name, --upstream and --secret-file are needed")
@@ -82,11 +82,16 @@ func socket() (net.Listener, error) {
 // journal, restarting the command if it ends.
 func bridge(ctx context.Context, name, command string) {
 	log := journal.New(name, os.Stderr)
+	// The command is told where the last stream ended (AGENT_LOGS_SINCE),
+	// so that a restart neither repeats records nor loses the gap.
+	since := time.Now()
 	for ctx.Err() == nil {
 		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+		cmd.Env = append(os.Environ(), "AGENT_LOGS_SINCE="+since.UTC().Format(time.RFC3339Nano))
 		out, err := cmd.StdoutPipe()
 		if err == nil && cmd.Start() == nil {
 			relay.Bridge(bufio.NewReader(out), name, log)
+			since = time.Now()
 			cmd.Wait()
 		}
 		select {

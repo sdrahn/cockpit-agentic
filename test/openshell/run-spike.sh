@@ -61,6 +61,7 @@ systemd-tmpfiles --create /usr/lib/tmpfiles.d/cockpit-agentic.conf
 systemctl daemon-reload
 check "agent-admin is installed" command -v agent-admin
 check "the relay is installed" test -x /usr/libexec/cockpit-agentic/agent-openshell-relay
+check "its log source is installed" test -x /usr/libexec/cockpit-agentic/agent-openshell-logs
 
 section "Agent image"
 img=localhost/cockpit-agentic-agent:ci
@@ -116,6 +117,8 @@ diagnose() {
 		step "openshell sandbox get agent-sb" openshell -g openshell sandbox get agent-sb
 		step "openshell forward list" openshell -g openshell forward list
 		step "openshell logs agent-sb" openshell -g openshell logs agent-sb
+		step "containers (the relay's log source)" bash -c "docker ps --no-trunc --format '{{.ID}} {{.Names}} {{.Image}}'"
+		step "agent-openshell-logs agent-sb" timeout 5 /usr/libexec/cockpit-agentic/agent-openshell-logs agent-sb
 		step "listening on the host" bash -c "ss -ltnp | grep -E ':47[0-9]{3}\\b'"
 	} >"$d/all" 2>&1
 	echo "    | --- why the relay gets no answer"
@@ -135,7 +138,7 @@ if [ -n "$relay_ok" ]; then
 	check "status through the relay says lifecycle openshell" json_ok "$st" '.lifecycle.kind == "openshell" and .lifecycle.sandbox == "agent-sb"'
 	check "the relay passed root on (status is for supervisors)" json_ok "$st" '.contract == 1'
 	a=$(run_activity PROBE)
-	check "a read-only call runs" summary_has "$a" "probe ok" ||
+	check "a read-only call runs" summary_has "$a" "agentic-test__probe done" ||
 		{
 			echo "    | the agent answered: $(jq -c '{state, summary, reason, calls: [.calls[]? | {tool, state, reason}]}' <<<"$a" 2>/dev/null || head -c 400 <<<"$a")"
 			journalctl --no-pager -o cat --since "@$t0" AGENT_NAME=sb 2>/dev/null | tail -n 15 | sed 's/^/    | agent: /'
@@ -151,7 +154,7 @@ if [ -n "$relay_ok" ]; then
 	check "the change waits for an approval" eventually 60 bash -c "curl -s --unix-socket /run/agents/sb/api.sock http://agent/v1/activities/$id | jq -e '.state == \"waiting_approval\"' >/dev/null"
 	check "nothing ran before the decision" json_ok "$(admin /executed)" 'index("agentic-test__change") == null'
 	admin /approve/a-osh-1 -X POST >/dev/null
-	check "the activity finishes after the approval" eventually 60 bash -c "curl -s --unix-socket /run/agents/sb/api.sock http://agent/v1/activities/$id | jq -e '.state == \"finished\" and (.summary | contains(\"changed test\"))' >/dev/null"
+	check "the activity finishes after the approval" eventually 60 bash -c "curl -s --unix-socket /run/agents/sb/api.sock http://agent/v1/activities/$id | jq -e '.state == \"finished\" and (.summary | contains(\"agentic-test__change done\"))' >/dev/null"
 	check "journal (from OpenShell's log stream): approval.pending" eventually 60 journal_has approval.pending '.AGENT_APPROVAL_ID == "a-osh-1"'
 	check "journal: approval.resolved approved" eventually 60 journal_has approval.resolved '.AGENT_OUTCOME == "approved"'
 
