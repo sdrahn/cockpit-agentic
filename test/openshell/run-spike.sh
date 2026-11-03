@@ -34,7 +34,7 @@ current_section=start
 pass() { echo "PASS: $*"; results_list+=("$current_section"$'\t'pass$'\t'"$*"); }
 fail() { echo "FAIL: $*"; failed=1; results_list+=("$current_section"$'\t'fail$'\t'"$*"); }
 skip() { echo "SKIP: $*"; results_list+=("$current_section"$'\t'skip$'\t'"$*"); }
-check() { local d=$1; shift; if "$@"; then pass "$d"; else fail "$d"; fi; }
+check() { local d=$1; shift; if "$@"; then pass "$d"; else fail "$d"; return 1; fi; }
 section() { printf '\n=== %s\n' "$*"; current_section=$*; }
 eventually() { local deadline=$((SECONDS + $1)); shift; until "$@"; do [ "$SECONDS" -ge "$deadline" ] && return 1; sleep 1; done; }
 not() { ! "$@"; }
@@ -128,6 +128,7 @@ else
 	diagnose
 	relay_ok=
 fi
+check "the relay unit's openshell knows the gateway (HOME=/root)" not bash -c "journalctl --no-pager -o cat --since @$t0 -u agent-openshell@sb.service | grep -q 'Unknown gateway'"
 if [ -n "$relay_ok" ]; then
 	st=$(api /v1/status)
 	check "status through the relay says lifecycle openshell" json_ok "$st" '.lifecycle.kind == "openshell" and .lifecycle.sandbox == "agent-sb"'
@@ -158,7 +159,9 @@ fi
 section "Emergency stop"
 check "agent-admin stop-all" agent-admin stop-all
 check "the relay is stopped" not systemctl is-active -q agent-openshell@sb.socket
-check "the sandbox is stopped" eventually 60 bash -c 'openshell -g openshell sandbox get agent-sb -o json 2>/dev/null | jq -e "(.status // .state // \"\") | ascii_downcase | test(\"stop|exit|terminat\")" >/dev/null'
+# The state, wherever OpenShell's JSON has it (a string or an object).
+check "the sandbox is stopped" eventually 60 bash -c 'openshell -g openshell sandbox get agent-sb -o json 2>/dev/null | jq -e "[.status, .state, .phase] | tostring | ascii_downcase | test(\"stop|exit|terminat\")" >/dev/null' ||
+	echo "    | OpenShell says: $(timeout 20 openshell -g openshell sandbox get agent-sb -o json </dev/null 2>&1 | jq -c 'del(.spec, .policy, .network_policies)' 2>&1 | head -c 600)"
 check "agent-admin release-all" agent-admin release-all
 check "the relay is back" systemctl is-active -q agent-openshell@sb.socket
 
