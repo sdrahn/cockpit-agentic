@@ -6,6 +6,8 @@ package admin
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +22,7 @@ import (
 
 	"github.com/sdrahn/cockpit-agentic/internal/config"
 	"github.com/sdrahn/cockpit-agentic/internal/delegate"
+	"github.com/sdrahn/cockpit-agentic/internal/openshell"
 )
 
 type Admin struct {
@@ -33,6 +36,13 @@ type Admin struct {
 	Control func(sock, path string) error
 	// Start starts an activity on an agent's socket (schedules).
 	Start func(sock string, body map[string]any) error
+	// RunEnv runs a command with extra environment variables (secrets
+	// handed to openshell, which reads them from its environment).
+	RunEnv func(env []string, name string, args ...string) error
+	// Image is the OpenShell sandbox image (AGENTIC_OPENSHELL_IMAGE).
+	Image string
+	// Secret makes the relay secrets.
+	Secret func() string
 }
 
 func New() *Admin {
@@ -45,7 +55,26 @@ func New() *Admin {
 		Out: os.Stdout, Now: time.Now,
 		Control: func(sock, path string) error { return delegate.Post(context.Background(), sock, path) },
 		Start:   func(sock string, body map[string]any) error { return delegate.Start(context.Background(), sock, body) },
+		RunEnv: func(env []string, name string, args ...string) error {
+			c := exec.Command(name, args...)
+			c.Env = append(os.Environ(), env...)
+			c.Stdout, c.Stderr = os.Stdout, os.Stderr
+			return c.Run()
+		},
+		Image: envOr("AGENTIC_OPENSHELL_IMAGE", "localhost/cockpit-agentic-agent:latest"),
+		Secret: func() string {
+			b := make([]byte, 32)
+			rand.Read(b)
+			return hex.EncodeToString(b)
+		},
 	}
+}
+
+func envOr(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
 }
 
 func (a *Admin) p(path string) string { return filepath.Join(a.Root, path) }
@@ -133,7 +162,71 @@ func (a *Admin) Create(name, from string) error {
 	if err := a.Run(nil, "systemctl", "daemon-reload"); err != nil {
 		return err
 	}
+	if cfg.Sandbox.Kind == "openshell" {
+		return a.createOpenShell(cfg)
+	}
 	return a.Run(nil, "systemctl", "enable", "--now", "agent@"+name+".socket")
+}
+
+// createOpenShell prepares an OpenShell agent (CONTRACT.md §16a): the
+// policy, the gateway provider profile, the relay's secret and port. The
+// sandbox itself is created once the gateway token is set
+// (set-credential NAME gateway-token), since its provider needs it.
+func (a *Admin) createOpenShell(cfg *config.Config) error {
+	dir := a.agentDir(cfg.Name)
+	pol, err := openshell.Policy(cfg)
+	if err != nil {
+		return err
+	}
+	prof, err := openshell.Profile(cfg)
+	if err != nil {
+		return err
+	}
+	env := fmt.Sprintf("# agent-admin: agent %s in OpenShell\nOPENSHELL_GATEWAY=%s\nFORWARD_PORT=%d\nAGENT_IMAGE=%s\n",
+		cfg.Name, cfg.Sandbox.OpenShellGateway, openshell.Port(cfg.Name), a.Image)
+	for f, c := range map[string]struct {
+		b    []byte
+		mode os.FileMode
+	}{
+		"openshell-policy.yaml":  {pol, 0o644},
+		"openshell-profile.yaml": {prof, 0o644},
+		"openshell.env":          {[]byte(env), 0o644},
+		"relay.secret":           {[]byte(a.Secret() + "\n"), 0o600},
+	} {
+		if err := writeFile(filepath.Join(dir, f), c.b, c.mode); err != nil {
+			return err
+		}
+	}
+	if err := a.Run(nil, "openshell", "-g", cfg.Sandbox.OpenShellGateway, "profile", "import", "-f", filepath.Join(dir, "openshell-profile.yaml"), "--global"); err != nil {
+		return fmt.Errorf("importing the provider profile: %w", err)
+	}
+	fmt.Fprintf(a.Out, "agent %s: set its gateway token next: agent-admin set-credential %s gateway-token < token\n", cfg.Name, cfg.Name)
+	return nil
+}
+
+// startOpenShell creates the provider with the token, the sandbox, and
+// starts the relay.
+func (a *Admin) startOpenShell(cfg *config.Config, token string) error {
+	g := cfg.Sandbox.OpenShellGateway
+	dir := a.agentDir(cfg.Name)
+	a.Run(nil, "openshell", "-g", g, "provider", "delete", openshell.ProviderName(cfg.Name))
+	if err := a.RunEnv([]string{openshell.TokenEnv + "=" + token}, "openshell", "-g", g, "provider", "create",
+		"--name", openshell.ProviderName(cfg.Name), "--type", openshell.ProfileID(cfg.Name), "--credential", openshell.TokenEnv); err != nil {
+		return fmt.Errorf("creating the provider: %w", err)
+	}
+	secret, err := os.ReadFile(filepath.Join(dir, "relay.secret"))
+	if err != nil {
+		return err
+	}
+	a.Run(nil, "openshell", "-g", g, "sandbox", "delete", openshell.SandboxName(cfg.Name))
+	args, err := openshell.CreateArgs(cfg, a.Image, filepath.Join(dir, "openshell-policy.yaml"), strings.TrimSpace(string(secret)), openshell.Port(cfg.Name))
+	if err != nil {
+		return err
+	}
+	if err := a.Run(nil, "openshell", append([]string{"-g", g}, args...)...); err != nil {
+		return fmt.Errorf("creating the sandbox: %w", err)
+	}
+	return a.Run(nil, "systemctl", "enable", "--now", "agent-openshell@"+cfg.Name+".socket")
 }
 
 // Edit replaces an agent's configuration and restarts it if it runs.
@@ -171,6 +264,15 @@ func (a *Admin) Delete(name string, keepState bool) error {
 	}
 	cfg, _ := config.Load(a.agentDir(name))
 	units := []string{"agent@" + name + ".socket", "agent@" + name + ".service"}
+	if cfg != nil && cfg.Sandbox.Kind == "openshell" {
+		units = []string{"agent-openshell@" + name + ".socket", "agent-openshell@" + name + ".service"}
+		g := cfg.Sandbox.OpenShellGateway
+		defer func() {
+			a.Run(nil, "openshell", "-g", g, "sandbox", "delete", openshell.SandboxName(name))
+			a.Run(nil, "openshell", "-g", g, "provider", "delete", openshell.ProviderName(name))
+			a.Run(nil, "openshell", "-g", g, "profile", "delete", openshell.ProfileID(name))
+		}()
+	}
 	if cfg != nil {
 		for _, s := range cfg.Schedules {
 			units = append(units, scheduleUnit(name, s.Name)+".timer")
@@ -200,6 +302,24 @@ func (a *Admin) SetCredential(name, cred string, secret io.Reader) error {
 	}
 	if !config.ValidCredential(cred) {
 		return fmt.Errorf("%q is not a valid credential name", cred)
+	}
+	if cred == "gateway-token" {
+		cfg, err := config.Load(a.agentDir(name))
+		if err != nil {
+			return err
+		}
+		if cfg.Sandbox.Kind != "openshell" {
+			return fmt.Errorf("agent %s reaches the gateway by its socket; gateway-token is for OpenShell agents", name)
+		}
+		b, err := io.ReadAll(io.LimitReader(secret, 64<<10))
+		if err != nil {
+			return err
+		}
+		tok := strings.TrimSpace(string(b))
+		if tok == "" {
+			return errors.New("gateway-token: empty")
+		}
+		return a.startOpenShell(cfg, tok)
 	}
 	id := "agent-" + name + "." + cred
 	if err := os.MkdirAll(a.p(CredstoreDir), 0o700); err != nil {
@@ -330,7 +450,16 @@ func (a *Admin) StopAll(by string) error {
 	if err := writeFile(a.p(GatewayStop), []byte(b), 0o644); err != nil {
 		return err
 	}
-	return a.Run(nil, "systemctl", "stop", "agent-schedule@*.timer", "agent@*.socket", "agent@*.service")
+	err := a.Run(nil, "systemctl", "stop", "agent-schedule@*.timer", "agent@*.socket", "agent@*.service",
+		"agent-openshell@*.socket", "agent-openshell@*.service")
+	// Sandboxes outlive their relay unit: stop them by name as well.
+	names, _ := a.List()
+	for _, n := range names {
+		if cfg, e := config.Load(a.agentDir(n)); e == nil && cfg.Sandbox.Kind == "openshell" {
+			a.Run(nil, "openshell", "-g", cfg.Sandbox.OpenShellGateway, "sandbox", "stop", openshell.SandboxName(n))
+		}
+	}
+	return err
 }
 
 // ReleaseAll undoes StopAll: sockets and timers that are enabled start again.
@@ -344,8 +473,13 @@ func (a *Admin) ReleaseAll() error {
 	}
 	var units []string
 	for _, n := range names {
-		units = append(units, "agent@"+n+".socket")
-		if cfg, err := config.Load(a.agentDir(n)); err == nil {
+		cfg, err := config.Load(a.agentDir(n))
+		if err == nil && cfg.Sandbox.Kind == "openshell" {
+			units = append(units, "agent-openshell@"+n+".socket")
+		} else {
+			units = append(units, "agent@"+n+".socket")
+		}
+		if err == nil {
 			for _, s := range cfg.Schedules {
 				units = append(units, scheduleUnit(n, s.Name)+".timer")
 			}

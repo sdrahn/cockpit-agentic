@@ -5,6 +5,7 @@ package peercred
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"os/user"
 	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -133,5 +135,34 @@ func Guard(app string, next http.Handler) http.Handler {
 			}
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+// Relay headers (CONTRACT.md §3a): the host relay of a sandboxed agent
+// passes the caller it saw by SO_PEERCRED, with the secret it shares
+// with the agent.
+const (
+	HeaderCaller = "X-Agentic-Caller" // "<uid>:<name>"
+	HeaderSecret = "X-Agentic-Relay-Secret"
+)
+
+// Relayed identifies callers by the relay headers, for an agent that
+// listens on TCP inside its sandbox. Without the right secret, or
+// without a caller, a request is refused.
+func Relayed(secret string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := r.Header.Get(HeaderSecret)
+		if secret == "" || subtle.ConstantTimeCompare([]byte(got), []byte(secret)) != 1 {
+			http.Error(w, "not from the relay", http.StatusForbidden)
+			return
+		}
+		uid, name, ok := strings.Cut(r.Header.Get(HeaderCaller), ":")
+		n, err := strconv.Atoi(uid)
+		if !ok || err != nil || n < 0 || name == "" {
+			http.Error(w, "caller unknown", http.StatusForbidden)
+			return
+		}
+		r.Header.Del(HeaderSecret)
+		next.ServeHTTP(w, r.WithContext(WithCaller(r.Context(), Caller{UID: n, Name: name})))
 	})
 }

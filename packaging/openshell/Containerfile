@@ -1,0 +1,12 @@
+# The image an agent runs in under NVIDIA OpenShell (CONTRACT.md §16a):
+# openSUSE Leap 16 with agent-launcher. Its configuration and the relay's
+# secret come in the sandbox's environment (agent-admin), its state lives
+# in the sandbox's working directory.
+#
+#   make build
+#   podman build -t localhost/cockpit-agentic-agent:latest -f packaging/openshell/Containerfile .
+FROM registry.opensuse.org/opensuse/leap:16.0
+RUN zypper -n in --no-recommends ca-certificates && zypper -n clean -a
+COPY bin/agent-launcher /usr/libexec/cockpit-agentic/agent-launcher
+LABEL org.opencontainers.image.title="cockpit-agentic agent" \
+      org.opencontainers.image.source="https://github.com/sdrahn/cockpit-agentic"

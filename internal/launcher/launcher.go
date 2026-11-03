@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/artifact"
@@ -95,7 +96,7 @@ func New(ctx context.Context, o Options) (*Launcher, error) {
 
 	gw, err := mcptoolset.New(mcptoolset.Config{
 		Client:    gateway.NewClient(cfg.Name, Version, l.Governor.OnGatewayLog),
-		Transport: &gateway.Transport{Socket: cfg.Gateway.Socket},
+		Transport: gatewayTransport(cfg),
 	})
 	if err != nil {
 		return nil, err
@@ -156,6 +157,13 @@ func New(ctx context.Context, o Options) (*Launcher, error) {
 		o.Log.Log(journal.AgentStart, "Expiring old sessions failed: "+err.Error(), journal.Fields{"OUTCOME": "error"})
 	}
 	return l, nil
+}
+
+func gatewayTransport(cfg *config.Config) mcp.Transport {
+	if cfg.Gateway.URL != "" {
+		return gateway.HTTPTransport(cfg.Gateway.URL, cfg.Gateway.TokenEnv, nil)
+	}
+	return &gateway.Transport{Socket: cfg.Gateway.Socket}
 }
 
 func newModel(ctx context.Context, cfg *config.Config, creds string) (model.LLM, error) {
@@ -298,7 +306,8 @@ type Status struct {
 }
 
 type GatewayStatus struct {
-	Socket    string `json:"socket"`
+	Socket    string `json:"socket,omitempty"`
+	URL       string `json:"url,omitempty"`
 	Reachable bool   `json:"reachable"`
 }
 
@@ -313,12 +322,17 @@ func (l *Launcher) status(w http.ResponseWriter, r *http.Request) {
 	if lc := l.cfg.Lifecycle(); lc["kind"] == "systemd" {
 		units = map[string]string{"service": lc["service"], "socket": lc["socket"]}
 	}
-	_, err := os.Stat(l.cfg.Gateway.Socket)
+	reachable := false
+	if l.cfg.Gateway.URL != "" {
+		reachable = true // not checked without a request; the calls show it
+	} else if _, err := os.Stat(l.cfg.Gateway.Socket); err == nil {
+		reachable = true
+	}
 	writeJSON(w, http.StatusOK, Status{
 		Contract: config.ContractVersion, Implementation: "cockpit-agentic/adk-go", Name: l.cfg.Name, Version: Version,
 		Units: units, Lifecycle: l.cfg.Lifecycle(),
 		Model: l.cfg.Model.Provider + ":" + l.cfg.Model.Name, Paused: l.Governor.Paused(),
-		Gateway:  GatewayStatus{Socket: l.cfg.Gateway.Socket, Reachable: err == nil},
+		Gateway:  GatewayStatus{Socket: l.cfg.Gateway.Socket, URL: l.cfg.Gateway.URL, Reachable: reachable},
 		InFlight: nonNil(l.Governor.InFlight()), Running: running, Started: l.started, Limits: l.cfg.Limits,
 		Interaction: map[string]any{"agui": l.cfg.Interaction.AGUI, "client_tools": nonNil(l.cfg.Interaction.ClientTools.Allow)},
 		Schedules:   nonNil(l.cfg.Schedules),

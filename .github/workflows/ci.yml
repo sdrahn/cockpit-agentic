@@ -191,3 +191,38 @@ jobs:
             echo
             grep -E '^(FAIL|SKIP):' "$f" | sed 's/^/- /' || true
           } >>"$GITHUB_STEP_SUMMARY"
+
+  # The OpenShell backend (CONTRACT.md §3a, §16a) with a real NVIDIA
+  # OpenShell on Docker: an agent in a sandbox, its gateway token held by
+  # the supervisor, supervised through the relayed socket.
+  openshell:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: CGO_ENABLED=0 make build build-tests
+      - name: Install OpenShell
+        run: |
+          curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+      - name: OpenShell for root
+        # The tests run as root (agent-admin, units); the CLI and its
+        # gateway registration are the runner user's.
+        run: |
+          openshell --version
+          openshell status || true
+          sudo install -m 0755 "$(command -v openshell)" /usr/bin/openshell
+          sudo mkdir -p /root/.config && sudo cp -a "$HOME/.config/openshell" /root/.config/ 2>/dev/null || true
+          sudo openshell gateway list || true
+      - name: Run the OpenShell tests
+        run: sudo -E env "PATH=$PATH" test/openshell/run-spike.sh --disposable --results "$RUNNER_TEMP/osh"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openshell-logs
+          path: ${{ runner.temp }}/osh/
+          if-no-files-found: ignore

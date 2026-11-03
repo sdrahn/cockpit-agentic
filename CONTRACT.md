@@ -512,6 +512,23 @@ not reach agents' sockets.)
 - **Models:** `openai` (`internal/openai`: chat completions with tools),
   `gemini`, `vertex`.
 
+## 16a. The OpenShell backend (draft, O10)
+
+An agent with `sandbox: {kind: openshell}` runs under NVIDIA OpenShell
+instead of `agent@.service`:
+
+| Piece | What |
+|---|---|
+| image | `packaging/openshell/Containerfile`: Leap 16 with `agent-launcher` (`AGENTIC_OPENSHELL_IMAGE`, default `localhost/cockpit-agentic-agent:latest`) |
+| sandbox `agent-<name>` | created by `agent-admin` with `--policy`, `--provider agent-<name>-gateway` and the environment: the configuration (`AGENTIC_CONFIG`, base64), the relay secret (`AGENTIC_RELAY_SECRET`), the gateway token's placeholder (`AGENT_GATEWAY_TOKEN`, set by OpenShell). The agent runs as OpenShell's `sandbox` user and serves its control API on `127.0.0.1:<port>` inside the sandbox (port 47000–47999, stable per name) |
+| sandbox policy | `/etc/cockpit-agentic/agents/<name>/openshell-policy.yaml`: Landlock as a hard requirement; the image's system read-only; the network only to mcp-gateway (`protocol: mcp`, the provider's credential bound to it) and to the model endpoint, for `agent-launcher` only. The host's loopback is `host.openshell.internal` (in the policy and in the configuration the sandbox gets) |
+| provider profile | `cockpit-agentic-gateway-<name>` (`openshell-profile.yaml`): the bearer token `AGENT_GATEWAY_TOKEN`, valid for the gateway's endpoint only. The agent sends `Authorization: Bearer $AGENT_GATEWAY_TOKEN` (`gateway.token_env`); the supervisor swaps the placeholder for the token on the way out |
+| relay | `agent-openshell@<name>.socket` owns `/run/agents/<name>/api.sock`; `agent-openshell@<name>.service` starts the sandbox and `openshell forward`, and runs `agent-openshell-relay` (SELinux `agent_relay_t`): callers by `SO_PEERCRED`, passed on as `X-Agentic-Caller` with `X-Agentic-Relay-Secret` (the agent's `--listen-tcp` mode believes nothing else); and the agent's records from `openshell logs`, written to the journal with their `AGENT_*` fields |
+| token | `agent-admin set-credential <name> gateway-token < token` creates the provider and the sandbox; the token is an OAuth access token mcp-gateway accepts with subject `agent-<name>` |
+
+`stop-all` stops the relay units and every OpenShell agent's sandbox by
+name; the gateway's `agents_control` flag denies them like any agent.
+
 ## 17. `agent-admin`
 
 Run as root, by hand or by Cockpit with administrative access:
@@ -606,18 +623,20 @@ is installed). There is no Cockpit page package yet.
 - **O8 — second host.** Demonstrating host independence: a mock host
   (or a kit adapter) serving §5, §10 and §11 for the Cockpit page to run
   against.
-- **O10 — OpenShell backend.** §3a is a draft until the spike
-  (`spike/openshell`) has run on SLES 16 / Leap 16: an agent in an
-  OpenShell sandbox on Podman, reaching mcp-gateway over HTTPS with a
-  token the supervisor adds, its control API relayed to the host
-  socket, approvals, journal records and the emergency stop working as
-  with the `systemd` backend. Open questions:
-  - which OAuth issuer mints the agents' tokens: a local one, or the
-    site's IdP with a client per agent;
-  - how the agent's records reach the host journal (OpenShell's log
-    stream relayed to the host, or journald's remote protocol);
-  - SELinux for the containers (`container_t` with MCS) instead of
-    `agent_t`;
+- **O10 — OpenShell backend.** §3a and §16a are a draft. CI runs the
+  backend with a real OpenShell on Docker (`test/openshell/run-spike.sh`,
+  job `openshell`), against a stand-in for mcp-gateway's HTTP listener
+  that only accepts the real token. Settled by the spike: the token
+  stays with the supervisor; the control API is relayed with the
+  caller; the agent's records reach the host journal through
+  `openshell logs` (the relay's bridge). Still open:
+  - mcp-gateway's own HTTPS listener in place of the stand-in, and the
+    OAuth issuer of the agents' tokens (a local one, or the site's IdP
+    with a client per agent; `http.local_user_claim` maps the subject to
+    `agent-<name>`);
+  - SLES 16 / Leap 16 with Podman and SELinux enforcing: the containers'
+    domain (`container_t` with MCS) and `agent_relay_t`, which CI builds
+    but has not yet run enforcing;
   - OpenShell's packaging for SLES and Leap, and its maturity (0.1.x).
 - **O9 — Cockpit page.** The control plane itself: the views of the
   mockup (`docs/mockup.png`), built only on Part I and the gateway's

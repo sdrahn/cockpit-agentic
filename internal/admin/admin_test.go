@@ -29,6 +29,12 @@ func newAdmin(t *testing.T) (*Admin, *rec) {
 			r.cmds = append(r.cmds, "START "+sock+" "+body["prompt"].(string)+" "+o["kind"].(string)+" "+o["schedule"].(string)+" "+o["by"].(string))
 			return nil
 		},
+		RunEnv: func(env []string, name string, args ...string) error {
+			r.cmds = append(r.cmds, strings.Join(env, " ")+" "+name+" "+strings.Join(args, " "))
+			return nil
+		},
+		Image:  "localhost/agent:test",
+		Secret: func() string { return "0123456789abcdef0123456789abcdef" },
 	}
 	return a, r
 }
@@ -154,5 +160,94 @@ func TestTrigger(t *testing.T) {
 		if err := a.Trigger(bad); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+const oshYml = `version: 1
+name: sb
+model: {provider: openai, name: m, endpoint: "http://127.0.0.1:8008/v1"}
+gateway: {url: "https://gw.example.com:8443/mcp", servers: [zypp]}
+sandbox: {kind: openshell}
+`
+
+func TestOpenShellAgent(t *testing.T) {
+	a, r := newAdmin(t)
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(oshYml), 0o644)
+	if err := a.Create("sb", f); err != nil {
+		t.Fatal(err)
+	}
+	dir := a.agentDir("sb")
+	for name, want := range map[string]string{
+		"openshell-policy.yaml":  "run_as_user: sandbox",
+		"openshell-profile.yaml": "id: cockpit-agentic-gateway-sb",
+		"openshell.env":          "OPENSHELL_GATEWAY=local",
+		"relay.secret":           "0123456789abcdef",
+	} {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil || !strings.Contains(string(b), want) {
+			t.Errorf("%s: %v, lacks %q:\n%s", name, err, want, b)
+		}
+	}
+	if st, _ := os.Stat(filepath.Join(dir, "relay.secret")); st.Mode().Perm() != 0o600 {
+		t.Errorf("relay.secret mode %v", st.Mode())
+	}
+	all := strings.Join(r.cmds, "\n")
+	if !strings.Contains(all, "openshell -g local profile import -f "+filepath.Join(dir, "openshell-profile.yaml")+" --global") {
+		t.Errorf("profile not imported:\n%s", all)
+	}
+	if strings.Contains(all, "agent@sb.socket") || strings.Contains(all, "sandbox create") {
+		t.Errorf("no systemd socket and no sandbox before the token:\n%s", all)
+	}
+
+	r.cmds = nil
+	if err := a.SetCredential("sb", "gateway-token", strings.NewReader("tok-123\n")); err != nil {
+		t.Fatal(err)
+	}
+	all = strings.Join(r.cmds, "\n")
+	for _, want := range []string{
+		"AGENT_GATEWAY_TOKEN=tok-123 openshell -g local provider create --name agent-sb-gateway --type cockpit-agentic-gateway-sb --credential AGENT_GATEWAY_TOKEN",
+		"openshell -g local sandbox create --name agent-sb --from localhost/agent:test --policy " + filepath.Join(dir, "openshell-policy.yaml"),
+		"--env AGENTIC_RELAY_SECRET=0123456789abcdef0123456789abcdef",
+		"systemctl enable --now agent-openshell@sb.socket",
+	} {
+		if !strings.Contains(all, want) {
+			t.Errorf("missing %q in\n%s", want, all)
+		}
+	}
+	if strings.Contains(all, "tok-123 ") && strings.Count(all, "tok-123") != 1 {
+		t.Error("token on a command line")
+	}
+
+	r.cmds = nil
+	a.StopAll("alice")
+	all = strings.Join(r.cmds, "\n")
+	if !strings.Contains(all, "agent-openshell@*.service") || !strings.Contains(all, "openshell -g local sandbox stop agent-sb") {
+		t.Errorf("stop-all misses the sandbox:\n%s", all)
+	}
+	r.cmds = nil
+	a.ReleaseAll()
+	if all = strings.Join(r.cmds, "\n"); !strings.Contains(all, "agent-openshell@sb.socket") {
+		t.Errorf("release-all:\n%s", all)
+	}
+	r.cmds = nil
+	if err := a.Delete("sb", false); err != nil {
+		t.Fatal(err)
+	}
+	all = strings.Join(r.cmds, "\n")
+	for _, want := range []string{"disable --now agent-openshell@sb.socket", "sandbox delete agent-sb", "provider delete agent-sb-gateway", "profile delete cockpit-agentic-gateway-sb"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("delete misses %q:\n%s", want, all)
+		}
+	}
+}
+
+func TestGatewayTokenOnlyForOpenShell(t *testing.T) {
+	a, _ := newAdmin(t)
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(yml), 0o644)
+	a.Create("patch-pilot", f)
+	if err := a.SetCredential("patch-pilot", "gateway-token", strings.NewReader("x")); err == nil {
+		t.Error("gateway-token accepted for a systemd agent")
 	}
 }
