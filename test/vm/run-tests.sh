@@ -63,7 +63,7 @@ fail_context() {
 		last_answer=
 	fi
 	journalctl --since -20s --no-pager -o short-precise 2>/dev/null |
-		grep -E 'agent-|agent@|mcp-gateway' | grep -iE 'error|fail|denied|status=[0-9]' |
+		grep -E 'agent-|agent@|mcp-gateway' | grep -iE 'error|fail|denied|panic|status=[0-9]' |
 		tail -6 | sed 's/^/    | /'
 	# The SELinux denials behind a "Permission denied", in the log itself.
 	# (ausearch when auditd runs, the kernel log when it does not).
@@ -81,7 +81,7 @@ check() { # check <description> <command...>
 		skip "$desc (no agent is running: see Discovery)"
 		return
 	fi
-	if "$@"; then pass "$desc"; else fail "$desc"; fi
+	if "$@"; then pass "$desc"; else fail "$desc"; return 1; fi
 }
 needs_agent() {
 	case $current_section in
@@ -367,9 +367,16 @@ check "the schedule's run is an activity of origin schedule" eventually 30 journ
 
 section AG-UI
 out=$(api t1 /agui -N -X POST -d '{"threadId":"agentic-test-1","messages":[{"role":"user","content":"PROBE"}],"tools":[{"name":"evil","parameters":{"type":"object"}}]}')
+agui_ok=1
 for ev in RUN_STARTED STATE_SNAPSHOT TOOL_CALL_START TOOL_CALL_RESULT TEXT_MESSAGE_CONTENT RUN_FINISHED; do
-	check "the stream has $ev" grep -q "\"type\":\"$ev\"" <<<"$out"
+	check "the stream has $ev" grep -q "\"type\":\"$ev\"" <<<"$out" || agui_ok=
 done
+if [ -z "$agui_ok" ]; then
+	# What the stream had instead: its events, and a RUN_ERROR's message.
+	echo "    | stream: $(sed -n 's/^data: //p' <<<"$out" | jq -rs 'map(.type) | join(",")' 2>/dev/null)"
+	sed -n 's/^data: //p' <<<"$out" | jq -c 'select(.type == "RUN_ERROR")' 2>/dev/null | sed 's/^/    | /'
+	journalctl --since -60s --no-pager -o cat -u agent@t1.service 2>/dev/null | tail -n 20 | sed 's/^/    | t1: /'
+fi
 check "a client tool not allowed is journaled" eventually 10 journal_has t1 tool.denied.local '.AGENT_TOOL == "evil"'
 
 section "Access to the socket"
