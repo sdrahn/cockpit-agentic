@@ -1,0 +1,386 @@
+#!/bin/bash
+# Functional tests of cockpit-agentic on a real SLES 16 or Leap 16 system
+# with mcp-gateway: agents created with agent-admin, run by systemd,
+# governed by the gateway (supervised by default, approvals, autonomy
+# modes, pause, emergency stop), schedules, AG-UI, delegation, the
+# journal records, the sandbox and SELinux. Package cockpit-agentic-tests
+# installs it as /usr/libexec/cockpit-agentic/tests/run-tests.sh for
+# openQA and other test systems. Next to it:
+#   fakemodel  a scripted OpenAI-compatible model server (test/vm/fakemodel)
+#   testsrv    the MCP server agentic-test (test/vm/testsrv)
+#
+# Usage: run-tests.sh --disposable [--results DIR]
+#
+# It runs as root on a system that is there for testing: it creates
+# agents (t1, t2) and a user (agentic-tester), registers MCP servers
+# with the gateway, triggers the emergency stop, and does not undo all
+# of it. --disposable says that this is fine.
+#   --results DIR  writes results.tap (TAP) and results.xml (JUnit) there
+# Every check prints PASS, FAIL or SKIP; the script exits 1 if any failed,
+# 2 on wrong usage.
+set -u
+dir=$(cd "$(dirname "$0")" && pwd)
+failed=0
+disposable= results=
+usage() {
+	echo "usage: $0 --disposable [--results DIR]" >&2
+	exit 2
+}
+while [ $# -gt 0 ]; do
+	case $1 in
+	--disposable) disposable=1 ;;
+	--results) results=${2:?}; shift ;;
+	*) usage ;;
+	esac
+	shift
+done
+if [ -z "$disposable" ]; then
+	echo "$0: changes this system for good (agents, users, gateway servers, an emergency stop);" >&2
+	echo "run it on a system that is there for testing, with --disposable" >&2
+	exit 2
+fi
+[ "$(id -u)" = 0 ] || { echo "$0: runs as root" >&2; exit 2; }
+work=/root/agentic-test
+mkdir -p "$work"
+t0=$(date +%s)
+
+# --- the framework (as mcp-gateway's test/vm/run-tests.sh) ------------------
+
+current_section=start
+last_check=$SECONDS
+results_list=()
+record() {
+	results_list+=("$current_section"$'\t'"$1"$'\t'"$2"$'\t'"$((SECONDS - last_check))")
+	last_check=$SECONDS
+}
+pass() { echo "PASS: $*"; record pass "$*"; }
+fail() { echo "FAIL: $*"; failed=1; record fail "$*"; fail_context; }
+skip() { echo "SKIP: $*"; record skip "$*"; }
+fail_context() {
+	journalctl --since -20s --no-pager -o short-precise 2>/dev/null |
+		grep -E 'agent-|agent@|mcp-gateway' | grep -iE 'error|fail|denied|status=[0-9]' |
+		tail -10 | sed 's/^/    | /'
+}
+check() { # check <description> <command...>
+	local desc=$1
+	shift
+	if "$@"; then pass "$desc"; else fail "$desc"; fi
+}
+section() {
+	printf '\n=== %s\n' "$*"
+	current_section=$*
+}
+eventually() { # eventually <seconds> <command...>
+	local deadline=$((SECONDS + $1))
+	shift
+	until "$@"; do
+		[ "$SECONDS" -ge "$deadline" ] && return 1
+		sleep 0.5
+	done
+}
+xml() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' <<<"$1"; }
+
+# write_results <dir>: the checks as TAP (results.tap) and JUnit
+# (results.xml, a test suite per section), for openQA's parse_extra_log.
+write_results() {
+	local r sec st desc secs n=0 last= tests fails skips cases=
+	mkdir -p "$1" || return
+	{
+		echo "1..${#results_list[@]}"
+		for r in "${results_list[@]}"; do
+			IFS=$'\t' read -r sec st desc secs <<<"$r"
+			n=$((n + 1))
+			desc=${desc//#/\\#}
+			case $st in
+			pass) echo "ok $n - $sec: $desc" ;;
+			skip) echo "ok $n - $sec: $desc # SKIP" ;;
+			*) echo "not ok $n - $sec: $desc" ;;
+			esac
+		done
+	} >"$1/results.tap"
+	{
+		echo '<?xml version="1.0" encoding="UTF-8"?>'
+		printf '<testsuites name="cockpit-agentic" tests="%d">\n' "${#results_list[@]}"
+		for r in "${results_list[@]}" ""; do
+			IFS=$'\t' read -r sec st desc secs <<<"$r"
+			if [ "$sec" != "$last" ] && [ -n "$last" ]; then
+				tests=$(printf '%s\n' "${results_list[@]}" | awk -F'\t' -v s="$last" '$1 == s' | wc -l)
+				fails=$(printf '%s\n' "${results_list[@]}" | awk -F'\t' -v s="$last" '$1 == s && $2 == "fail"' | wc -l)
+				skips=$(printf '%s\n' "${results_list[@]}" | awk -F'\t' -v s="$last" '$1 == s && $2 == "skip"' | wc -l)
+				printf '  <testsuite name="%s" tests="%d" failures="%d" errors="0" skipped="%d">\n' \
+					"$(xml "$last")" "$tests" "$fails" "$skips"
+				printf '%s' "$cases"
+				echo '  </testsuite>'
+			fi
+			[ -z "$r" ] && break
+			[ "$sec" != "$last" ] && cases=
+			last=$sec
+			cases+=$(printf '    <testcase classname="cockpit-agentic.%s" name="%s" time="%s">' "$(xml "$sec")" "$(xml "$desc")" "$secs")
+			case $st in
+			fail) cases+='<failure message="failed"/>' ;;
+			skip) cases+='<skipped/>' ;;
+			esac
+			cases+=$'</testcase>\n'
+		done
+		echo '</testsuites>'
+	} >"$1/results.xml"
+	echo "  results: $1/results.tap, $1/results.xml"
+}
+
+# --- helpers -----------------------------------------------------------------
+
+# api <agent> <path> [curl args...]: the agent's socket, as root.
+api() { local a=$1 p=$2; shift 2; curl -sS --max-time 120 --unix-socket "/run/agents/$a/api.sock" "http://agent$p" "$@"; }
+# gw <path> [curl args...]: the gateway's control API, as root.
+gw() { local p=$1; shift; curl -sS --max-time 30 --unix-socket /run/mcp-gateway/control.sock "http://localhost$p" "$@"; }
+# run_activity <agent> <prompt>: starts an activity and waits; prints it.
+run_activity() { api "$1" /v1/activities -X POST -d "$(jq -nc --arg p "$2" '{prompt: $p, wait: true}')"; }
+# start_activity <agent> <prompt>: starts one; prints its id.
+start_activity() { api "$1" /v1/activities -X POST -d "$(jq -nc --arg p "$2" '{prompt: $p}')" | jq -r .id; }
+activity() { api "$1" "/v1/activities/$2"; }
+activity_state_is() { [ "$(activity "$1" "$2" | jq -r .state)" = "$3" ]; }
+# approval_of <agent> <activity>: the approval id its waiting call has.
+approval_of() { activity "$1" "$2" | jq -r '[.calls[] | select(.approval_id != null and .approval_id != "")][0].approval_id // empty'; }
+# journal <agent> <event>: the agent's records of the event since the start, as JSON lines.
+journal() { journalctl -o json --no-pager --since "@$t0" "AGENT_NAME=$1" "AGENT_EVENT=$2" 2>/dev/null; }
+# journal_has <agent> <event> <jq condition>
+journal_has() { journal "$1" "$2" | jq -e "select($3)" >/dev/null 2>&1; }
+gw_audit_has() { journalctl -u mcp-gateway.service -o cat --no-pager --since "@$t0" | grep '"audit":true' | jq -e "select($1)" >/dev/null 2>&1; }
+enforcing() { [ "$(getenforce 2>/dev/null)" = Enforcing ]; }
+label() { ps -o label= -p "$1" 2>/dev/null | tr -d ' '; }
+main_pid() { systemctl show -p MainPID --value "agent@$1.service"; }
+summary_has() { grep -qF -- "$2" <<<"$(jq -r .summary <<<"$1")"; }
+# runs_with <agent> <prompt> <text>: an activity whose summary has <text>.
+runs_with() { summary_has "$(run_activity "$1" "$2")" "$3"; }
+not() { ! "$@"; }
+json_ok() { jq -e "$2" >/dev/null 2>&1 <<<"$1"; }
+# code_is <status> <command...>: the HTTP status of a curl-based helper.
+code_is() { local want=$1; shift; [ "$("$@" -o /dev/null -w '%{http_code}')" = "$want" ]; }
+stat_is() { [ "$(stat -c %U:%G:%a "$1" 2>/dev/null)" = "$2" ]; }
+user_is() { [ "$(ps -o user= -p "$1" 2>/dev/null | tr -d ' ')" = "$2" ]; }
+in_group() { id -nG "$1" 2>/dev/null | grep -qw "$2"; }
+servers_have() { gw /v1/servers | grep -q "\"$1\""; }
+as_tester() { runuser -u agentic-tester -- curl -s --max-time 30 --unix-socket /run/agents/t1/api.sock "$@"; }
+count() { journal "$1" "$2" | wc -l; }
+
+# config <name> <servers> [yaml]: an agent configuration on the fake model.
+config() {
+	cat >"$work/$1.yaml" <<EOF
+version: 1
+name: $1
+description: functional test agent $1
+model: {provider: openai, name: fake, endpoint: "http://127.0.0.1:8008/v1"}
+instruction: You are a test agent.
+gateway: {servers: [$2]}
+limits: {max_invocation_seconds: 300}
+interaction: {agui: true, client_tools: deny}
+${3:-}
+EOF
+	echo "$work/$1.yaml"
+}
+
+# --- preconditions -------------------------------------------------------------
+
+section Preconditions
+for p in mcp-gateway cockpit-agentic cockpit-agentic-tests jq curl; do
+	check "package or program $p is installed" bash -c "rpm -q $p >/dev/null 2>&1 || command -v $p >/dev/null"
+done
+systemctl enable --now mcp-gateway.service >/dev/null 2>&1
+check "the gateway is running" eventually 30 test -S /run/mcp-gateway/mcp.sock
+check "the agents' policy module is installed for the gateway" test -f /usr/share/mcp-gateway/policy/cockpit-agentic/agents.rego
+check "group agent-clients exists" getent group agent-clients
+
+section Setup
+systemctl stop agentic-fakemodel.service >/dev/null 2>&1
+systemd-run --unit=agentic-fakemodel --property=DynamicUser=yes "$dir/fakemodel" --listen 127.0.0.1:8008 >/dev/null 2>&1
+check "the fake model answers" eventually 20 bash -c 'curl -sf -X POST -d "{\"messages\":[]}" http://127.0.0.1:8008/v1/chat/completions | grep -q ok'
+cat >/etc/mcp-gateway/servers.d/agentic-test.yaml <<EOF
+# cockpit-agentic functional tests (run-tests.sh)
+version: 1
+name: agentic-test
+command: ["$dir/testsrv"]
+run_as: principal
+EOF
+check "the gateway takes the test server" eventually 30 servers_have agentic-test
+
+# --- creating an agent -------------------------------------------------------
+
+section "Creating an agent"
+f=$(config t1 agentic-test 'schedules: [{name: check, on_calendar: "*-*-* 03:00", prompt: "PROBE (scheduled)"}]')
+check "agent-admin check accepts the configuration" agent-admin check "$f"
+printf 'version: 1\nname: t1\nmodel: {provider: openai, name: m, endpoint: "http://x"}\nlimitz: {}\n' >"$work/bad.yaml"
+check "agent-admin check refuses an unknown key" not agent-admin check "$work/bad.yaml"
+agent-admin delete t1 >/dev/null 2>&1
+check "agent-admin create t1" agent-admin create t1 --from "$f"
+check "agent-admin refuses to create t1 twice" not agent-admin create t1 --from "$f"
+check "user agent-t1 exists, without a login shell" bash -c 'getent passwd agent-t1 | grep -q nologin'
+check "agent-t1 is in mcp-users" in_group agent-t1 mcp-users
+check "agent-t1 is in agent-clients" in_group agent-t1 agent-clients
+check "the configuration is root:agent-t1 0640" stat_is /etc/cockpit-agentic/agents/t1/agent.yaml root:agent-t1:640
+check "the socket unit is active" systemctl is-active -q agent@t1.socket
+check "the gateway data says supervised" grep -q "mode: supervised" /etc/mcp-gateway/policy/agents/t1/data.yaml
+check "the gateway data grants nothing" grep -q "permissions: \[\]" /etc/mcp-gateway/policy/agents/t1/data.yaml
+check "the schedule's timer is enabled" systemctl is-enabled -q 'agent-schedule@t1:check.timer'
+check "agent-admin list names t1" bash -c 'agent-admin list | grep -qx t1'
+
+section Discovery
+st=$(api t1 /v1/status)
+check "GET /v1/status answers contract 1 (starts the agent)" json_ok "$st" '.contract == 1 and .name == "t1"'
+check "status names the units" json_ok "$st" '.units.service == "agent@t1.service"'
+check "the socket is root:agent-clients 0660" stat_is /run/agents/t1/api.sock root:agent-clients:660
+check "the agent runs as agent-t1" user_is "$(main_pid t1)" agent-t1
+if enforcing; then
+	check "the agent runs in agent_t" grep -q ':agent_t:' <<<"$(label "$(main_pid t1)")"
+else
+	skip "the agent runs in agent_t (SELinux is not enforcing)"
+fi
+check "journal: agent.start" eventually 10 journal_has t1 agent.start 'true'
+
+section Sandbox
+pid=$(main_pid t1)
+check "the agent cannot see the gateway's control socket" not nsenter -t "$pid" -m test -e /run/mcp-gateway/control.sock
+check "the agent sees no agents' sockets" test -z "$(nsenter -t "$pid" -m ls -A /run/agents 2>/dev/null)"
+check "the agent cannot write /etc" not nsenter -t "$pid" -m -S "$(id -u agent-t1)" -G "$(id -g agent-t1)" touch /etc/agentic-test
+for p in NoNewPrivileges=yes ProtectSystem=strict ProtectHome=yes PrivateTmp=yes; do
+	check "unit property $p" grep -qx "$p" <<<"$(systemctl show agent@t1.service -p "${p%%=*}")"
+done
+
+# --- the gateway governs --------------------------------------------------------
+
+section "Supervised by default"
+a=$(run_activity t1 PROBE)
+check "without permissions, the gateway shows the agent no tools" summary_has "$a" "not offered: agentic-test__probe"
+printf '%s\n' '- {server: agentic-test, tool: probe, read_only: true}' '- {server: agentic-test, tool: change}' | agent-admin permissions t1
+check "with probe read-only, PROBE runs without an approval" eventually 30 runs_with t1 PROBE 'probe ok'
+check "journal: tool.result ok for agentic-test__probe" eventually 10 journal_has t1 tool.result '.AGENT_TOOL == "agentic-test__probe" and .AGENT_OUTCOME == "ok"'
+check "journal: arguments are a digest only" journal_has t1 tool.call '.AGENT_ARGS_SHA256 != null'
+
+for decision in approve deny; do
+	section "Approval: $decision"
+	id=$(start_activity t1 CHANGE)
+	check "the activity waits for an approval" eventually 30 activity_state_is t1 "$id" waiting_approval
+	aid=$(approval_of t1 "$id")
+	check "its call carries the gateway's approval id" test -n "$aid"
+	check "the gateway lists the approval for agent-t1" json_ok "$(gw /v1/approvals)" ".[] | select(.id == \"$aid\" and .principal.sub == \"agent-t1\")"
+	check "journal: approval.pending with the id" eventually 10 journal_has t1 approval.pending ".AGENT_APPROVAL_ID == \"$aid\""
+	check "journal: the call's rationale" journal_has t1 tool.call '.AGENT_RATIONALE == "Writing the test marker; no other impact."'
+	check "the call is still waiting before the decision" json_ok "$(activity t1 "$id")" '.calls[-1].state == "waiting_approval"'
+	gw "/v1/approvals/$aid" -X POST -d "{\"decision\":\"$decision\",\"scope\":\"once\"}" >/dev/null
+	check "the activity finishes" eventually 30 activity_state_is t1 "$id" finished
+	want=$([ "$decision" = approve ] && echo approved || echo declined)
+	check "its call is $want" json_ok "$(activity t1 "$id")" ".calls[-1].approval == \"$want\""
+	check "journal: approval.resolved $want" eventually 10 journal_has t1 approval.resolved ".AGENT_APPROVAL_ID == \"$aid\" and .AGENT_OUTCOME == \"$want\""
+	if [ "$decision" = approve ]; then
+		check "the change ran" summary_has "$(activity t1 "$id")" 'changed test'
+	else
+		check "the change did not run" not summary_has "$(activity t1 "$id")" 'changed test'
+	fi
+done
+
+section "Autonomy modes"
+agent-admin mode t1 advisory
+check "advisory: the gateway hides the change" eventually 30 runs_with t1 CHANGE 'not offered: agentic-test__change'
+check "advisory: reading still works" runs_with t1 PROBE 'probe ok'
+printf '%s\n' '- {server: agentic-test, tool: probe, read_only: true}' '- {server: agentic-test, tool: change, autonomous: true}' | agent-admin permissions t1
+agent-admin mode t1 bounded
+n0=$(count t1 approval.pending)
+check "bounded: an autonomous change runs without an approval" eventually 30 runs_with t1 CHANGE 'changed test'
+check "bounded: no approval was asked" test "$(count t1 approval.pending)" = "$n0"
+check "the gateway audited the call as agent-t1" eventually 10 gw_audit_has '.sub == "agent-t1" and .name == "change" and .effect == "allow"'
+agent-admin mode t1 supervised
+printf '%s\n' '- {server: agentic-test, tool: probe, read_only: true}' '- {server: agentic-test, tool: change}' | agent-admin permissions t1
+
+# --- intervention -----------------------------------------------------------------
+
+section Pause
+agent-admin pause t1
+check "the gateway data says paused" grep -q 'paused: true' /etc/mcp-gateway/policy/agents/t1/data.yaml
+check "status says paused" json_ok "$(api t1 /v1/status)" '.paused == true'
+check "a new activity is refused (409)" code_is 409 api t1 /v1/activities -X POST -d '{"prompt":"PROBE"}'
+check "journal: agent.paused" eventually 10 journal_has t1 agent.paused 'true'
+agent-admin resume t1
+check "after resume, activities run again" eventually 30 runs_with t1 PROBE 'probe ok'
+
+section Cancel
+id=$(start_activity t1 CHANGE)
+eventually 30 activity_state_is t1 "$id" waiting_approval
+aid=$(approval_of t1 "$id")
+check "cancel answers 204" code_is 204 api t1 "/v1/activities/$id/cancel" -X POST
+check "its state is cancelled" eventually 20 activity_state_is t1 "$id" cancelled
+check "journal: activity.cancel" eventually 10 journal_has t1 activity.cancel ".AGENT_INVOCATION == \"$id\""
+[ -n "$aid" ] && gw "/v1/approvals/$aid" -X POST -d '{"decision":"deny","scope":"once"}' >/dev/null 2>&1
+
+section Schedules
+systemctl start 'agent-schedule@t1:check.service'
+check "the schedule's run is an activity of origin schedule" eventually 30 journal_has t1 invocation.start '.AGENT_ORIGIN == "schedule" and .AGENT_SCHEDULE == "check" and .AGENT_USER == "system:schedule"'
+
+section AG-UI
+out=$(api t1 /agui -N -X POST -d '{"threadId":"agentic-test-1","messages":[{"role":"user","content":"PROBE"}],"tools":[{"name":"evil","parameters":{"type":"object"}}]}')
+for ev in RUN_STARTED STATE_SNAPSHOT TOOL_CALL_START TOOL_CALL_RESULT TEXT_MESSAGE_CONTENT RUN_FINISHED; do
+	check "the stream has $ev" grep -q "\"type\":\"$ev\"" <<<"$out"
+done
+check "a client tool not allowed is journaled" eventually 10 journal_has t1 tool.denied.local '.AGENT_TOOL == "evil"'
+
+section "Access to the socket"
+id agentic-tester >/dev/null 2>&1 || useradd -m agentic-tester
+gpasswd -d agentic-tester agent-clients >/dev/null 2>&1
+check "a user outside agent-clients cannot connect" not as_tester -f http://agent/v1/status -o /dev/null
+usermod -aG agent-clients agentic-tester
+check "a member of agent-clients reads the status" as_tester -f http://agent/v1/status -o /dev/null
+check "but not another user's sessions (403)" code_is 403 as_tester http://agent/apps/t1/users/root/sessions
+check "and cannot pause the agent (403)" code_is 403 as_tester -X POST http://agent/v1/pause
+check "ADK's builder endpoint is not reachable (404)" code_is 404 api t1 /builder/save -X POST
+
+section Delegation
+cp /usr/share/cockpit-agentic/gateway/servers.d/agents.yaml /etc/mcp-gateway/servers.d/agents.yaml
+eventually 30 servers_have agents
+agent-admin delete t2 >/dev/null 2>&1
+check "agent-admin create t2" agent-admin create t2 --from "$(config t2 agents)"
+printf '%s\n' "- {server: agents, tool: delegate, read_only: true, args: {agent: '^t1\$'}}" | agent-admin permissions t2
+d=$(run_activity t2 "DELEGATE t1 PROBE")
+check "t2's delegation returns t1's answer" summary_has "$d" "probe ok"
+did=$(jq -r .id <<<"$d")
+check "t1 recorded a delegated activity from agent-t2 with t2's activity as parent" eventually 10 journal_has t1 invocation.start ".AGENT_ORIGIN == \"delegation\" and .AGENT_ORIGIN_BY == \"agent-t2\" and .AGENT_PARENT_AGENT == \"t2\" and .AGENT_PARENT_ACTIVITY == \"$did\""
+check "the gateway audited agents__delegate by agent-t2" eventually 10 gw_audit_has '.sub == "agent-t2" and .server == "agents" and .name == "delegate" and .effect == "allow"'
+d=$(run_activity t2 "DELEGATE t3 PROBE")
+check "delegating to an agent outside the permission is denied" not summary_has "$d" 'probe ok'
+check "the gateway audited the denial" eventually 10 gw_audit_has '.sub == "agent-t2" and .name == "delegate" and .effect == "deny"'
+
+section "Emergency stop"
+check "agent-admin stop-all" agent-admin stop-all
+check "the gateway's agents_control says stopped" grep -q 'stopped: true' /etc/mcp-gateway/policy/agents_control/data.yaml
+for u in agent@t1.socket agent@t1.service agent@t2.socket agent@t2.service agent-schedule@t1:check.timer; do
+	check "$u is stopped" not systemctl is-active -q "$u"
+done
+systemctl start agent@t1.socket
+check "an agent started by hand is still denied by the gateway" not runs_with t1 PROBE 'probe ok'
+check "agent-admin release-all" agent-admin release-all
+check "sockets are back" systemctl is-active -q agent@t1.socket agent@t2.socket
+check "and calls are allowed again" eventually 30 runs_with t1 PROBE 'probe ok'
+
+section SELinux
+if enforcing; then
+	avc=$(ausearch -m AVC,USER_AVC -ts "$(date -d "@$t0" '+%m/%d/%Y %H:%M:%S')" 2>/dev/null | grep -E 'agent_t|mcpsrv_agents_t|agent_sock_t|agent_var_lib_t|agent_conf_t')
+	check "no SELinux denials for the agents" test -z "$avc"
+	[ -n "$avc" ] && sed 's/^/    | /' <<<"$avc" | head -20
+else
+	skip "no SELinux denials (SELinux is not enforcing)"
+fi
+
+section Removing
+check "agent-admin delete t2" agent-admin delete t2
+check "agent-admin delete t1" agent-admin delete t1
+check "t1's configuration is gone" not test -e /etc/cockpit-agentic/agents/t1
+check "t1's gateway data is gone" not test -e /etc/mcp-gateway/policy/agents/t1
+check "t1's state is gone" not test -e /var/lib/agents/t1
+check "t1's schedule is gone" not systemctl is-enabled -q 'agent-schedule@t1:check.timer'
+rm -f /etc/mcp-gateway/servers.d/agentic-test.yaml /etc/mcp-gateway/servers.d/agents.yaml
+systemctl stop agentic-fakemodel.service >/dev/null 2>&1
+
+# --- results --------------------------------------------------------------------
+
+[ -n "$results" ] && write_results "$results"
+n_fail=$(printf '%s\n' "${results_list[@]}" | awk -F'\t' '$2 == "fail"' | wc -l)
+n_skip=$(printf '%s\n' "${results_list[@]}" | awk -F'\t' '$2 == "skip"' | wc -l)
+printf '\n%d checks, %d failed, %d skipped\n' "${#results_list[@]}" "$n_fail" "$n_skip"
+exit "$failed"

@@ -60,24 +60,50 @@ SELinux domain agent_t for cockpit-agentic's agents (they may reach the
 gateway's MCP socket, never its control socket nor another agent's
 socket), and mcpsrv_agents_t for the gateway's delegation server.
 
+%package tests
+Summary:        Functional tests of cockpit-agentic, for openQA
+Group:          Development/Tools/Other
+Requires:       %{name} = %{version}
+Requires:       mcp-gateway >= 1.12
+# What the tests run: the gateway's control API and the agents' sockets
+# (curl, jq), the journal, nsenter and runuser (util-linux), and the
+# kernel audit log and SELinux tools for the denial check.
+Requires:       audit
+Requires:       curl
+Requires:       jq
+Requires:       policycoreutils
+Requires:       shadow
+Requires:       util-linux
+Recommends:     %{name}-selinux = %{version}
+
+%description tests
+Functional tests of cockpit-agentic on an installed system: agents
+created with agent-admin and run by systemd, governed by mcp-gateway
+(supervised by default, approvals, autonomy modes, pause, emergency
+stop), schedules, AG-UI, delegation, the journal records, the sandbox
+and SELinux. With a scripted model server and an MCP test server, so
+no model is needed. For openQA and other test systems:
+/usr/libexec/cockpit-agentic/tests/run-tests.sh --disposable --results DIR.
+They change the system for good; install them on test systems only.
+
 %prep
 %autosetup -p1 -a1
 
 %build
 export GOFLAGS="-mod=vendor"
-%make_build build VERSION=%{version}
+%make_build build build-tests VERSION=%{version}
 make selinux
 %sysusers_generate_pre packaging/sysusers/cockpit-agentic.conf %{name} %{name}.conf
 
 %install
-%make_install install install-selinux \
+%make_install install install-selinux install-tests \
     PREFIX=%{_prefix} LIBEXECDIR=%{_libexecdir} DATADIR=%{_datadir} SBINDIR=%{_sbindir} \
     SYSCONFDIR=%{_sysconfdir} UNITDIR=%{_unitdir} SYSUSERSDIR=%{_sysusersdir} \
     TMPFILESDIR=%{_tmpfilesdir} SELINUXDIR=%{_datadir}/selinux/packages/%{selinuxtype}
 
 %check
 export GOFLAGS="-mod=vendor"
-go test ./internal/...
+go test ./internal/... ./test/...
 
 %pre -f %{name}.pre
 
@@ -124,6 +150,13 @@ fi
 %dir %{_datadir}/mcp-gateway/policy
 %{_datadir}/mcp-gateway/policy/cockpit-agentic
 %{_datadir}/cockpit-agentic
+
+%files tests
+%dir %{_libexecdir}/cockpit-agentic
+%dir %{_libexecdir}/cockpit-agentic/tests
+%{_libexecdir}/cockpit-agentic/tests/run-tests.sh
+%{_libexecdir}/cockpit-agentic/tests/fakemodel
+%{_libexecdir}/cockpit-agentic/tests/testsrv
 
 %files selinux
 %dir %{_datadir}/selinux/packages/%{selinuxtype}
