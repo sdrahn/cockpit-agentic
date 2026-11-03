@@ -155,3 +155,13 @@ optional_policy(`
 	files_pid_filetrans(systemd_tmpfiles_t, agent_runtime_t, dir, "agents")
 	allow systemd_tmpfiles_t { agent_runtime_t agent_var_lib_t agent_conf_t }:dir { getattr relabelfrom relabelto setattr };
 ')
+
+# systemd sets up the agents' directories before starting them:
+# StateDirectory= creates /var/lib/agents/<name> and hands it to the
+# agent's user; ConfigurationDirectory= checks /etc/cockpit-agentic/...
+manage_dirs_pattern(init_t, agent_var_lib_t, agent_var_lib_t)
+manage_files_pattern(init_t, agent_var_lib_t, agent_var_lib_t)
+files_var_lib_filetrans(init_t, agent_var_lib_t, dir, "agents")
+allow init_t agent_var_lib_t:dir { relabelfrom relabelto };
+list_dirs_pattern(init_t, agent_conf_t, agent_conf_t)
+read_files_pattern(init_t, agent_conf_t, agent_conf_t)
