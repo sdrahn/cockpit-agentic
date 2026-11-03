@@ -44,7 +44,7 @@ admin() { curl -sS --max-time 10 "http://127.0.0.1:18444$1" "${@:2}"; }
 run_activity() { api /v1/activities -X POST -d "$(jq -nc --arg p "$1" '{prompt: $p, wait: true}')"; }
 summary_has() { grep -qF -- "$2" <<<"$(jq -r .summary <<<"$1")"; }
 journal_has() { journalctl -o json --no-pager --since "@$t0" AGENT_NAME=sb "AGENT_EVENT=$1" 2>/dev/null | jq -e "select($2)" >/dev/null 2>&1; }
-osh() { openshell -g local "$@"; }
+osh() { openshell -g openshell "$@"; }
 
 section Preconditions
 check "openshell is installed" command -v openshell
@@ -82,15 +82,15 @@ instruction: You are a test agent.
 gateway: {url: "http://127.0.0.1:18443/mcp", servers: [agentic-test]}
 limits: {max_invocation_seconds: 300}
 interaction: {agui: true, client_tools: deny}
-sandbox: {kind: openshell, openshell_gateway: local}
+sandbox: {kind: openshell, openshell_gateway: openshell}
 EOF
 agent-admin delete sb >/dev/null 2>&1
 export AGENTIC_OPENSHELL_IMAGE=$img
 check "agent-admin create sb (openshell)" agent-admin create sb --from "$work/sb.yaml"
 check "the sandbox policy is written" test -s /etc/cockpit-agentic/agents/sb/openshell-policy.yaml
-check "the provider profile is imported" eventually 10 bash -c 'openshell -g local profile list -o json 2>/dev/null | grep -q cockpit-agentic-gateway-sb'
+check "the provider profile is imported" eventually 10 bash -c 'openshell -g openshell profile list -o json 2>/dev/null | grep -q cockpit-agentic-gateway-sb'
 check "agent-admin set-credential sb gateway-token (creates the sandbox)" agent-admin set-credential sb gateway-token <"$work/token"
-check "the sandbox exists" eventually 120 bash -c 'openshell -g local sandbox get agent-sb >/dev/null 2>&1'
+check "the sandbox exists" eventually 120 bash -c 'openshell -g openshell sandbox get agent-sb >/dev/null 2>&1'
 check "the relay socket is active" systemctl is-active -q agent-openshell@sb.socket
 
 section "Supervising through the relay"
@@ -103,7 +103,7 @@ check "a read-only call runs" summary_has "$a" "probe ok"
 tok=$(admin /tokens)
 check "the gateway saw the real token" json_ok "$tok" '.Right > 0'
 check "and never the placeholder or no token" json_ok "$tok" '.Wrong == 0'
-check "the sandbox's environment has no real token" bash -c "! openshell -g local sandbox exec -n agent-sb -- env 2>/dev/null | grep -qF \"\$(cat $work/token)\""
+check "the sandbox's environment has no real token" bash -c "! openshell -g openshell sandbox exec -n agent-sb -- env 2>/dev/null | grep -qF \"\$(cat $work/token)\""
 
 section "Approval"
 id=$(api /v1/activities -X POST -d '{"prompt":"CHANGE"}' | jq -r .id)
@@ -121,7 +121,7 @@ check "the stream comes through the relay" grep -q '"type":"RUN_FINISHED"' <<<"$
 section "Emergency stop"
 check "agent-admin stop-all" agent-admin stop-all
 check "the relay is stopped" not systemctl is-active -q agent-openshell@sb.socket
-check "the sandbox is stopped" eventually 60 bash -c 'openshell -g local sandbox get agent-sb -o json 2>/dev/null | jq -e "(.status // .state // \"\") | ascii_downcase | test(\"stop|exit|terminat\")" >/dev/null'
+check "the sandbox is stopped" eventually 60 bash -c 'openshell -g openshell sandbox get agent-sb -o json 2>/dev/null | jq -e "(.status // .state // \"\") | ascii_downcase | test(\"stop|exit|terminat\")" >/dev/null'
 check "agent-admin release-all" agent-admin release-all
 check "the relay is back" systemctl is-active -q agent-openshell@sb.socket
 
@@ -142,7 +142,7 @@ if [ -n "$results" ]; then
 		done
 	} >"$results/results.tap"
 	journalctl --no-pager --since "@$t0" -u 'agent-openshell@*' -o short-precise >"$results/relay.log" 2>&1
-	openshell -g local logs agent-sb >"$results/sandbox.log" 2>&1 || true
+	openshell -g openshell logs agent-sb >"$results/sandbox.log" 2>&1 || true
 fi
 n_fail=$(printf '%s\n' "${results_list[@]}" | awk -F'\t' '$2 == "fail"' | wc -l)
 printf '\n%d checks, %d failed\n' "${#results_list[@]}" "$n_fail"

@@ -230,7 +230,7 @@ func (c *Config) defaults() {
 		c.Sandbox.Kind = "systemd"
 	}
 	if c.Sandbox.Kind == "openshell" && c.Sandbox.OpenShellGateway == "" {
-		c.Sandbox.OpenShellGateway = "local"
+		c.Sandbox.OpenShellGateway = "openshell" // the name OpenShell's installer registers
 	}
 }
 

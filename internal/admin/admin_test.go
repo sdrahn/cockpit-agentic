@@ -181,7 +181,7 @@ func TestOpenShellAgent(t *testing.T) {
 	for name, want := range map[string]string{
 		"openshell-policy.yaml":  "run_as_user: sandbox",
 		"openshell-profile.yaml": "id: cockpit-agentic-gateway-sb",
-		"openshell.env":          "OPENSHELL_GATEWAY=local",
+		"openshell.env":          "OPENSHELL_GATEWAY=openshell",
 		"relay.secret":           "0123456789abcdef",
 	} {
 		b, err := os.ReadFile(filepath.Join(dir, name))
@@ -193,7 +193,7 @@ func TestOpenShellAgent(t *testing.T) {
 		t.Errorf("relay.secret mode %v", st.Mode())
 	}
 	all := strings.Join(r.cmds, "\n")
-	if !strings.Contains(all, "openshell -g local profile import -f "+filepath.Join(dir, "openshell-profile.yaml")+" --global") {
+	if !strings.Contains(all, "openshell -g openshell profile import -f "+filepath.Join(dir, "openshell-profile.yaml")+" --global") {
 		t.Errorf("profile not imported:\n%s", all)
 	}
 	if strings.Contains(all, "agent@sb.socket") || strings.Contains(all, "sandbox create") {
@@ -206,8 +206,8 @@ func TestOpenShellAgent(t *testing.T) {
 	}
 	all = strings.Join(r.cmds, "\n")
 	for _, want := range []string{
-		"AGENT_GATEWAY_TOKEN=tok-123 openshell -g local provider create --name agent-sb-gateway --type cockpit-agentic-gateway-sb --credential AGENT_GATEWAY_TOKEN",
-		"openshell -g local sandbox create --name agent-sb --from localhost/agent:test --policy " + filepath.Join(dir, "openshell-policy.yaml"),
+		"AGENT_GATEWAY_TOKEN=tok-123 openshell -g openshell provider create --name agent-sb-gateway --type cockpit-agentic-gateway-sb --credential AGENT_GATEWAY_TOKEN",
+		"openshell -g openshell sandbox create --name agent-sb --from localhost/agent:test --policy " + filepath.Join(dir, "openshell-policy.yaml"),
 		"--env AGENTIC_RELAY_SECRET=0123456789abcdef0123456789abcdef",
 		"systemctl enable --now agent-openshell@sb.socket",
 	} {
@@ -222,7 +222,7 @@ func TestOpenShellAgent(t *testing.T) {
 	r.cmds = nil
 	a.StopAll("alice")
 	all = strings.Join(r.cmds, "\n")
-	if !strings.Contains(all, "agent-openshell@*.service") || !strings.Contains(all, "openshell -g local sandbox stop agent-sb") {
+	if !strings.Contains(all, "agent-openshell@*.service") || !strings.Contains(all, "openshell -g openshell sandbox stop agent-sb") {
 		t.Errorf("stop-all misses the sandbox:\n%s", all)
 	}
 	r.cmds = nil

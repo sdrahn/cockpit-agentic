@@ -82,7 +82,7 @@ func TestSandbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if l := c.Lifecycle(); l["kind"] != "openshell" || l["sandbox"] != "agent-patch-pilot" || l["gateway"] != "local" || l["service"] != "agent-openshell@patch-pilot.service" {
+	if l := c.Lifecycle(); l["kind"] != "openshell" || l["sandbox"] != "agent-patch-pilot" || l["gateway"] != "openshell" || l["service"] != "agent-openshell@patch-pilot.service" {
 		t.Errorf("openshell lifecycle %v", l)
 	}
 	for _, bad := range []string{"sandbox: {kind: docker}\n", "sandbox: {kind: systemd, openshell_gateway: x}\n"} {

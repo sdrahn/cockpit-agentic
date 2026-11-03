@@ -461,7 +461,7 @@ interaction:
 schedules:
   - {name: compliance, on_calendar: "Mon..Fri 06:00", prompt: "List pending security patches; install nothing."}
 sessions: {retention_days: 30}
-sandbox: {kind: systemd}             # or {kind: openshell, openshell_gateway: local} (§3a, §16a)
+sandbox: {kind: systemd}             # or {kind: openshell, openshell_gateway: openshell} (§3a, §16a)
 ```
 
 Unknown keys are errors. `servers` and `tools` only decide what the

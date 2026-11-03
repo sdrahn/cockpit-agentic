@@ -213,11 +213,14 @@ jobs:
         # The tests run as root (agent-admin, units); the CLI and its
         # gateway registration are the runner user's.
         run: |
+          # The installer puts the CLI in /usr/bin and registers the local
+          # gateway (named "openshell") for the runner user.
           openshell --version
-          openshell status || true
-          sudo install -m 0755 "$(command -v openshell)" /usr/bin/openshell
-          sudo mkdir -p /root/.config && sudo cp -a "$HOME/.config/openshell" /root/.config/ 2>/dev/null || true
-          sudo openshell gateway list || true
+          openshell status
+          sudo mkdir -p /root/.config
+          sudo cp -a "$HOME/.config/openshell" /root/.config/
+          sudo openshell gateway list
+          sudo openshell status
       - name: Run the OpenShell tests
         run: sudo -E env "PATH=$PATH" test/openshell/run-spike.sh --disposable --results "$RUNNER_TEMP/osh"
       - if: always()
