@@ -94,30 +94,52 @@ check "the sandbox exists" eventually 120 bash -c 'openshell -g openshell sandbo
 check "the relay socket is active" systemctl is-active -q agent-openshell@sb.socket
 
 section "Supervising through the relay"
-check "the agent answers through the relay" eventually 180 bash -c 'curl -sf --max-time 10 --unix-socket /run/agents/sb/api.sock http://agent/v1/status >/dev/null'
-st=$(api /v1/status)
-check "status through the relay says lifecycle openshell" json_ok "$st" '.lifecycle.kind == "openshell" and .lifecycle.sandbox == "agent-sb"'
-check "the relay passed root on (status is for supervisors)" json_ok "$st" '.contract == 1'
-a=$(run_activity PROBE)
-check "a read-only call runs" summary_has "$a" "probe ok"
-tok=$(admin /tokens)
-check "the gateway saw the real token" json_ok "$tok" '.Right > 0'
-check "and never the placeholder or no token" json_ok "$tok" '.Wrong == 0'
-check "the sandbox's environment has no real token" bash -c "! openshell -g openshell sandbox exec -n agent-sb -- env 2>/dev/null | grep -qF \"\$(cat $work/token)\""
+diagnose() {
+	echo "    | --- why the relay gets no answer"
+	{
+		systemctl status --no-pager agent-openshell@sb.socket agent-openshell@sb.service 2>&1 | tail -n 20
+		journalctl --no-pager -o short-precise --since "@$t0" -u agent-openshell@sb.service 2>&1 | tail -n 30
+		echo "--- openshell sandbox get agent-sb"; osh sandbox get agent-sb 2>&1 | tail -n 20
+		echo "--- openshell forward list"; osh forward list 2>&1 | tail -n 10
+		echo "--- openshell logs agent-sb"; timeout 20 openshell -g openshell logs agent-sb 2>&1 | tail -n 40
+		echo "--- listening on the host"; ss -ltnp 2>/dev/null | grep -E ':(47[0-9]{3})\b' || true
+	} | sed 's/^/    | /'
+}
+if eventually 180 bash -c 'curl -sf --max-time 10 --unix-socket /run/agents/sb/api.sock http://agent/v1/status >/dev/null'; then
+	pass "the agent answers through the relay"
+	relay_ok=1
+else
+	fail "the agent answers through the relay"
+	diagnose
+	relay_ok=
+fi
+if [ -n "$relay_ok" ]; then
+	st=$(api /v1/status)
+	check "status through the relay says lifecycle openshell" json_ok "$st" '.lifecycle.kind == "openshell" and .lifecycle.sandbox == "agent-sb"'
+	check "the relay passed root on (status is for supervisors)" json_ok "$st" '.contract == 1'
+	a=$(run_activity PROBE)
+	check "a read-only call runs" summary_has "$a" "probe ok"
+	tok=$(admin /tokens)
+	check "the gateway saw the real token" json_ok "$tok" '.Right > 0'
+	check "and never the placeholder or no token" json_ok "$tok" '.Wrong == 0'
+	check "the sandbox's environment has no real token" bash -c "! openshell -g openshell sandbox exec -n agent-sb -- env 2>/dev/null | grep -qF \"\$(cat $work/token)\""
 
-section "Approval"
-id=$(api /v1/activities -X POST -d '{"prompt":"CHANGE"}' | jq -r .id)
-check "the change waits for an approval" eventually 60 bash -c "curl -s --unix-socket /run/agents/sb/api.sock http://agent/v1/activities/$id | jq -e '.state == \"waiting_approval\"' >/dev/null"
-check "nothing ran before the decision" json_ok "$(admin /executed)" 'index("agentic-test__change") == null'
-admin /approve/a-osh-1 -X POST >/dev/null
-check "the activity finishes after the approval" eventually 60 bash -c "curl -s --unix-socket /run/agents/sb/api.sock http://agent/v1/activities/$id | jq -e '.state == \"finished\" and (.summary | contains(\"changed test\"))' >/dev/null"
-check "journal (from OpenShell's log stream): approval.pending" eventually 60 journal_has approval.pending '.AGENT_APPROVAL_ID == "a-osh-1"'
-check "journal: approval.resolved approved" eventually 60 journal_has approval.resolved '.AGENT_OUTCOME == "approved"'
+	section "Approval"
+	id=$(api /v1/activities -X POST -d '{"prompt":"CHANGE"}' | jq -r .id)
+	check "the change waits for an approval" eventually 60 bash -c "curl -s --unix-socket /run/agents/sb/api.sock http://agent/v1/activities/$id | jq -e '.state == \"waiting_approval\"' >/dev/null"
+	check "nothing ran before the decision" json_ok "$(admin /executed)" 'index("agentic-test__change") == null'
+	admin /approve/a-osh-1 -X POST >/dev/null
+	check "the activity finishes after the approval" eventually 60 bash -c "curl -s --unix-socket /run/agents/sb/api.sock http://agent/v1/activities/$id | jq -e '.state == \"finished\" and (.summary | contains(\"changed test\"))' >/dev/null"
+	check "journal (from OpenShell's log stream): approval.pending" eventually 60 journal_has approval.pending '.AGENT_APPROVAL_ID == "a-osh-1"'
+	check "journal: approval.resolved approved" eventually 60 journal_has approval.resolved '.AGENT_OUTCOME == "approved"'
 
-section "AG-UI through the relay"
-out=$(api /agui -N -X POST -d '{"threadId":"osh-1","messages":[{"role":"user","content":"PROBE"}]}')
-check "the stream comes through the relay" grep -q '"type":"RUN_FINISHED"' <<<"$out"
+	section "AG-UI through the relay"
+	out=$(api /agui -N -X POST -d '{"threadId":"osh-1","messages":[{"role":"user","content":"PROBE"}]}')
+	check "the stream comes through the relay" grep -q '"type":"RUN_FINISHED"' <<<"$out"
 
+else
+	skip "the checks through the relay (the agent did not answer through it)"
+fi
 section "Emergency stop"
 check "agent-admin stop-all" agent-admin stop-all
 check "the relay is stopped" not systemctl is-active -q agent-openshell@sb.socket
