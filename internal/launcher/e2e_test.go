@@ -458,7 +458,6 @@ func waitFor(t *testing.T, f func() bool) {
 	t.Fatal("timed out")
 }
 
-<<<<<<< HEAD
 // In a sandbox nobody makes the state directory (STATE_DIRECTORY): the
 // launcher does.
 func TestStateDirectoryMade(t *testing.T) {
@@ -472,7 +471,9 @@ func TestStateDirectoryMade(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "sessions.db")); err != nil {
 		t.Errorf("sessions.db: %v", err)
-=======
+	}
+}
+
 // A run that ends in an error the runner returns (here: the gateway's
 // tools cannot be listed) is a failed activity with the error as reason,
 // not a finished one.
@@ -488,6 +489,5 @@ func TestRunErrorIsFailedActivity(t *testing.T) {
 	end := e.log.Events(journal.InvocationEnd)
 	if last := end[len(end)-1]; last.Fields["OUTCOME"] != "error" || !strings.Contains(last.Fields["REASON"], "mcp-gateway") {
 		t.Errorf("journal %+v", last)
->>>>>>> claude/selinux-coverage
 	}
 }
