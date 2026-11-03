@@ -522,7 +522,7 @@ Run as root, by hand or by Cockpit with administrative access:
 | `create NAME --from FILE` | validates; writes the sysusers.d file and runs `systemd-sysusers`; installs `agent.yaml`; writes the gateway agent data (supervised, no permissions); writes the schedules' timer drop-ins; enables the socket and timers |
 | `edit NAME --from FILE` | validates, replaces `agent.yaml`, syncs schedules, `try-restart` |
 | `check NAME\|FILE` | validates only |
-| `mode NAME MODE`, `permissions NAME < list.yaml` | the gateway agent data (§6) |
+| `mode NAME MODE`, `permissions NAME < list.yaml` | the gateway agent data (§6). Like `pause`, `resume`, `stop-all` and `release-all`, it returns once the gateway's OPA has loaded the change (it reads it back on `/run/mcp-gateway/opa.sock`, for up to 20 s), so the change is in force when the command returns |
 | `set-credential NAME CRED < secret` | `systemd-creds encrypt` |
 | `pause NAME`, `resume NAME` | §8 (gateway data and `/v1/pause`) |
 | `stop-all`, `release-all` | the emergency stop (§8) and its end |
