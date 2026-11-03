@@ -57,6 +57,11 @@ pass() { echo "PASS: $*"; record pass "$*"; }
 fail() { echo "FAIL: $*"; failed=1; record fail "$*"; fail_context; }
 skip() { echo "SKIP: $*"; record skip "$*"; }
 fail_context() {
+	# What the agent answered last, when a check compared it.
+	if [ -n "${last_answer:-}" ]; then
+		echo "    | the agent answered: $(jq -c '{state, summary, reason, calls: [.calls[]? | {tool, state, reason}]}' <<<"$last_answer" 2>/dev/null || head -c 300 <<<"$last_answer")"
+		last_answer=
+	fi
 	journalctl --since -20s --no-pager -o short-precise 2>/dev/null |
 		grep -E 'agent-|agent@|mcp-gateway' | grep -iE 'error|fail|denied|status=[0-9]' |
 		tail -6 | sed 's/^/    | /'
@@ -169,7 +174,10 @@ label() { ps -o label= -p "$1" 2>/dev/null | tr -d ' '; }
 main_pid() { systemctl show -p MainPID --value "agent@$1.service"; }
 summary_has() { grep -qF -- "$2" <<<"$(jq -r .summary <<<"$1")"; }
 # runs_with <agent> <prompt> <text>: an activity whose summary has <text>.
-runs_with() { summary_has "$(run_activity "$1" "$2")" "$3"; }
+runs_with() {
+	last_answer=$(run_activity "$1" "$2")
+	summary_has "$last_answer" "$3"
+}
 not() { ! "$@"; }
 json_ok() { jq -e "$2" >/dev/null 2>&1 <<<"$1"; }
 # code_is <status> <command...>: the HTTP status of a curl-based helper.
@@ -265,6 +273,9 @@ check "the socket is root:agent-clients 0660" stat_is /run/agents/t1/api.sock ro
 check "the agent runs as agent-t1" user_is "$(main_pid t1)" agent-t1
 if enforcing; then
 	check "the agent runs in agent_t" grep -q ':agent_t:' <<<"$(label "$(main_pid t1)")"
+	grep -q ':agent_t:' <<<"$(label "$(main_pid t1)")" ||
+		echo "    | domain $(label "$(main_pid t1)"), program $(stat -c %C /usr/libexec/cockpit-agentic/agent-launcher)"
+	check "the launcher is labelled agent_exec_t" grep -q ':agent_exec_t:' <<<"$(stat -c %C /usr/libexec/cockpit-agentic/agent-launcher)"
 else
 	skip "the agent runs in agent_t (SELinux is not enforcing)"
 fi
@@ -272,7 +283,9 @@ check "journal: agent.start" eventually 10 journal_has t1 agent.start 'true'
 
 section Sandbox
 pid=$(main_pid t1)
-check "the agent cannot see the gateway's control socket" not nsenter -t "$pid" -m test -e /run/mcp-gateway/control.sock
+# InaccessiblePaths= leaves the name and takes the access away.
+check "the agent cannot reach the gateway's control socket" not nsenter -t "$pid" -m \
+	curl -s --max-time 5 --unix-socket /run/mcp-gateway/control.sock -o /dev/null http://localhost/v1/whoami
 check "the agent sees no agents' sockets" test -z "$(nsenter -t "$pid" -m ls -A /run/agents 2>/dev/null)"
 check "the agent cannot write /etc" not nsenter -t "$pid" -m -S "$(id -u agent-t1)" -G "$(id -g agent-t1)" touch /etc/agentic-test
 for p in NoNewPrivileges=yes ProtectSystem=strict ProtectHome=yes PrivateTmp=yes; do
@@ -283,6 +296,7 @@ done
 
 section "Supervised by default"
 a=$(run_activity t1 PROBE)
+last_answer=$a
 check "without permissions, the gateway shows the agent no tools" summary_has "$a" "not offered: agentic-test__probe"
 printf '%s\n' '- {server: agentic-test, tool: probe, read_only: true}' '- {server: agentic-test, tool: change}' | agent-admin permissions t1
 check "with probe read-only, PROBE runs without an approval" eventually 30 runs_with t1 PROBE 'probe ok'
