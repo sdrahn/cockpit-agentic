@@ -131,6 +131,11 @@ fi
 
 %posttrans selinux
 %selinux_relabel_post -s %{selinuxtype}
+# Directories made before the module was loaded (the main package's
+# tmpfiles, agents' state) get the module's labels.
+for d in /run/agents /var/lib/agents /etc/cockpit-agentic; do
+    [ -e "$d" ] && restorecon -R "$d" || :
+done
 
 %files
 %license LICENSE

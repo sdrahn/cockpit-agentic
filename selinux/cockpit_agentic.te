@@ -138,3 +138,20 @@ dev_read_urand(agent_relay_t)
 logging_send_syslog_msg(agent_relay_t)
 userdom_search_admin_dir(agent_relay_t)
 userdom_read_admin_home_files(agent_relay_t)
+# systemd creates the agents' sockets (agent@.socket, DirectoryMode=)
+# and tmpfiles /run/agents: with the right labels even before a relabel
+# (the package's tmpfiles run before this module is loaded).
+manage_dirs_pattern(init_t, agent_runtime_t, agent_runtime_t)
+manage_sock_files_pattern(init_t, agent_runtime_t, agent_sock_t)
+filetrans_pattern(init_t, agent_runtime_t, agent_sock_t, sock_file)
+files_pid_filetrans(init_t, agent_runtime_t, dir, "agents")
+allow init_t agent_sock_t:sock_file { relabelfrom relabelto };
+allow init_t agent_runtime_t:dir { relabelfrom relabelto };
+optional_policy(`
+	gen_require(`
+		type systemd_tmpfiles_t;
+	')
+	manage_dirs_pattern(systemd_tmpfiles_t, agent_runtime_t, agent_runtime_t)
+	files_pid_filetrans(systemd_tmpfiles_t, agent_runtime_t, dir, "agents")
+	allow systemd_tmpfiles_t { agent_runtime_t agent_var_lib_t agent_conf_t }:dir { getattr relabelfrom relabelto setattr };
+')
