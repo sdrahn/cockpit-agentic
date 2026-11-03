@@ -282,7 +282,8 @@ func (l *Launcher) chatOrigin(next http.Handler) http.Handler {
 type Status struct {
 	Contract       int               `json:"contract"`
 	Implementation string            `json:"implementation"`
-	Units          map[string]string `json:"units"`
+	Units          map[string]string `json:"units,omitempty"`
+	Lifecycle      map[string]string `json:"lifecycle"`
 	Name           string            `json:"name"`
 	Version        string            `json:"version"`
 	Model          string            `json:"model"`
@@ -308,10 +309,14 @@ func (l *Launcher) status(w http.ResponseWriter, r *http.Request) {
 			running++
 		}
 	}
+	var units map[string]string
+	if lc := l.cfg.Lifecycle(); lc["kind"] == "systemd" {
+		units = map[string]string{"service": lc["service"], "socket": lc["socket"]}
+	}
 	_, err := os.Stat(l.cfg.Gateway.Socket)
 	writeJSON(w, http.StatusOK, Status{
 		Contract: config.ContractVersion, Implementation: "cockpit-agentic/adk-go", Name: l.cfg.Name, Version: Version,
-		Units: map[string]string{"service": "agent@" + l.cfg.Name + ".service", "socket": "agent@" + l.cfg.Name + ".socket"},
+		Units: units, Lifecycle: l.cfg.Lifecycle(),
 		Model: l.cfg.Model.Provider + ":" + l.cfg.Model.Name, Paused: l.Governor.Paused(),
 		Gateway:  GatewayStatus{Socket: l.cfg.Gateway.Socket, Reachable: err == nil},
 		InFlight: nonNil(l.Governor.InFlight()), Running: running, Started: l.started, Limits: l.cfg.Limits,

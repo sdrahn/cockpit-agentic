@@ -227,6 +227,7 @@ section Discovery
 st=$(api t1 /v1/status)
 check "GET /v1/status answers contract 1 (starts the agent)" json_ok "$st" '.contract == 1 and .name == "t1"'
 check "status names the units" json_ok "$st" '.units.service == "agent@t1.service"'
+check "status says the lifecycle is systemd" json_ok "$st" '.lifecycle.kind == "systemd" and .lifecycle.socket == "agent@t1.socket"'
 check "the socket is root:agent-clients 0660" stat_is /run/agents/t1/api.sock root:agent-clients:660
 check "the agent runs as agent-t1" user_is "$(main_pid t1)" agent-t1
 if enforcing; then
