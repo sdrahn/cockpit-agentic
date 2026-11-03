@@ -73,6 +73,7 @@ install: build
 	install -D -m 0644 packaging/sysusers/cockpit-agentic.conf $(DESTDIR)$(SYSUSERSDIR)/cockpit-agentic.conf
 	install -D -m 0644 packaging/tmpfiles/cockpit-agentic.conf $(DESTDIR)$(TMPFILESDIR)/cockpit-agentic.conf
 	install -D -m 0644 gateway/policy/agents.rego $(DESTDIR)$(DATADIR)/mcp-gateway/policy/cockpit-agentic/agents.rego
+	install -D -m 0644 gateway/policy/_control.yaml $(DESTDIR)$(SYSCONFDIR)/mcp-gateway/policy/agents/_control.yaml
 	install -D -m 0644 gateway/servers.d/agents.yaml $(DESTDIR)$(DATADIR)/cockpit-agentic/gateway/servers.d/agents.yaml
 	install -D -m 0644 examples/patch-pilot/agent.yaml $(DESTDIR)$(DATADIR)/cockpit-agentic/examples/patch-pilot/agent.yaml
 	install -D -m 0644 examples/patch-pilot/permissions.yaml $(DESTDIR)$(DATADIR)/cockpit-agentic/examples/patch-pilot/permissions.yaml
