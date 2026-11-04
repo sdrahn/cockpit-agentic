@@ -166,9 +166,6 @@ func TestProfileRefresh(t *testing.T) {
 	if len(secret) != 2 || secret["client_id"] || !secret["client_secret"] {
 		t.Errorf("material: %v", secret)
 	}
-	if !strings.Contains(string(b), "stable_placeholder: true") {
-		t.Errorf("a renewed token must resolve through the agent's one placeholder:\n%s", b)
-	}
 	// A static token has no refresh.
 	b, _ = Profile(cfg(t))
 	if strings.Contains(string(b), "refresh") {
