@@ -200,8 +200,11 @@
             if (args[0] === "agent-admin") {
                 const [cmd, name, arg] = args.slice(1);
                 if (cmd === "show") return Promise.resolve(JSON.stringify(posture));
-                // Changes need the root bridge.
-                if (opts.superuser !== "require") return Promise.reject({ problem: "access-denied" });
+                // A configuration is valid with a version, its name and a model;
+                // check needs no root, changes need the root bridge.
+                const invalid = text => !/^version: 1$/m.test(text) ? "agent-admin: version: want 1"
+                    : !/^model:/m.test(text) ? "agent-admin: model: missing" : null;
+                if (cmd !== "check" && opts.superuser !== "require") return Promise.reject({ problem: "access-denied" });
                 const d = posture.agents[name];
                 const by = ((opts.environ || []).find(e => e.startsWith("SUDO_USER=")) || "SUDO_USER=root").slice(10);
                 if (cmd === "stop-all") posture.control = { stopped: true, by, at: new Date().toISOString() };
@@ -211,6 +214,14 @@
                 let input = "";
                 return { input(text) { input = text; return this; },
                          then(ok, bad) {
+                             if (cmd === "check" || cmd === "create") {
+                                 const why = invalid(input) || (cmd === "create" && !new RegExp("^name: " + name + "$", "m").test(input)
+                                     ? "agent-admin: the configuration names another agent" : null) ||
+                                     (cmd === "create" && posture.agents[name] && "agent-admin: agent " + name + " exists");
+                                 if (why) return Promise.reject(new Error(why)).then(ok, bad);
+                                 if (cmd === "create") posture.agents[name] = { mode: "supervised", paused: false, permissions: [] };
+                             }
+                             if (cmd === "delete") delete posture.agents[name];
                              if (cmd === "permissions") {
                                  if (!input.trim().startsWith("-")) return Promise.reject(new Error("agent-admin: permissions: want a YAML list")).then(ok, bad);
                                  d.permissions = input.trim().split("\n").map(l => JSON.parse(l.replace(/^- /, "")));
