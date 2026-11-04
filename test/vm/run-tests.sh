@@ -187,6 +187,9 @@ stat_is() { [ "$(stat -c %U:%G:%a "$1" 2>/dev/null)" = "$2" ]; }
 user_is() { [ "$(ps -o user= -p "$1" 2>/dev/null | tr -d ' ')" = "$2" ]; }
 in_group() { id -nG "$1" 2>/dev/null | grep -qw "$2"; }
 servers_have() { gw /v1/servers | grep -q "\"$1\""; }
+# as_nobody runs a command as an unprivileged user that is in no group of
+# ours (not agent-clients), from a directory it may enter.
+as_nobody() { (cd / && setpriv --reuid=nobody --regid="$(id -g nobody)" --clear-groups -- "$@"); }
 as_tester() { runuser -u custos-tester -- curl -s --max-time 30 --unix-socket /run/agents/t1/api.sock "$@"; }
 count() { journal "$1" "$2" | wc -l; }
 
@@ -345,6 +348,9 @@ section Pause
 agent-admin pause t1
 check "the gateway data says paused" grep -q 'paused: true' /etc/mcp-gateway/policy/agents/t1.yaml
 check "status says paused" json_ok "$(api t1 /v1/status)" '.paused == true'
+# What the Cockpit page reads for the posture, as anyone without root.
+check "agent-admin show, as nobody, says paused" json_ok "$(as_nobody /usr/sbin/agent-admin show t1)" \
+	'.agents.t1.paused == true and .agents.t1.mode == "supervised" and (.agents.t1.permissions | length) == 2'
 check "a new activity is refused (409)" code_is 409 api t1 /v1/activities -X POST -d '{"prompt":"PROBE"}'
 check "journal: agent.paused" eventually 10 journal_has t1 agent.paused 'true'
 agent-admin resume t1
@@ -409,6 +415,8 @@ check "the gateway audited the denial" eventually 10 gw_audit_has '.sub == "agen
 section "Emergency stop"
 check "agent-admin stop-all" agent-admin stop-all
 check "the gateway's emergency stop flag is set" grep -q 'stopped: true' /etc/mcp-gateway/policy/agents/_control.yaml
+check "agent-admin show, as nobody, reports the emergency stop" json_ok "$(as_nobody /usr/sbin/agent-admin show)" \
+	'.control.stopped == true and (.agents | has("t1")) and (.agents | has("t2"))'
 for u in agent@t1.socket agent@t1.service agent@t2.socket agent@t2.service agent-schedule@t1_check.timer; do
 	check "$u is stopped" not systemctl is-active -q "$u"
 done

@@ -588,6 +588,7 @@ Run as root, by hand or by Cockpit with administrative access:
 | `delete NAME [--keep-state]` | disables and stops units; removes configuration, gateway data, credentials, drop-ins, timers and, unless kept, state. The user stays, since uids are not reused while files may still belong to them |
 | `trigger NAME_SCHEDULE` | starts the schedule's activity (run by `agent-schedule@.service`) |
 | `list` | the agents |
+| `show [NAME…]` | the gateway data (§6) of the named agents, or of all, and the emergency stop (§8), as JSON: `{"agents": {"<name>": {"mode", "paused", "paused_by"?, "permissions"}}, "control": {"stopped", "by"?, "at"?}}`. Needs no root: the files are readable by everyone |
 
 ## 18. SELinux (`custos` module)
 
@@ -635,7 +636,7 @@ tests, for openQA).
 | Pending action as an approval item with actions, evidence, impact; nothing state-changing without approval | §6 supervised default, §7 | enforcement done in gateway policy (tested with OPA against the gateway's policy); approval flow tested end to end with a fake gateway; impact and evidence are the agent's self-asserted rationale plus the activity (O6); Cockpit Approvals tab done, decisions as the person (O9) |
 | Outcome after execution; proposed → approved/rejected → executed history | §4, §10 "History of an action" | done (journal and activity API) |
 | Chat as one mode | §11 | AG-UI and ADK REST, tested |
-| See autonomy mode and policy; adjust where permitted | §6 | gateway data + `agent-admin mode/permissions`; Cockpit page to do |
+| See autonomy mode and policy; adjust where permitted | §6 | gateway data + `agent-admin mode/permissions/show`; Cockpit Agents and Policy tabs done, smoke-tested against a stub of Cockpit (O9) |
 | Stop / pause / override in-flight or scheduled activity; emergency stop | §8 | cancel, pause (host and gateway), stop-all done; tested on the host side and in policy |
 | On-premises, air-gapped | §14 (`provider: openai` with a local server), §19 (OBS) | done; no external service needed |
 | Independent of kit / any host | Part I is host-independent; §3 discovery by contract only | contract done; a second host (kit adapter or a mock) to demonstrate (O8) |
@@ -698,7 +699,11 @@ tests, for openQA).
   control API. Started (`cockpit/custos`, package `custos-cockpit`):
   the Activity tab (§4, §5: activities, delegation chains, tool calls,
   cancel) and the Approvals tab (§7: the approval item, decided as the
-  person; today's decisions from the journal, §10). Still open: the
-  Agents and Policy tabs (§6, `agent-admin`), Audit (§10 with the
-  gateway's audit), chat (§11), the emergency stop (§8), and a test
-  against a real Cockpit.
+  person; today's decisions from the journal, §10), the Agents tab (each
+  agent's state, autonomy mode, tool boundaries with their effect now,
+  schedules; mode, permissions, pause, stop and schedules changed through
+  the root bridge with `agent-admin` and `systemctl`, §6, §8) and the
+  Policy tab (the posture of every agent with its approvers, and what the
+  gateway would decide for one call). Still open: creating and deleting
+  agents, Audit (§10 with the gateway's audit), chat (§11), the emergency
+  stop (§8), and a test against a real Cockpit.

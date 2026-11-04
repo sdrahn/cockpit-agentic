@@ -196,13 +196,120 @@ function setTabCount(tab, n) {
 
 /* The page's view of the host, shared by the tabs: refreshed by whichever
  * tab is shown. */
-const state = { agents: [], activities: [] };
+const state = { agents: [], activities: [], posture: null, user: null };
 
 async function refreshState() {
-    state.agents = await listAgents();
-    state.activities = await loadActivities(state.agents);
+    const [agents, posture] = await Promise.all([listAgents(), loadPosture()]);
+    // Agents with gateway data but no socket (stopped) are agents too.
+    if (posture) {
+        for (const name of Object.keys(posture.agents)) {
+            if (!agents.some(a => a.name === name)) agents.push({ name, error: "not running", stopped: true });
+        }
+        agents.sort((x, y) => x.name.localeCompare(y.name));
+    }
+    state.agents = agents;
+    state.posture = posture;
+    state.activities = await loadActivities(agents);
     setTabCount("activity", state.activities.filter(a => a.state === "running" || a.state === "waiting_approval").length);
+    renderStopBanner();
     return state;
+}
+
+/* loadPosture reads what the gateway enforces for the agents: their data
+ * (mode, pause, permissions, §6) and the emergency stop (§8), from
+ * agent-admin show (the files are readable by everyone). null if it
+ * cannot be read. */
+async function loadPosture() {
+    // As the person; through the root bridge where Cockpit has one and the
+    // files are not readable for the person.
+    for (const superuser of [undefined, "try"]) {
+        try {
+            return JSON.parse(await cockpit.spawn(["agent-admin", "show"], { superuser, err: "message" }));
+        } catch {
+            // next way, or none
+        }
+    }
+    return null;
+}
+
+/* admin runs agent-admin through the root bridge (§2: administration
+ * needs root), naming the person, whom agent-admin records (by). It
+ * rejects with agent-admin's own message. */
+function admin(args, input) {
+    const proc = cockpit.spawn(["agent-admin", ...args], {
+        superuser: "require", err: "message",
+        environ: state.user ? ["SUDO_USER=" + state.user] : [],
+    });
+    if (input !== undefined) proc.input(input);
+    return proc.catch(ex => {
+        throw new Error(ex && ex.problem === "access-denied"
+            ? "This needs administrative access (turn it on in Cockpit's top bar)."
+            : ((ex && ex.message) || String(ex)).replace(/^agent-admin: /, "").trim());
+    });
+}
+
+/* systemctl runs systemctl through the root bridge. */
+function systemctl(...args) {
+    return cockpit.spawn(["systemctl", ...args], { superuser: "require", err: "message" }).catch(ex => {
+        throw new Error(ex && ex.problem === "access-denied"
+            ? "This needs administrative access (turn it on in Cockpit's top bar)."
+            : ((ex && ex.message) || String(ex)).trim());
+    });
+}
+
+function renderStopBanner() {
+    const box = document.getElementById("stopped");
+    const c = state.posture && state.posture.control;
+    box.hidden = !(c && c.stopped);
+    if (c && c.stopped) {
+        box.replaceChildren(...nodes(el("strong", null, "All agents stopped"),
+            c.by ? " by " + c.by : "", c.at ? " at " + when(c.at) : "",
+            ". The gateway denies every agent call, and agent units and schedules are stopped."));
+    }
+}
+
+/* The gateway's decision for an agent's permission or tool, by the rules
+ * of the agents module (gateway/policy/agents.rego). The gateway's own
+ * decision is the one that counts: this only explains it. */
+const MODE_TEXT = {
+    advisory: "Only read-only tools run. Everything that changes the system is denied.",
+    supervised: "Read-only tools run. Everything that changes the system waits for an approval.",
+    bounded: "Like supervised, but the changes marked autonomous run without asking.",
+};
+
+function permKind(p) {
+    return p.read_only ? "read-only" : p.autonomous ? "changes · autonomous" : "changes the system";
+}
+
+/* permEffect is [text, badge class] of a permission in force now. */
+function permEffect(p, data, control) {
+    if (control && control.stopped) return ["denied (emergency stop)", "badge-bad"];
+    if (data.paused) return ["denied (paused)", "badge-bad"];
+    if (p.read_only) return ["allowed", "badge-ok"];
+    if (data.mode === "advisory") return ["denied (advisory mode)", "badge-bad"];
+    if (data.mode === "bounded" && p.autonomous) return ["allowed, no approval", "badge-ok"];
+    return ["needs approval", "badge-waiting"];
+}
+
+function globRe(g) {
+    return new RegExp("^" + g.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$");
+}
+
+/* decideTool is what the gateway decides for a call of server__tool by
+ * the agent: the most permissive of the permissions that match it, or
+ * denied when none does. Argument constraints are not checked. */
+function decideTool(data, control, server, tool) {
+    const matching = (data.permissions || []).filter(p =>
+        p.resource === undefined && p.prompt === undefined &&
+        globRe(p.server).test(server) && globRe(p.tool || "*").test(tool));
+    if (matching.length === 0) {
+        return { text: "denied", cls: "badge-bad", why: "no permission lists it" };
+    }
+    const rank = { "badge-ok": 2, "badge-waiting": 1, "badge-bad": 0 };
+    const [text, cls] = matching.map(p => permEffect(p, data, control)).sort((x, y) => rank[y[1]] - rank[x[1]])[0];
+    const p = matching.find(p => permEffect(p, data, control)[1] === cls);
+    const args = matching.some(p => p.args) ? "; its argument constraints are not checked here" : "";
+    return { text, cls, why: "by the permission " + p.server + "__" + (p.tool || "*") + " (" + permKind(p) + ") in " + data.mode + " mode" + args };
 }
 
 /* findActivity is an activity by agent and id, from the last refresh. */

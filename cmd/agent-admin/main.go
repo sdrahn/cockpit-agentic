@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 const usage = `usage: agent-admin COMMAND …
   list                                   the agents
+  show [NAME…]                           the gateway data and the emergency stop, as JSON
   check NAME|FILE                        validate a configuration
   create NAME --from FILE                install a new agent (supervised, no permissions)
   edit NAME --from FILE                  replace its configuration, restart it if it runs
@@ -68,6 +70,14 @@ func run(a *admin.Admin, args []string) error {
 			fmt.Println(strings.Join(names, "\n"))
 		}
 		return err
+	case "show":
+		p, err := a.Show(args...)
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(p)
 	case "check":
 		if err := need(1); err != nil {
 			return err
