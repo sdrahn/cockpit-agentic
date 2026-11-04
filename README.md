@@ -121,6 +121,8 @@ curl --unix-socket /tmp/pp.sock http://agent/v1/status
 
 ## Status
 
+Released: 0.1.0 (branch `release-0.1`; [CHANGELOG.md](CHANGELOG.md)). Main is 0.2.0 in development.
+
 | Part | State |
 |---|---|
 | Contract (Parts I–III) | draft 1 |

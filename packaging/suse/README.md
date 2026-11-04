@@ -106,7 +106,7 @@ To release X.Y.0:
 3. `tools/check-release vX.Y.Z` checks that the spec, the first
    `CHANGELOG.md` section and `_service` name the release, and that the
    tree holds sources only (`tools/check-tree`, which CI runs on every
-   change). Then tag and push: `git tag -a vX.Y.Z -m "Custos X.Y.Z"`,
+   change). Push the branch; a maintainer then tags and pushes the tag: `git tag -a vX.Y.Z -m "Custos X.Y.Z"`,
    `git push origin release-X.Y vX.Y.Z`. The Release workflow runs the
    same check before it builds anything. After publishing, it downloads
    the files again and checks them against `SHA256SUMS` and `git
