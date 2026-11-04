@@ -154,6 +154,9 @@ optional_policy(`
 # podman as the OpenShell user (setpriv; CUSTOS_OPENSHELL_USER): podman
 # runs in its own domain, also under the relay's NoNewPrivileges.
 allow agent_relay_t self:capability { setuid setgid };
+# setpriv keeps and then sets its capabilities across the user change
+# (capset); without this it fails with no AVC record in the CI runs.
+allow agent_relay_t self:process { getcap setcap };
 optional_policy(`
 	gen_require(`
 		type container_runtime_t, container_runtime_exec_t;

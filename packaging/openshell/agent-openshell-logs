@@ -20,6 +20,8 @@ if [ -n "$user" ] && [ "$user" != root ]; then
 	as_user="setpriv --reuid=$uid --regid=$(id -g "$user") --init-groups -- env -i HOME=$home USER=$user LOGNAME=$user PATH=/usr/sbin:/usr/bin:/sbin:/bin XDG_RUNTIME_DIR=/run/user/$uid"
 	runtimes=podman
 fi
+# Podman as the user from a directory it may enter.
+cd / || exit 1
 for rt in $runtimes; do
 	command -v "$rt" >/dev/null 2>&1 || continue
 	# OpenShell runs two containers per sandbox:
