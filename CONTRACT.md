@@ -576,7 +576,7 @@ Run as root, by hand or by Cockpit with administrative access:
 | `mode NAME MODE`, `permissions NAME < list.yaml` | the gateway agent data (§6). Like `pause`, `resume`, `stop-all` and `release-all`, it returns once the gateway's OPA has loaded the change (it reads it back on `/run/mcp-gateway/opa.sock`, for up to 20 s), so the change is in force when the command returns |
 | `set-credential NAME CRED < secret` | `systemd-creds encrypt`; for OpenShell agents `gateway-client-secret` or `gateway-token` (§16a) |
 | `pause NAME`, `resume NAME` | §8 (gateway data and `/v1/pause`) |
-| `stop-all`, `release-all` | the emergency stop (§8) and its end |
+| `stop-all`, `release-all` | the emergency stop (§8) and its end; both record who (`_control.by`: the person behind `sudo`, `SUDO_USER`, else `USER`) and when (`at`) |
 | `delete NAME [--keep-state]` | disables and stops units; removes configuration, gateway data, credentials, drop-ins, timers and, unless kept, state. The user stays, since uids are not reused while files may still belong to them |
 | `trigger NAME_SCHEDULE` | starts the schedule's activity (run by `agent-schedule@.service`) |
 | `list` | the agents |
@@ -696,6 +696,9 @@ tests, for openQA).
   schedules; mode, permissions, pause, stop and schedules changed through
   the root bridge with `agent-admin` and `systemctl`, §6, §8) and the
   Policy tab (the posture of every agent with its approvers, and what the
-  gateway would decide for one call). Still open: creating and deleting
-  agents, Audit (§10 with the gateway's audit), chat (§11), the emergency
-  stop (§8), and a test against a real Cockpit.
+  gateway would decide for one call), and the emergency stop (§8: *Stop
+  all agents* in the header after a confirmation, a banner with who
+  stopped them and when, *Release…*; `agent-admin stop-all` and
+  `release-all` through the root bridge). Still open: creating and
+  deleting agents, Audit (§10 with the gateway's audit), chat (§11), and
+  a test against a real Cockpit.

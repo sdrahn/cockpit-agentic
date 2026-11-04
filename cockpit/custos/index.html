@@ -11,6 +11,7 @@
     <script src="approvals.js" defer></script>
     <script src="agents.js" defer></script>
     <script src="policy.js" defer></script>
+    <script src="stop.js" defer></script>
     <script src="main.js" defer></script>
 </head>
 <body>
@@ -23,7 +24,19 @@
         <span class="muted">Supervise the agents on this host. Policy and approvals are
         mcp-gateway's; processes are systemd's.</span>
         <span id="whoami" class="muted"></span>
+        <button id="stop-all" class="stop">Stop all agents</button>
     </header>
+    <div id="stop-confirm" class="confirm" hidden>
+        <h2>Stop every agent on this host?</h2>
+        <p>The gateway will deny every agent call at once (<code>_control: stopped</code>). Then systemd stops
+        all agent units and schedule timers. Pending approvals stay pending. Running activities end.
+        This needs administrative access.</p>
+        <span class="actions">
+            <button id="stop-go" class="stop">Stop all agents</button>
+            <button id="stop-cancel" class="link">Cancel</button>
+            <span id="stop-note" class="muted"></span>
+        </span>
+    </div>
     <nav id="tabs" role="tablist">
         <button role="tab" data-tab="activity">Activity <span class="count" hidden></span></button>
         <button role="tab" data-tab="approvals">Approvals <span class="count count-warn" hidden></span></button>

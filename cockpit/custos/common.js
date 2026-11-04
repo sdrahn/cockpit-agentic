@@ -257,17 +257,6 @@ function systemctl(...args) {
     });
 }
 
-function renderStopBanner() {
-    const box = document.getElementById("stopped");
-    const c = state.posture && state.posture.control;
-    box.hidden = !(c && c.stopped);
-    if (c && c.stopped) {
-        box.replaceChildren(...nodes(el("strong", null, "All agents stopped"),
-            c.by ? " by " + c.by : "", c.at ? " at " + when(c.at) : "",
-            ". The gateway denies every agent call, and agent units and schedules are stopped."));
-    }
-}
-
 /* The gateway's decision for an agent's permission or tool, by the rules
  * of the agents module (gateway/policy/agents.rego). The gateway's own
  * decision is the one that counts: this only explains it. */

@@ -646,8 +646,8 @@ func opaData(path string) (any, error) {
 }
 
 // ReleaseAll undoes StopAll: sockets and timers that are enabled start again.
-func (a *Admin) ReleaseAll() error {
-	if err := a.writeStop(false, "release-all"); err != nil {
+func (a *Admin) ReleaseAll(by string) error {
+	if err := a.writeStop(false, by); err != nil {
 		return err
 	}
 	names, err := a.List()

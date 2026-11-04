@@ -116,10 +116,10 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if s := read(GatewayStop); !strings.Contains(s, "_control:\n  stopped: true") {
 		t.Errorf("stop file %q", s)
 	}
-	if err := a.ReleaseAll(); err != nil {
+	if err := a.ReleaseAll("bob"); err != nil {
 		t.Fatal(err)
 	}
-	if s := read(GatewayStop); !strings.Contains(s, "stopped: false") {
+	if s := read(GatewayStop); !strings.Contains(s, "stopped: false") || !strings.Contains(s, `by: "bob"`) {
 		t.Errorf("after release-all: %q", s)
 	}
 	if err := a.Delete("patch-pilot", false); err != nil {
@@ -274,7 +274,7 @@ func TestOpenShellAgent(t *testing.T) {
 		t.Errorf("stop-all misses the sandbox:\n%s", all)
 	}
 	r.cmds = nil
-	a.ReleaseAll()
+	a.ReleaseAll("alice")
 	if all = strings.Join(r.cmds, "\n"); !strings.Contains(all, "agent-openshell@sb.socket") {
 		t.Errorf("release-all:\n%s", all)
 	}
