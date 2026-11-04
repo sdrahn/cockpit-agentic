@@ -532,6 +532,19 @@ Run as root, by hand or by Cockpit with administrative access:
 
 ## 18. SELinux (`cockpit_agentic` module)
 
+SLES 16 and Leap 16 run SELinux enforcing, so every program this
+repository ships runs in a domain the policy accounts for:
+
+| Program | Started by | Domain |
+|---|---|---|
+| `agent-launcher` | systemd (`agent@.service`) | `agent_t` |
+| `agent-delegate` | mcp-gateway (the `agents` server) | `mcpsrv_agents_t` |
+| `agent-admin` | an administrator, Cockpit, `agent-schedule@.service` | the caller's (`unconfined_t`, `unconfined_service_t`) |
+| `fakemodel`, `testsrv` (`-tests`) | the functional tests; mcp-gateway | `unconfined_service_t`; `mcpsrv_generic_t` |
+
+CI builds the module and runs the functional tests on Leap 16 with SELinux
+enforcing; they fail on any denial for the module's types.
+
 `agent_exec_t` → `agent_t` (`init_daemon_domain`), with `agent_conf_t`,
 `agent_var_lib_t`, `agent_runtime_t` and `agent_sock_t`. `agent_t` gets
 `mcp_gateway_client` (the MCP socket) but not

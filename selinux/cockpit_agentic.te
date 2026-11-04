@@ -49,7 +49,15 @@ allow agent_t self:udp_socket create_socket_perms;
 allow agent_t self:process { getsched signal };
 allow agent_t self:fifo_file rw_fifo_file_perms;
 
-# Go runtime and libraries.
+# Go runtime and libraries (the programs link libc through cgo: NSS for
+# user names, the resolver).
+corecmd_search_bin(agent_t)
+can_exec(agent_t, agent_exec_t)
+libs_use_ld_so(agent_t)
+libs_use_shared_libs(agent_t)
+files_search_etc(agent_t)
+files_search_var_lib(agent_t)
+files_search_pids(agent_t)
 kernel_read_system_state(agent_t)
 kernel_read_kernel_sysctls(agent_t)
 files_read_etc_files(agent_t)
