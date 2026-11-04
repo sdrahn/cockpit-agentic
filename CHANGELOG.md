@@ -5,11 +5,17 @@ All notable changes to Custos. Versions follow
 (CONTRACT.md), names, paths and fields are added, never renamed or
 removed.
 
-## Unreleased
+## v0.1.0 — 2026-11-04
 
 The first release: governed AI agents on SUSE Linux Enterprise Server 16
 and openSUSE Leap 16, supervised from Cockpit, with every tool call
 decided by mcp-gateway (≥ 1.12).
+
+There is nothing to upgrade from. Install `custos` and `custos-selinux`,
+and optionally `custos-cockpit` and `custos-docs`, from the OBS
+packages. The user guide, chapters 2 to 4, goes from the installation to
+a first agent whose change waits for an approval. The OpenShell backend
+is a draft (CONTRACT.md O10).
 
 ### Added
 
