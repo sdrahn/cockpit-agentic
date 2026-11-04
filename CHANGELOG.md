@@ -9,6 +9,11 @@ removed.
 
 ### Fixed
 
+- An OpenShell agent's unit could fail to start after a restart (a
+  no-op `agent-admin edit`, say): `openshell sandbox start` missed that
+  the sandbox was Ready and waited past the unit's start timeout.
+  `agent-openshell-start` now bounds each start to 15 seconds, decides by
+  the sandbox's phase, and counts its 120-second limit on the clock.
 - An OpenShell agent's activity could fail right after OpenShell renewed
   its gateway token: the proxy closed the connection without an answer
   (`rejected by transport: … EOF`), and the agent did not try again. A

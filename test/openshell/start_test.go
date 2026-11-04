@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const script = "../../packaging/openshell/agent-openshell-start"
@@ -24,7 +25,7 @@ next() { # file: its first line, removed unless it is the last
 	[ "$(wc -l <"$d/$1")" -gt 1 ] && sed -i 1d "$d/$1"
 	echo "$l"
 }
-echo "$*" >>"$d/calls"
+echo "$* timeout=${OPENSHELL_LIFECYCLE_TIMEOUT:-}" >>"$d/calls"
 case "$3 $4" in
 "sandbox get")
 	p=$(next phases)
@@ -34,6 +35,9 @@ case "$3 $4" in
 "sandbox start")
 	s=$(next starts)
 	[ "$s" = ok ] && { echo "Started sandbox $5"; exit 0; }
+	# As openshell 0.1 once did: the sandbox is Ready, the start does not
+	# see it and waits out its timeout.
+	[ "$s" = hang ] && { sleep "${OPENSHELL_LIFECYCLE_TIMEOUT:-300}"; echo "timed out after ${OPENSHELL_LIFECYCLE_TIMEOUT:-300}s waiting for sandbox to reach Ready" >&2; exit 1; }
 	echo "$s" >&2
 	exit 1
 	;;
@@ -142,6 +146,35 @@ func TestFailsWhenNeverReady(t *testing.T) {
 		if !strings.Contains(r.out, "is not Ready after 2s") || !strings.Contains(r.out, c.says) {
 			t.Errorf("%v: %q, want %q", c.phases, r.out, c.says)
 		}
+	}
+}
+
+// A start that never sees Ready (the sandbox is Ready all the same) is
+// bounded, and the phase decides: the unit starts instead of timing out.
+func TestStartThatMissesReady(t *testing.T) {
+	t0 := time.Now()
+	r := start(t, []string{"Stopped", "Ready"}, []string{"hang"}, "AGENT_START_CALL_SECONDS=1")
+	if r.err != nil {
+		t.Fatalf("%v: %s", r.err, r.out)
+	}
+	if d := time.Since(t0); d > 10*time.Second {
+		t.Errorf("took %s", d)
+	}
+	if !strings.Contains(strings.Join(r.calls, "\n"), "sandbox start agent-sb timeout=1") {
+		t.Errorf("the start's own wait is not bounded: %q", r.calls)
+	}
+}
+
+// The limit is on the clock, so a start that hangs cannot take the unit
+// past it.
+func TestLimitCountsTheStartsTime(t *testing.T) {
+	t0 := time.Now()
+	r := start(t, []string{"Stopped"}, []string{"hang"}, "AGENT_START_SECONDS=3", "AGENT_START_CALL_SECONDS=2")
+	if r.err == nil || !strings.Contains(r.out, "is not Ready after 3s") || !strings.Contains(r.out, "timed out after 2s") {
+		t.Fatalf("%v: %s", r.err, r.out)
+	}
+	if d := time.Since(t0); d > 12*time.Second {
+		t.Errorf("took %s, the limit is 3s", d)
 	}
 }
 
