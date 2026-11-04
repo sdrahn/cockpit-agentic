@@ -7,6 +7,12 @@
 # for and the start is tried again. A sandbox that is not Ready within
 # AGENT_START_SECONDS (default 120) fails the unit, so that systemd's
 # Restart= tries again, instead of a relay that forwards to nothing.
+#
+# "openshell sandbox start" waits for Ready itself, up to
+# OPENSHELL_LIFECYCLE_TIMEOUT (300 s by default), and can miss the
+# event: once it waited past the unit's TimeoutStartSec with the sandbox
+# Ready. So each start waits at most AGENT_START_CALL_SECONDS (15), and
+# the phase decides.
 set -u
 gateway=${1:?usage: agent-openshell-start GATEWAY SANDBOX}
 sandbox=${2:?usage: agent-openshell-start GATEWAY SANDBOX}
@@ -21,7 +27,8 @@ phase() {
 		grep -oE '"phase": *"[A-Z][A-Za-z]*"' | head -n 1 | sed 's/.*"\([A-Za-z]*\)"$/\1/'
 }
 
-waited=0
+deadline=$(($(date +%s) + limit))
+call=${AGENT_START_CALL_SECONDS:-15}
 last=
 while :; do
 	p=$(phase)
@@ -30,9 +37,9 @@ while :; do
 		exit 0
 		;;
 	Stopped | Completed | Suspended | Error)
-		# start waits until Ready itself; a refusal (an operation still
-		# pending) is tried again.
-		out=$(openshell -g "$gateway" sandbox start "$sandbox" 2>&1) && exit 0
+		# A refusal (an operation still pending) or a start that did not
+		# see Ready in time is tried again; the phase says which.
+		out=$(OPENSHELL_LIFECYCLE_TIMEOUT=$call openshell -g "$gateway" sandbox start "$sandbox" 2>&1) && exit 0
 		last=$out
 		;;
 	"")
@@ -43,10 +50,9 @@ while :; do
 		last="sandbox $sandbox is $p"
 		;;
 	esac
-	if [ "$waited" -ge "$limit" ]; then
+	if [ "$(date +%s)" -ge "$deadline" ]; then
 		echo "agent-openshell-start: sandbox $sandbox is not Ready after ${limit}s: $(echo "$last" | tail -n 3 | tr '\n' ' ')" >&2
 		exit 1
 	fi
 	sleep "$step"
-	waited=$((waited + step))
 done

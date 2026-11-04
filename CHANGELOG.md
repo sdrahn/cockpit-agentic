@@ -7,8 +7,9 @@ removed.
 
 ## v0.1.1 — 2026-11-04
 
-The package builds on OBS. 0.1.0's sources are unchanged otherwise;
-upgrading needs nothing.
+The package builds on OBS, and an OpenShell agent's unit no longer
+fails to start when OpenShell misses that its sandbox is ready.
+Upgrading needs nothing.
 
 ### Fixed
 
@@ -16,6 +17,11 @@ upgrading needs nothing.
   `.github`: a test of the release workflow read
   `.github/workflows/release.yml`. It skips without it. CI now builds
   the RPM from the same tarball as OBS.
+- An OpenShell agent's unit could fail to start after a restart (a
+  no-op `agent-admin edit`, say): `openshell sandbox start` missed that
+  the sandbox was Ready and waited past the unit's start timeout.
+  `agent-openshell-start` now bounds each start to 15 seconds, decides by
+  the sandbox's phase, and counts its 120-second limit on the clock.
 
 ## v0.1.0 — 2026-11-04
 
