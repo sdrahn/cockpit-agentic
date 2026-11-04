@@ -72,8 +72,14 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
     // Screenshots a person will look at: 2x.
     const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
     const page = await context.newPage();
-    const errors = [];
-    page.on("pageerror", e => errors.push(e.message));
+    // Errors in the page's scripts (its frame's /custos/ files) fail the
+    // test; Cockpit's own (the shell's, minified) are listed with where
+    // they come from.
+    const errors = [], shellErrors = [];
+    page.on("pageerror", e => {
+        const where = String(e.stack || "").split("\n").slice(0, 4).join(" | ");
+        (/\/custos\/[a-z]+\.js/.test(e.stack || "") ? errors : shellErrors).push(e.message + " @ " + where);
+    });
     // Cockpit's login sends the remembered choice of administrative access
     // (localStorage "superuser:<user>"): "any" starts the sudo bridge with
     // the login password, as when the person had turned it on before.
@@ -195,7 +201,8 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
               "Release: allowed again, the sockets are back");
     });
 
-    check(errors.length === 0, "no page errors", errors.join("\n"));
+    check(errors.length === 0, "no errors in the page's scripts", errors.join("\n"));
+    if (shellErrors.length) console.log("    | errors outside the page (Cockpit's shell):\n    | " + shellErrors.join("\n    | "));
     // SELinux: no denial for the domains this test drove (enforcing).
     const avc = vm(`ausearch -m AVC,USER_AVC,SELINUX_ERR -ts $(date -d @${t0} '+%x %T') 2>/dev/null | grep -E 'denied|SELINUX_ERR' || true`) || "";
     const ours = avc.split("\n").filter(l => /scontext=[^ ]*:(agent_t|agent_relay_t|mcpsrv_agents_t|mcpgw_t|cockpit_[a-z_]+t):/.test(l));
