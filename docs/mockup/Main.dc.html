@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Agentic control plane</title>
+<title>Custos</title>
 <script src="./support.js"></script>
 </head>
 <body>
@@ -46,7 +46,7 @@ button{font-family:inherit}
     <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
       <div style="background: #ffffff; border-bottom: 1px solid #d2d2d2; padding: 20px 24px 0">
         <div style="display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap">
-          <h1 style="margin: 0; font-size: 24px; font-weight: 600">Agents</h1>
+          <h1 style="margin: 0; font-size: 24px; font-weight: 600">Custos</h1>
           <span style="color: #4d4d4d; font-size: 14px">Supervise the agents on this host. Policy and approvals are mcp-gateway's; processes are systemd's.</span>
         </div>
         <div role="tablist" style="display: flex; gap: 4px; margin-top: 16px; flex-wrap: wrap">
@@ -711,10 +711,10 @@ class Component extends DCLogic {
     const go = (patch) => () => this.setState(patch);
     const titleOf = (id) => this.agent(id).title;
 
-    const navItems = ['Overview', 'Logs', 'Storage', 'Networking', 'Services', 'Software updates', 'Agents', 'MCP gateway', 'Terminal'];
+    const navItems = ['Overview', 'Logs', 'Storage', 'Networking', 'Services', 'Software updates', 'Custos', 'MCP gateway', 'Terminal'];
     const nav = navItems.map((label) => ({
       label: label,
-      style: label === 'Agents'
+      style: label === 'Custos'
         ? 'padding:10px 20px;font-size:14px;color:#ffffff;font-weight:600;background:#3c3f42;border-left:3px solid #73bcf7'
         : 'padding:10px 20px 10px 23px;font-size:14px;color:#e0e0e0'
     }));
