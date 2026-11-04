@@ -67,9 +67,11 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 	// supervisor has the new one). mcp-gateway answers 500 only to an
 	// initialize it cannot serve. So a 500 is retried with backoff, while
 	// the request can be sent again and the caller still waits. Around a
-	// renewal the proxy may also close the connection without an answer
-	// (EOF): that is retried too, but only for a request that may run
-	// twice (never a tools/call, which may have reached the gateway).
+	// renewal the sandbox may also refuse the connection for a moment
+	// (connect: permission denied): nothing was sent, so any request is
+	// retried. And the proxy may close the connection without an answer
+	// (EOF): that is retried only for a request that may run twice
+	// (never a tools/call, which may have reached the gateway).
 	for wait := retryFirst; retryable(r, res, err) && wait <= retryLast; wait *= 2 {
 		if err == nil {
 			drain(res)
@@ -100,8 +102,9 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 	return res, err
 }
 
-// retryable: a 500, or a connection dropped without an answer to a
-// request that is safe to send again; and the request can be sent again.
+// retryable: a 500, a connection that could not be made, or one dropped
+// without an answer to a request that is safe to send again; and the
+// request can be sent again.
 func retryable(r *http.Request, res *http.Response, err error) bool {
 	if r.Body != nil && r.GetBody == nil {
 		return false
@@ -109,7 +112,13 @@ func retryable(r *http.Request, res *http.Response, err error) bool {
 	if err == nil {
 		return res.StatusCode == http.StatusInternalServerError
 	}
-	return dropped(err) && idempotent(r)
+	return notConnected(err) || (dropped(err) && idempotent(r))
+}
+
+// notConnected: the connection could not be made, so nothing was sent.
+func notConnected(err error) bool {
+	var op *net.OpError
+	return errors.As(err, &op) && op.Op == "dial"
 }
 
 // dropped: the connection ended without an answer.
