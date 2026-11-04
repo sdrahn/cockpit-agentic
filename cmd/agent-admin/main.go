@@ -14,9 +14,9 @@ import (
 const usage = `usage: agent-admin COMMAND …
   list                                   the agents
   show [NAME…]                           the gateway data and the emergency stop, as JSON
-  check NAME|FILE                        validate a configuration
-  create NAME --from FILE                install a new agent (supervised, no permissions)
-  edit NAME --from FILE                  replace its configuration and apply it (restart; OpenShell: its sandbox)
+  check NAME|FILE                        validate a configuration (FILE -: stdin)
+  create NAME --from FILE                install a new agent (supervised, no permissions; FILE -: stdin)
+  edit NAME --from FILE                  replace its configuration and apply it (restart; OpenShell: its sandbox; FILE -: stdin)
   delete NAME [--keep-state]             remove an agent (its user stays)
   set-credential NAME CRED               encrypt a secret read from stdin
   mode NAME advisory|supervised|bounded  set the autonomy mode (enforced by mcp-gateway)

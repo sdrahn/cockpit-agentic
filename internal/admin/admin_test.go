@@ -637,3 +637,32 @@ func TestEditOpenShellGatewayFixed(t *testing.T) {
 		t.Errorf("moving to another OpenShell gateway: %v", err)
 	}
 }
+
+// A control plane gives the configuration on stdin (--from -, check -),
+// without a file of its own.
+func TestConfigurationFromStdin(t *testing.T) {
+	a, _ := newAdmin(t)
+	a.In = strings.NewReader(yml)
+	if err := a.Check("-"); err != nil {
+		t.Fatalf("check -: %v", err)
+	}
+	a.In = strings.NewReader("version: 1\nname: x\n")
+	if err := a.Check("-"); err == nil {
+		t.Error("check - accepted an incomplete configuration")
+	}
+	a.In = strings.NewReader(yml)
+	if err := a.Create("patch-pilot", "-"); err != nil {
+		t.Fatalf("create --from -: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(a.agentDir("patch-pilot"), "agent.yaml")); err != nil {
+		t.Errorf("agent.yaml not installed: %v", err)
+	}
+	a.In = strings.NewReader(strings.Replace(yml, "Keeps", "Still keeps", 1))
+	if err := a.Edit("patch-pilot", "-"); err != nil {
+		t.Fatalf("edit --from -: %v", err)
+	}
+	a.In = nil
+	if err := a.Check("-"); err == nil {
+		t.Error("check - without stdin")
+	}
+}

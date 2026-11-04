@@ -28,6 +28,8 @@ function site() {
     return root;
 }
 
+const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
+
 (async () => {
     const root = site();
     const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
@@ -232,6 +234,51 @@ function site() {
     await page.goto(url + "?nochat#/agents/triage");
     await page.waitForSelector("#agent-detail h2");
     check((await page.textContent("#agent-detail")).includes("does not offer chat"), "an agent without AG-UI says so");
+
+    // Creating and deleting agents.
+    await page.goto(url + "?create#/agents");
+    await page.waitForSelector("#agents tbody tr");
+    await page.click("#create-open");
+    await page.fill("#create-name", "web-watch");
+    check((await page.inputValue("#create-agent textarea")).includes("\nname: web-watch\n"), "the name goes into the configuration");
+    await page.fill("#create-agent textarea", (await page.inputValue("#create-agent textarea")).replace(/^model:/m, "modle:"));
+    await page.click("#create-agent button[name=check]");
+    await page.waitForFunction(() => document.querySelector("#create-note").textContent.includes("model: missing"));
+    const chk = await spawned("agent-admin check -");
+    check(chk.length === 1 && chk[0][4] === "", "check runs agent-admin check - as the person");
+    await page.fill("#create-agent textarea", (await page.inputValue("#create-agent textarea")).replace(/^modle:/m, "model:"));
+    await page.click("#create-agent button[name=check]");
+    await page.waitForFunction(() => document.querySelector("#create-note").textContent.includes("valid"));
+    if (shots) await page.screenshot({ path: path.join(shots, "create.png"), fullPage: true });
+    await page.fill("#create-name", "Bad Name");
+    await page.click("#create-agent button[name=create]");
+    check((await page.textContent("#create-note")).includes("lower-case"), "an invalid name is refused before agent-admin");
+    check((await spawned("agent-admin create Bad Name --from -")).length === 0, "nothing is created with an invalid name");
+    await page.fill("#create-name", "web-watch");
+    await page.click("#create-agent button[name=create]");
+    await page.waitForSelector("#agent-row-web-watch");
+    const created = await spawned("agent-admin create web-watch --from -");
+    check(created.length === 1 && created[0][4] === "require" && created[0][2] === "SUDO_USER=carol",
+          "create runs agent-admin create --from - through the root bridge, naming the person");
+    await page.waitForSelector("#agent-detail h2:has-text('web-watch')");
+    check(await page.isVisible("#agent-created") && (await page.textContent("#agent-created")).includes("no permissions"),
+          "the new agent is shown, supervised and without permissions");
+    check((await page.textContent("#agent-detail")).includes("No permissions: the agent can do nothing."), "its tool boundaries are empty");
+
+    await page.click("#agent-detail button:has-text('Delete…')");
+    check(await page.$eval("#agent-detail .confirm-delete button.danger", b => b.disabled), "Delete waits for the name to be typed");
+    await page.fill("#agent-detail .confirm-delete input:not([type=checkbox])", "web-watc");
+    await page.waitForTimeout(5500); // a refresh keeps the confirmation
+    check(await page.isVisible("#agent-detail .confirm-delete") &&
+          await page.$eval("#agent-detail .confirm-delete button.danger", b => b.disabled), "a refresh keeps the confirmation, still locked");
+    await page.fill("#agent-detail .confirm-delete input:not([type=checkbox])", "web-watch");
+    await page.check("#agent-detail .confirm-delete input[type=checkbox]");
+    if (shots) await page.screenshot({ path: path.join(shots, "delete.png") });
+    await page.click("#agent-detail .confirm-delete button.danger");
+    await page.waitForFunction(() => !document.querySelector("#agent-row-web-watch"));
+    const deleted = await spawned("agent-admin delete web-watch --keep-state");
+    check(deleted.length === 1 && deleted[0][4] === "require", "delete runs agent-admin delete --keep-state through the root bridge");
+    check(cockpit_path(await page.url()) === "agents", "after deleting, the list is shown");
 
     // Audit tab: each state-changing action's history, and the records.
     await page.goto(url + "?audit#/audit");

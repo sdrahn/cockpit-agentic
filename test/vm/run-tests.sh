@@ -249,8 +249,11 @@ f=$(config t1 custos-test 'schedules: [{name: check, on_calendar: "*-*-* 03:00",
 check "agent-admin check accepts the configuration" agent-admin check "$f"
 printf 'version: 1\nname: t1\nmodel: {provider: openai, name: m, endpoint: "http://x"}\nlimitz: {}\n' >"$work/bad.yaml"
 check "agent-admin check refuses an unknown key" not agent-admin check "$work/bad.yaml"
+# As the Cockpit page does: the configuration on stdin, checked without root.
+check "agent-admin check - (stdin), as nobody, accepts it" bash -c "$(declare -f as_nobody); as_nobody /usr/sbin/agent-admin check - <'$f'"
+check "agent-admin check - refuses an unknown key" not bash -c "agent-admin check - <'$work/bad.yaml'"
 agent-admin delete t1 >/dev/null 2>&1
-check "agent-admin create t1" agent-admin create t1 --from "$f"
+check "agent-admin create t1 --from - (stdin)" bash -c "agent-admin create t1 --from - <'$f'"
 check "agent-admin refuses to create t1 twice" not agent-admin create t1 --from "$f"
 check "user agent-t1 exists, without a login shell" bash -c 'getent passwd agent-t1 | grep -q nologin'
 check "agent-t1 is in mcp-users" in_group agent-t1 mcp-users

@@ -2,7 +2,8 @@
 
 How people use Custos from Cockpit: who logs in, what each person
 can see and do, and what happens behind each action. The Cockpit page
-(`custos-cockpit`) has the Activity, Approvals, Agents, Policy and Audit tabs and chat so far; the rest is
+(`custos-cockpit`) has the Activity, Approvals, Agents, Policy and Audit tabs, chat, and creating and
+deleting agents so far; the rest is
 designed ([mockup](mockup/Main.dc.html)). Everything behind it (the agents'
 control API, mcp-gateway's approvals, `agent-admin`) exists, so each step
 names the interface the page uses.
@@ -60,7 +61,8 @@ control plane.
 2. Add the people who supervise agents to `agent-clients`.
 3. Name the approvers of the gateway servers the agents use, in
    mcp-gateway's approver rules.
-4. Create an agent: `agent-admin create NAME --from agent.yaml`. It starts
+4. Create an agent: *Create agent* on the Agents tab, or
+   `agent-admin create NAME --from agent.yaml`. It starts
    **supervised** and with **no permissions**: it can do nothing yet.
 5. List what it may do: `agent-admin permissions NAME < list.yaml`
    (read-only permissions say `read_only: true`; everything else needs
