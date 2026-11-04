@@ -314,6 +314,22 @@ jobs:
           SHOTS: ${{ runner.temp }}/vm/screenshots
           NODE_PATH: ${{ github.workspace }}/node_modules
         run: test/vm/run-vm.sh rpms "$(command -v opa)"
+      # The screenshots also in the log, base64 between markers, for
+      # whoever can read the log but not the artifact storage (decode with
+      # the lines between "SHOT-BEGIN <name>" and "SHOT-END <name>").
+      - if: always()
+        name: Screenshots in the log (base64)
+        run: |
+          for f in "$RUNNER_TEMP"/vm/screenshots/*.png; do
+            [ -f "$f" ] || continue
+            n=$(basename "$f" .png)
+            case $n in failed-*) continue ;; esac
+            echo "::group::screenshot $n"
+            echo "SHOT-BEGIN $n"
+            base64 -w 76 "$f"
+            echo "SHOT-END $n"
+            echo "::endgroup::"
+          done
       - if: always()
         uses: actions/upload-artifact@v4
         with:
