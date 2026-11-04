@@ -230,7 +230,7 @@ for d in /run/agents /var/lib/agents /etc/custos; do
 done
 
 section Documentation
-if rpm -q custos-doc >/dev/null 2>&1; then
+if rpm -q custos-docs >/dev/null 2>&1; then
 	check "the user guide is installed" test -f /usr/share/custos/docs/user-guide/README.md
 	check "the contract is installed beside it" test -f /usr/share/custos/docs/CONTRACT.md
 	check "the mcp-docs collection file names the guide" \
@@ -242,7 +242,7 @@ if rpm -q custos-doc >/dev/null 2>&1; then
 		skip "mcp-docs serves the collection custos (mcp-docs is not installed)"
 	fi
 else
-	skip "the user guide is installed (custos-doc is not installed)"
+	skip "the user guide is installed (custos-docs is not installed)"
 fi
 
 section Setup

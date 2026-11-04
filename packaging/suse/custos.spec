@@ -103,14 +103,14 @@ no model is needed. For openQA and other test systems:
 /usr/libexec/custos/tests/run-tests.sh --disposable --results DIR.
 They change the system for good; install them on test systems only.
 
-%package doc
+%package docs
 Summary:        User guide of custos, also for mcp-docs
 Group:          Documentation/Other
 BuildArch:      noarch
 # Installed with mcp-docs, it serves the guide to agents.
 Supplements:    (%{name} and mcp-docs)
 
-%description doc
+%description docs
 The Custos user guide: installing, connecting to mcp-gateway and an
 identity provider, configuring, administering and supervising agents,
 the audit record, OpenShell sandboxes, troubleshooting and reference,
@@ -209,7 +209,7 @@ done
 %{_datadir}/custos/gateway
 %{_datadir}/custos/openshell
 
-%files doc
+%files docs
 %dir %{_datadir}/custos
 %{_datadir}/custos/docs
 %dir %{_datadir}/mcp-docs

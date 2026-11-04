@@ -643,7 +643,7 @@ OBS packages for SLES 16.0/16.1 and openSUSE Leap 16.0/16.1
 and `custos-selinux` (required where `selinux-policy-targeted`
 is installed), `custos-cockpit` (the Cockpit page, in
 `/usr/share/cockpit/custos`), `custos-tests` (the functional
-tests, for openQA) and `custos-doc` (the user guide and this contract
+tests, for openQA) and `custos-docs` (the user guide and this contract
 in `/usr/share/custos/docs`, with the collection file
 `/usr/share/mcp-docs/collections.d/custos.yaml`, so that mcp-docs serves
 them as the collection `custos`).

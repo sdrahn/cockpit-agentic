@@ -158,7 +158,7 @@ func TestGuideLinks(t *testing.T) {
 				target = name
 			}
 			if strings.Contains(target, "/") {
-				// Outside the guide: not installed with it (custos-doc
+				// Outside the guide: not installed with it (custos-docs
 				// has the guide and CONTRACT.md only).
 				t.Errorf("%s: link to %s, outside the installed guide", name, m[0])
 				continue

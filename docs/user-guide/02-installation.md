@@ -32,7 +32,7 @@ nothing from the internet: Custos works air-gapped.
 | `custos` | `agent-launcher`, `agent-admin`, the units, the gateway policy module, the `agents` server definition, the example agent | always |
 | `custos-selinux` | the SELinux module `custos` | where SELinux runs (pulled in automatically with `selinux-policy-targeted`) |
 | `custos-cockpit` | the Cockpit page *Custos* (`/usr/share/cockpit/custos`) | on hosts people supervise through Cockpit |
-| `custos-doc` | this guide and the contract, with a collection file for mcp-docs | where people or agents read the documentation on the host |
+| `custos-docs` | this guide and the contract, with a collection file for mcp-docs | where people or agents read the documentation on the host |
 | `custos-tests` | the functional tests (openQA) | test systems only: they change the system for good |
 
 `custos` requires `mcp-gateway`. `custos-cockpit` requires
@@ -59,7 +59,7 @@ of the source repository.
 As root, for a host that runs agents and is supervised in Cockpit:
 
 ```bash
-zypper install mcp-gateway mcp-gateway-selinux custos custos-selinux custos-cockpit cockpit custos-doc
+zypper install mcp-gateway mcp-gateway-selinux custos custos-selinux custos-cockpit cockpit custos-docs
 systemctl enable --now mcp-gateway.service
 systemctl enable --now cockpit.socket
 ```
@@ -129,7 +129,7 @@ to approve: the gateway would record root as the approver
 ## Upgrading {#upgrading}
 
 ```bash
-zypper update custos custos-selinux custos-cockpit custos-doc
+zypper update custos custos-selinux custos-cockpit custos-docs
 systemctl daemon-reload
 ```
 
@@ -146,7 +146,7 @@ Remove the agents first (each `agent-admin delete NAME`,
 [chapter 9](09-administration.md#delete)), then the packages:
 
 ```bash
-zypper remove custos-cockpit custos-doc custos custos-selinux
+zypper remove custos-cockpit custos-docs custos custos-selinux
 ```
 
 The agents' system users stay (uids are not reused while files may

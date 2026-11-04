@@ -1,5 +1,5 @@
 #!/bin/sh
-# mcp-docs-smoke.sh: check an installed custos-doc with mcp-docs
+# mcp-docs-smoke.sh: check an installed custos-docs with mcp-docs
 # (github.com/sdrahn/mcp-docs) installed, as root (CI's openSUSE
 # container): its files, and mcp-docs serving the collection custos from
 # its collection file as an agent asks.
@@ -22,7 +22,7 @@ call() { # id, tool, arguments
 }
 
 for f in "$yaml" "$docs/CONTRACT.md" "$docs/user-guide/README.md" "$docs/user-guide/12-troubleshooting.md"; do
-	rpm -qf "$f" | grep -q '^custos-doc-' || fail "$f is not owned by custos-doc"
+	rpm -qf "$f" | grep -q '^custos-docs-' || fail "$f is not owned by custos-docs"
 done
 
 {
@@ -44,4 +44,4 @@ for a in 'Custos documentation' 'Index: custos/user-guide/README.md' 'agent-admi
 	'supervised' 'Common questions'; do
 	grep -q -- "$a" "$out" || fail "no $a in the answers: $(cat "$out")"
 done
-echo "mcp-docs-smoke: custos-doc is served ($(find "$docs" -name '*.md' | wc -l) documents)"
+echo "mcp-docs-smoke: custos-docs is served ($(find "$docs" -name '*.md' | wc -l) documents)"

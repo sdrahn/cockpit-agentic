@@ -40,8 +40,8 @@ fields, gateway data, AG-UI events) are defined in the contract,
 | `/usr/share/custos/examples/patch-pilot/` | root 0644 | the example agent and permissions |
 | `/usr/share/custos/openshell/Containerfile` | root 0644 | the OpenShell agent image |
 | `/usr/share/cockpit/custos/` | root 0644 | the Cockpit page |
-| `/usr/share/custos/docs/` | root 0644 | this guide and the contract (`custos-doc`) |
-| `/usr/share/mcp-docs/collections.d/custos.yaml` | root 0644 | the collection file for mcp-docs (`custos-doc`) |
+| `/usr/share/custos/docs/` | root 0644 | this guide and the contract (`custos-docs`) |
+| `/usr/share/mcp-docs/collections.d/custos.yaml` | root 0644 | the collection file for mcp-docs (`custos-docs`) |
 
 ## systemd units {#units}
 

@@ -105,7 +105,7 @@ install-cockpit:
 		cockpit/custos/manifest.json $(DESTDIR)$(COCKPITDIR)/
 
 # The user guide and the contract, for people and for mcp-docs
-# (package custos-doc).
+# (package custos-docs).
 install-doc:
 	install -d $(DESTDIR)$(DOCDIR)/user-guide
 	install -m 0644 docs/user-guide/*.md $(DESTDIR)$(DOCDIR)/user-guide/

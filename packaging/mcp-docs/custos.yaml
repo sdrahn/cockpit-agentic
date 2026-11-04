@@ -1,5 +1,5 @@
 # The collection file for mcp-docs (github.com/sdrahn/mcp-docs), installed
-# by custos-doc in /usr/share/mcp-docs/collections.d/. mcp-docs serves
+# by custos-docs in /usr/share/mcp-docs/collections.d/. mcp-docs serves
 # the collection custos from it once both are installed. An administrator
 # replaces it with a file of the same name in /etc/mcp-docs/collections.d/;
 # an empty file there disables it.
