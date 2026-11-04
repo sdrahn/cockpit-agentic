@@ -354,3 +354,31 @@ func TestClientSecretNeedsOAuth(t *testing.T) {
 		t.Errorf("client secret without an OAuth client: %v", err)
 	}
 }
+
+// The user whose rootless Podman runs the sandboxes goes to the relay
+// (openshell.env), for its log source.
+func TestOpenShellUser(t *testing.T) {
+	a, _ := newAdmin(t)
+	a.OpenShellUser = "osh"
+	old := LookupUser
+	LookupUser = func(string) (string, string, error) { return "1001", "/home/osh", nil }
+	t.Cleanup(func() { LookupUser = old })
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(oshYml), 0o644)
+	if err := a.Create("sb", f); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(a.agentDir("sb"), "openshell.env"))
+	if !strings.Contains(string(b), "\nOPENSHELL_USER=osh\n") {
+		t.Errorf("openshell.env:\n%s", b)
+	}
+	d, err := os.ReadFile(a.p(filepath.Join(UnitDir, "agent-openshell@sb.service.d", "openshell-user.conf")))
+	if err != nil || !strings.Contains(string(d), "ReadWritePaths=-/home/osh/.local/share/containers -/run/user/1001\n") {
+		t.Errorf("relay drop-in: %v\n%s", err, d)
+	}
+	a2, _ := newAdmin(t)
+	a2.OpenShellUser = "osh\nEVIL=1"
+	if err := a2.Create("sb", f); err == nil {
+		t.Error("a user name with a newline was written to openshell.env")
+	}
+}

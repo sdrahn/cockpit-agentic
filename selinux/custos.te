@@ -147,6 +147,21 @@ optional_policy(`
 	')
 	stream_connect_pattern(agent_relay_t, container_var_run_t, container_var_run_t, container_runtime_t)
 ')
+# With rootless Podman (OpenShell's RPM default) agent-openshell-logs runs
+# podman as the OpenShell user (setpriv; CUSTOS_OPENSHELL_USER): podman
+# runs in its own domain, also under the relay's NoNewPrivileges.
+allow agent_relay_t self:capability { setuid setgid };
+optional_policy(`
+	gen_require(`
+		type container_runtime_t, container_runtime_exec_t;
+		class process2 { nnp_transition nosuid_transition };
+	')
+	domtrans_pattern(agent_relay_t, container_runtime_exec_t, container_runtime_t)
+	allow agent_relay_t container_runtime_t:process2 { nnp_transition nosuid_transition };
+	allow container_runtime_t agent_relay_t:fd use;
+	allow container_runtime_t agent_relay_t:fifo_file rw_fifo_file_perms;
+	allow container_runtime_t agent_relay_t:process sigchld;
+')
 # systemd creates the agents' sockets (agent@.socket, DirectoryMode=)
 # and tmpfiles /run/agents: with the right labels even before a relabel
 # (the package's tmpfiles run before this module is loaded).

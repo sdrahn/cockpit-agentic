@@ -7,8 +7,11 @@
 #
 # Usage: test/vm/run-vm.sh <rpm dir> <opa binary>
 #
-#
 # Environment:
+#   SUITE      functional (default): test/vm/run-tests.sh; openshell: the
+#              OpenShell backend with rootless Podman and SELinux
+#              enforcing (test/openshell/vm-setup.sh, then
+#              test/openshell/run-spike.sh --system)
 #   IMAGE_URL  cloud image (default: openSUSE Tumbleweed Minimal-VM, Cloud)
 #   WORK       working directory (default: a new temporary directory); the
 #              serial console log, test output and results (TAP, JUnit)
@@ -150,7 +153,19 @@ vm 'bash /root/custos-vm/prepare.sh /root/custos-vm' 2>&1 | tee "$work/prepare.l
 log "running the tests"
 args="--disposable --results /root/custos-vm/results"
 set +e
-vm "/usr/libexec/custos/tests/run-tests.sh $args" 2>&1 | tee "$work/test.log"
+if [ "${SUITE:-functional}" = openshell ]; then
+	vm 'mkdir -p /root/custos-vm/src/test/openshell'
+	scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+		"$here/../openshell/run-spike.sh" "$here/../openshell/vm-setup.sh" root@127.0.0.1:/root/custos-vm/src/test/openshell/
+	vm 'bash /root/custos-vm/src/test/openshell/vm-setup.sh' 2>&1 | tee "$work/openshell-setup.log"
+	if [ "${PIPESTATUS[0]}" != 0 ]; then
+		log "setting up OpenShell failed"
+		exit 1
+	fi
+	vm "OPENSHELL_GATEWAY_USER=osh bash /root/custos-vm/src/test/openshell/run-spike.sh --system $args" 2>&1 | tee "$work/test.log"
+else
+	vm "/usr/libexec/custos/tests/run-tests.sh $args" 2>&1 | tee "$work/test.log"
+fi
 status=${PIPESTATUS[0]}
 scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
 	root@127.0.0.1:/root/custos-vm/results/results.tap root@127.0.0.1:/root/custos-vm/results/results.xml \
