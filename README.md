@@ -1,4 +1,9 @@
-# Custos
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo/custos-dark.svg">
+    <img alt="Custos" src="docs/logo/custos.svg" height="72">
+  </picture>
+</h1>
 
 A framework for governed, agentic management of the operating system,
 for SUSE Linux Enterprise Server 16 and openSUSE Leap 16. Agents run on
@@ -8,7 +13,9 @@ see what they do, approve what needs approval, review what was done, and
 step in when needed, from any management plane that speaks the control
 contract ([CONTRACT.md](CONTRACT.md) Part I). Cockpit is the first one.
 
-*Custos* is Latin for guardian or keeper.
+*Custos* is Latin for guardian or keeper. The logo shows it: the agent
+(amber) inside the guard, whose only way out is the gate, mcp-gateway
+([docs/logo](docs/logo/README.md)).
 
 ![The Activity view: scheduled, delegated, event-driven and chat activities, with the delegation chain of an activity waiting for approval](docs/mockup.png)
 
@@ -80,7 +87,7 @@ open items.
 | `examples/patch-pilot` | an example agent and its gateway permissions |
 | `test/vm` | the functional tests on an installed system (`run-tests.sh`) and their helpers (`fakemodel`, `testsrv`), packaged as `custos-tests` |
 | `test/openqa` | the openQA test module and how to run the functional tests |
-| `docs/` | the [user flow](docs/user-flow.md) (who logs in to Cockpit, roles, approving and intervening), the mockup and its screenshots |
+| `docs/` | the [logo](docs/logo/README.md), the [user flow](docs/user-flow.md) (who logs in to Cockpit, roles, approving and intervening), the mockup and its screenshots |
 
 ## Development
 
