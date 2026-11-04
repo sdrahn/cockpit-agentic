@@ -7,7 +7,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/sdrahn/cockpit-agentic/internal/config"
+	"github.com/sdrahn/custos/internal/config"
 )
 
 func cfg(t *testing.T) *config.Config {
@@ -65,7 +65,7 @@ func TestProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(b)
-	for _, want := range []string{"id: cockpit-agentic-gateway-pp", "AGENT_GATEWAY_TOKEN", "auth_style: bearer", "host: gw.example.com", "port: 8443", "allow_all_known_mcp_methods: true", "- \"2025-06-18\"", "protocol: mcp", "- " + Launcher} {
+	for _, want := range []string{"id: custos-gateway-pp", "AGENT_GATEWAY_TOKEN", "auth_style: bearer", "host: gw.example.com", "port: 8443", "allow_all_known_mcp_methods: true", "- \"2025-06-18\"", "protocol: mcp", "- " + Launcher} {
 		if !strings.Contains(s, want) {
 			t.Errorf("profile lacks %q:\n%s", want, s)
 		}
@@ -79,7 +79,7 @@ func TestCreateArgs(t *testing.T) {
 	}
 	s := strings.Join(args, " ")
 	for _, want := range []string{"sandbox create --name agent-pp --from registry.example/agent:1", "--policy /etc/p.yaml", "--provider agent-pp-gateway",
-		"--env AGENTIC_RELAY_SECRET=sec", "--detach -- " + Launcher + " serve --config-env AGENTIC_CONFIG --listen-tcp 127.0.0.1:47123"} {
+		"--env CUSTOS_RELAY_SECRET=sec", "--detach -- " + Launcher + " serve --config-env CUSTOS_CONFIG --listen-tcp 127.0.0.1:47123"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("args lack %q: %s", want, s)
 		}

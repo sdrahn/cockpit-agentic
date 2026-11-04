@@ -1,8 +1,8 @@
 #!/bin/bash
 # Boots an openSUSE cloud image with QEMU/KVM, installs the packages built
 # from this tree (test/vm/prepare.sh) and runs the functional tests of
-# cockpit-agentic-tests in it as root, as openQA does on a product system:
-# /usr/libexec/cockpit-agentic/tests/run-tests.sh (test/vm/run-tests.sh).
+# custos-tests in it as root, as openQA does on a product system:
+# /usr/libexec/custos/tests/run-tests.sh (test/vm/run-tests.sh).
 # Adapted from mcp-gateway's test/vm/run-vm.sh.
 #
 # Usage: test/vm/run-vm.sh <rpm dir> <opa binary>
@@ -91,7 +91,7 @@ growpart:
   mode: auto
   devices: ["/"]
 EOF
-printf 'instance-id: agentic-vmtest\nlocal-hostname: agentic-vmtest\n' >"$work/meta-data"
+printf 'instance-id: custos-vmtest\nlocal-hostname: custos-vmtest\n' >"$work/meta-data"
 cloud-localds "$work/seed.img" "$work/user-data" "$work/meta-data"
 
 ssh_opts=(-i "$work/key" -p "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
@@ -138,23 +138,23 @@ if [ "$(vm 'getenforce 2>/dev/null || echo Missing')" != Enforcing ]; then
 fi
 
 log "copying the test payload"
-vm 'rm -rf /root/agentic-vm && mkdir -p /root/agentic-vm/rpms'
+vm 'rm -rf /root/custos-vm && mkdir -p /root/custos-vm/rpms'
 scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
-	"$here/prepare.sh" "$opa" root@127.0.0.1:/root/agentic-vm/
+	"$here/prepare.sh" "$opa" root@127.0.0.1:/root/custos-vm/
 scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
-	"$rpms"/*.rpm root@127.0.0.1:/root/agentic-vm/rpms/
+	"$rpms"/*.rpm root@127.0.0.1:/root/custos-vm/rpms/
 
 log "installing the packages"
-vm 'bash /root/agentic-vm/prepare.sh /root/agentic-vm' 2>&1 | tee "$work/prepare.log"
+vm 'bash /root/custos-vm/prepare.sh /root/custos-vm' 2>&1 | tee "$work/prepare.log"
 [ "${PIPESTATUS[0]}" = 0 ] || exit 1
 log "running the tests"
-args="--disposable --results /root/agentic-vm/results"
+args="--disposable --results /root/custos-vm/results"
 set +e
-vm "/usr/libexec/cockpit-agentic/tests/run-tests.sh $args" 2>&1 | tee "$work/test.log"
+vm "/usr/libexec/custos/tests/run-tests.sh $args" 2>&1 | tee "$work/test.log"
 status=${PIPESTATUS[0]}
 scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
-	root@127.0.0.1:/root/agentic-vm/results/results.tap root@127.0.0.1:/root/agentic-vm/results/results.xml \
-	root@127.0.0.1:/root/agentic-vm/results/avc.txt root@127.0.0.1:/root/agentic-vm/results/journal.txt "$work/"
+	root@127.0.0.1:/root/custos-vm/results/results.tap root@127.0.0.1:/root/custos-vm/results/results.xml \
+	root@127.0.0.1:/root/custos-vm/results/avc.txt root@127.0.0.1:/root/custos-vm/results/journal.txt "$work/"
 set -e
 log "tests exited with $status"
 exit "$status"

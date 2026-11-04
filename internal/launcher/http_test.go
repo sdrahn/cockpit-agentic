@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sdrahn/cockpit-agentic/internal/config"
-	"github.com/sdrahn/cockpit-agentic/internal/governance"
-	"github.com/sdrahn/cockpit-agentic/internal/journal"
-	"github.com/sdrahn/cockpit-agentic/internal/peercred"
-	"github.com/sdrahn/cockpit-agentic/internal/testutil"
+	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/governance"
+	"github.com/sdrahn/custos/internal/journal"
+	"github.com/sdrahn/custos/internal/peercred"
+	"github.com/sdrahn/custos/internal/testutil"
 )
 
 // TestApprovalOverHTTP is the OpenShell backend's gateway connection

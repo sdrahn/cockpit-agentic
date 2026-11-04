@@ -1,7 +1,7 @@
 #!/bin/bash
 # Prepares the CI VM for the functional tests (run-vm.sh runs it as root):
 # the tests' dependencies, OPA, mcp-gateway's packages and the packages
-# built from this tree, cockpit-agentic-tests among them. On a product
+# built from this tree, custos-tests among them. On a product
 # system (openQA), the packages come from its repositories instead.
 #
 # Usage: prepare.sh <dir>, with <dir>/rpms (the packages) and <dir>/opa
@@ -28,11 +28,11 @@ else
 	echo "  opa: release binary ($(opa version | head -1))"
 fi
 # mcp-gateway first (its SELinux module defines the interfaces ours uses),
-# then cockpit-agentic.
+# then custos.
 rpm -Uvh --nodeps "$dir"/rpms/mcp-gateway-[0-9]*.rpm "$dir"/rpms/mcp-gateway-selinux-*.rpm ||
 	die "installing mcp-gateway failed"
-rpm -Uvh "$dir"/rpms/cockpit-agentic-[0-9]*.rpm "$dir"/rpms/cockpit-agentic-selinux-*.rpm \
-	"$dir"/rpms/cockpit-agentic-tests-*.rpm ||
-	die "installing cockpit-agentic failed"
-semodule -l | grep -qx cockpit_agentic || die "the cockpit_agentic SELinux module is not loaded"
-echo "  installed: $(rpm -q mcp-gateway cockpit-agentic cockpit-agentic-selinux cockpit-agentic-tests | tr '\n' ' ')"
+rpm -Uvh "$dir"/rpms/custos-[0-9]*.rpm "$dir"/rpms/custos-selinux-*.rpm \
+	"$dir"/rpms/custos-tests-*.rpm ||
+	die "installing custos failed"
+semodule -l | grep -qx custos || die "the custos SELinux module is not loaded"
+echo "  installed: $(rpm -q mcp-gateway custos custos-selinux custos-tests | tr '\n' ' ')"

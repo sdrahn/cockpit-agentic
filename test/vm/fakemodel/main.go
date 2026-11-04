@@ -1,5 +1,5 @@
 // fakemodel is a scripted OpenAI-compatible chat completion server for
-// the functional tests (package cockpit-agentic-tests): agents talk to
+// the functional tests (package custos-tests): agents talk to
 // it like to a local model server, so the tests need no model and give
 // the same answers every time.
 //
@@ -14,7 +14,7 @@
 // A tool the request does not offer is not called; the answer then says
 // so ("not offered: <tool>"), which is how the tests see hidden tools.
 //
-// Usage: fakemodel [--listen 127.0.0.1:8008] [--prefix agentic-test]
+// Usage: fakemodel [--listen 127.0.0.1:8008] [--prefix custos-test]
 package main
 
 import (
@@ -134,7 +134,7 @@ func (m *Model) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8008", "address")
-	prefix := flag.String("prefix", "agentic-test", "the gateway server whose tools PROBE and CHANGE call")
+	prefix := flag.String("prefix", "custos-test", "the gateway server whose tools PROBE and CHANGE call")
 	flag.Parse()
 	log.Fatal(http.ListenAndServe(*listen, &Model{Prefix: *prefix}))
 }

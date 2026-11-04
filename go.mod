@@ -1,4 +1,4 @@
-module github.com/sdrahn/cockpit-agentic
+module github.com/sdrahn/custos
 
 go 1.25.0
 

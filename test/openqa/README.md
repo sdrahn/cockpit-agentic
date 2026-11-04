@@ -1,6 +1,6 @@
-# cockpit-agentic in openQA
+# Custos in openQA
 
-The functional tests come as the package `cockpit-agentic-tests`. They
+The functional tests come as the package `custos-tests`. They
 are meant for openQA and other test systems that test a product with
 the packages from its repositories. They follow mcp-gateway's
 `mcp-gateway-tests`, so both can run in one job.
@@ -9,11 +9,11 @@ the packages from its repositories. They follow mcp-gateway's
 
 | Path | What |
 |---|---|
-| `/usr/libexec/cockpit-agentic/tests/run-tests.sh` | the tests (`test/vm/run-tests.sh` in the source) |
-| `/usr/libexec/cockpit-agentic/tests/fakemodel` | a scripted OpenAI-compatible model server on `127.0.0.1:8008`, so no model is needed and every run gives the same answers |
-| `/usr/libexec/cockpit-agentic/tests/testsrv` | the MCP server `agentic-test`: `probe` (declared read-only by the tests) and `change` (declared as changing the system) |
+| `/usr/libexec/custos/tests/run-tests.sh` | the tests (`test/vm/run-tests.sh` in the source) |
+| `/usr/libexec/custos/tests/fakemodel` | a scripted OpenAI-compatible model server on `127.0.0.1:8008`, so no model is needed and every run gives the same answers |
+| `/usr/libexec/custos/tests/testsrv` | the MCP server `custos-test`: `probe` (declared read-only by the tests) and `change` (declared as changing the system) |
 
-It requires `cockpit-agentic` and `mcp-gateway`, plus what the tests
+It requires `custos` and `mcp-gateway`, plus what the tests
 use: `curl`, `jq`, `util-linux` (nsenter, runuser), `shadow`
 (useradd), `audit` and `policycoreutils`.
 
@@ -22,13 +22,13 @@ use: `curl`, `jq`, `util-linux` (nsenter, runuser), `shadow`
 As root, on a system that is there for testing:
 
 ```bash
-zypper -n in cockpit-agentic-tests cockpit-agentic-selinux
-/usr/libexec/cockpit-agentic/tests/run-tests.sh --disposable --results /var/tmp/cockpit-agentic-tests
+zypper -n in custos-tests custos-selinux
+/usr/libexec/custos/tests/run-tests.sh --disposable --results /var/tmp/custos-tests
 ```
 
 - **They change the system for good.** They create the agents `t1` and
-  `t2` with their users, and the user `agentic-tester`. They register
-  the MCP servers `agentic-test` and `agents` with the gateway, and
+  `t2` with their users, and the user `custos-tester`. They register
+  the MCP servers `custos-test` and `agents` with the gateway, and
   trigger and release the emergency stop. They delete the agents again,
   but the users stay. Without `--disposable` they refuse to start (exit
   status 2).
@@ -63,15 +63,15 @@ zypper -n in cockpit-agentic-tests cockpit-agentic-selinux
 
 ## An openQA test module
 
-[cockpit_agentic.pm](cockpit_agentic.pm) is meant for
+[custos.pm](custos.pm) is meant for
 [os-autoinst-distri-opensuse](https://github.com/os-autoinst/os-autoinst-distri-opensuse)
-as `tests/console/cockpit_agentic.pm`. It installs the package, runs
+as `tests/console/custos.pm`. It installs the package, runs
 the tests, and hands the JUnit results to openQA (`parse_extra_log`),
 so each check is a result of its own. On failure it uploads the
 journal of the gateway and the agents, the agents' records as JSON, and
 the AVC records. Schedule it after the system is installed and
 registered, with the repositories that hold the `mcp-gateway` and
-`cockpit-agentic` packages. It can run in the same job as
+`custos` packages. It can run in the same job as
 `mcp_gateway.pm`, after it.
 
 ## Adding tests

@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sdrahn/cockpit-agentic/internal/admin"
+	"github.com/sdrahn/custos/internal/admin"
 )
 
 const usage = `usage: agent-admin COMMAND …

@@ -216,7 +216,7 @@ func TestOpenShellAgent(t *testing.T) {
 	dir := a.agentDir("sb")
 	for name, want := range map[string]string{
 		"openshell-policy.yaml":  "run_as_user: sandbox",
-		"openshell-profile.yaml": "id: cockpit-agentic-gateway-sb",
+		"openshell-profile.yaml": "id: custos-gateway-sb",
 		"openshell.env":          "OPENSHELL_GATEWAY=openshell",
 		"relay.secret":           "0123456789abcdef",
 	} {
@@ -242,9 +242,9 @@ func TestOpenShellAgent(t *testing.T) {
 	}
 	all = strings.Join(r.cmds, "\n")
 	for _, want := range []string{
-		"AGENT_GATEWAY_TOKEN=tok-123 openshell -g openshell provider create --name agent-sb-gateway --type cockpit-agentic-gateway-sb --credential AGENT_GATEWAY_TOKEN",
+		"AGENT_GATEWAY_TOKEN=tok-123 openshell -g openshell provider create --name agent-sb-gateway --type custos-gateway-sb --credential AGENT_GATEWAY_TOKEN",
 		"openshell -g openshell sandbox create --name agent-sb --from localhost/agent:test --policy " + filepath.Join(dir, "openshell-policy.yaml"),
-		"--env AGENTIC_RELAY_SECRET=0123456789abcdef0123456789abcdef",
+		"--env CUSTOS_RELAY_SECRET=0123456789abcdef0123456789abcdef",
 		"systemctl enable --now agent-openshell@sb.socket",
 	} {
 		if !strings.Contains(all, want) {
@@ -271,7 +271,7 @@ func TestOpenShellAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	all = strings.Join(r.cmds, "\n")
-	for _, want := range []string{"disable --now agent-openshell@sb.socket", "sandbox delete agent-sb", "provider delete agent-sb-gateway", "profile delete cockpit-agentic-gateway-sb"} {
+	for _, want := range []string{"disable --now agent-openshell@sb.socket", "sandbox delete agent-sb", "provider delete agent-sb-gateway", "profile delete custos-gateway-sb"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("delete misses %q:\n%s", want, all)
 		}
@@ -321,8 +321,8 @@ func TestOpenShellAgentOAuth(t *testing.T) {
 	}
 	all := strings.Join(r.cmds, "\n")
 	want := []string{
-		"openshell -g openshell provider create --name agent-sb-gateway --type cockpit-agentic-gateway-sb --runtime-credentials",
-		"AGENTIC_GATEWAY_CLIENT_SECRET=s3cret-value openshell -g openshell provider refresh configure agent-sb-gateway --credential-key AGENT_GATEWAY_TOKEN --strategy oauth2-client-credentials --material client_id=agent-sb --secret-material-env client_secret=AGENTIC_GATEWAY_CLIENT_SECRET",
+		"openshell -g openshell provider create --name agent-sb-gateway --type custos-gateway-sb --runtime-credentials",
+		"CUSTOS_GATEWAY_CLIENT_SECRET=s3cret-value openshell -g openshell provider refresh configure agent-sb-gateway --credential-key AGENT_GATEWAY_TOKEN --strategy oauth2-client-credentials --material client_id=agent-sb --secret-material-env client_secret=CUSTOS_GATEWAY_CLIENT_SECRET",
 		"openshell -g openshell provider refresh rotate agent-sb-gateway --credential-key AGENT_GATEWAY_TOKEN",
 		"openshell -g openshell sandbox create --name agent-sb",
 		"systemctl enable --now agent-openshell@sb.socket",

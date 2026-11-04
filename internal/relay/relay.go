@@ -16,8 +16,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/sdrahn/cockpit-agentic/internal/journal"
-	"github.com/sdrahn/cockpit-agentic/internal/peercred"
+	"github.com/sdrahn/custos/internal/journal"
+	"github.com/sdrahn/custos/internal/peercred"
 )
 
 // Handler relays to upstream (http://127.0.0.1:<forwarded port>).

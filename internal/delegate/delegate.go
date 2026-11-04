@@ -21,7 +21,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/sdrahn/cockpit-agentic/internal/config"
+	"github.com/sdrahn/custos/internal/config"
 )
 
 type Args struct {
@@ -33,7 +33,7 @@ type Args struct {
 
 // Serve runs the server on stdio.
 func Serve(ctx context.Context, socketDir, version string) error {
-	s := mcp.NewServer(&mcp.Implementation{Name: "cockpit-agentic-agents", Version: version}, nil)
+	s := mcp.NewServer(&mcp.Implementation{Name: "custos-agents", Version: version}, nil)
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "delegate",
 		Description: "Ask another agent on this host to do a task, and wait for its answer. The other agent works under its own permissions and approvals.",

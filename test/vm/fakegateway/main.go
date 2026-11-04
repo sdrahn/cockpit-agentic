@@ -1,6 +1,6 @@
 // fakegateway stands in for mcp-gateway's Streamable HTTP listener in the
-// OpenShell tests (test/openshell): the agent's tools (agentic-test__probe,
-// agentic-test__change), an approval for change with the gateway's
+// OpenShell tests (test/openshell): the agent's tools (custos-test__probe,
+// custos-test__change), an approval for change with the gateway's
 // notice, and a check that requests carry the real token, which only
 // OpenShell's supervisor can have put there (the agent holds a
 // placeholder).
@@ -20,7 +20,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sdrahn/cockpit-agentic/internal/testutil"
+	"github.com/sdrahn/custos/internal/testutil"
 )
 
 func main() {
@@ -46,8 +46,8 @@ type Seen struct {
 // New returns the gateway and its MCP handler, which refuses requests
 // without the token (401, as mcp-gateway does).
 func New(token string) (*testutil.Gateway, http.Handler, *Seen) {
-	g := testutil.NewGateway([]string{"agentic-test__probe", "agentic-test__change"})
-	g.Ask["agentic-test__change"] = "a-osh-1"
+	g := testutil.NewGateway([]string{"custos-test__probe", "custos-test__change"})
+	g.Ask["custos-test__change"] = "a-osh-1"
 	seen := &Seen{}
 	h := g.Handler()
 	return g, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

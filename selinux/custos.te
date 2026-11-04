@@ -1,6 +1,6 @@
-policy_module(cockpit_agentic, 1.0.0)
+policy_module(custos, 1.0.0)
 
-# cockpit-agentic agents (CONTRACT.md §13). Each agent's launcher runs in
+# Custos agents (CONTRACT.md §13). Each agent's launcher runs in
 # agent_t. It may reach mcp-gateway's MCP socket, its model endpoint over
 # HTTP(S), journald and its own files. It may never reach the gateway's
 # control socket or another agent's socket: delegation goes through the
@@ -167,7 +167,7 @@ optional_policy(`
 
 # systemd sets up the agents' directories before starting them:
 # StateDirectory= creates /var/lib/agents/<name> and hands it to the
-# agent's user; ConfigurationDirectory= checks /etc/cockpit-agentic/...
+# agent's user; ConfigurationDirectory= checks /etc/custos/...
 manage_dirs_pattern(init_t, agent_var_lib_t, agent_var_lib_t)
 manage_files_pattern(init_t, agent_var_lib_t, agent_var_lib_t)
 files_var_lib_filetrans(init_t, agent_var_lib_t, dir, "agents")

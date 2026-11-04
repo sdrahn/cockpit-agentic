@@ -1,9 +1,14 @@
-# cockpit-agentic
+# Custos
 
-A governed agentic control plane for SUSE Linux Enterprise Server 16 and
-openSUSE Leap 16. Agents run on the host. Administrators see what they
-do, approve what needs approval, review what was done, and step in when
-needed, all from Cockpit.
+A framework for governed, agentic management of the operating system,
+for SUSE Linux Enterprise Server 16 and openSUSE Leap 16. Agents run on
+the host, under systemd or in a sandbox, and act only through
+mcp-gateway, which enforces their policy and approvals. Administrators
+see what they do, approve what needs approval, review what was done, and
+step in when needed, from any management plane that speaks the control
+contract ([CONTRACT.md](CONTRACT.md) Part I). Cockpit is the first one.
+
+*Custos* is Latin for guardian or keeper.
 
 ![The Activity view: scheduled, delegated, event-driven and chat activities, with the delegation chain of an activity waiting for approval](docs/mockup.png)
 
@@ -69,10 +74,10 @@ open items.
 | `gateway/policy` | the autonomy modes as a Rego module for mcp-gateway, with tests |
 | `gateway/servers.d` | the `agents` server definition |
 | `systemd/` | `agent@.service`, `agent@.socket`, `agent-schedule@.service`, `agent-schedule@.timer` |
-| `selinux/` | the `cockpit_agentic` module |
+| `selinux/` | the `custos` module |
 | `packaging/` | OBS packaging for SLES 16.0/16.1 and Leap 16.0/16.1 (`suse/`), sysusers.d, tmpfiles.d |
 | `examples/patch-pilot` | an example agent and its gateway permissions |
-| `test/vm` | the functional tests on an installed system (`run-tests.sh`) and their helpers (`fakemodel`, `testsrv`), packaged as `cockpit-agentic-tests` |
+| `test/vm` | the functional tests on an installed system (`run-tests.sh`) and their helpers (`fakemodel`, `testsrv`), packaged as `custos-tests` |
 | `test/openqa` | the openQA test module and how to run the functional tests |
 | `docs/` | the mockup and its screenshots |
 
@@ -90,7 +95,7 @@ make policy-test GATEWAY_POLICY=../mcp-gateway/policy
 The end-to-end tests run a whole agent against a scripted model and a
 fake gateway, so they need no network and no model. The functional
 tests run on an installed SLES 16 / Leap 16 system with mcp-gateway, as
-the package `cockpit-agentic-tests` in openQA
+the package `custos-tests` in openQA
 ([test/openqa/README.md](test/openqa/README.md)).
 
 Run an agent from a checkout:
@@ -111,7 +116,7 @@ curl --unix-socket /tmp/pp.sock http://agent/v1/status
 | systemd units | written, `systemd-analyze verify` clean |
 | SELinux module | written, not yet built or run on SLES 16 / Leap 16 |
 | OBS packaging | spec and services written, with the `-tests` subpackage; first OBS build to do |
-| Functional tests (`cockpit-agentic-tests`, openQA) | written; not yet run on SLES 16 / Leap 16 |
-| Cockpit page | designed (mockup); to do |
+| Functional tests (`custos-tests`, openQA) | written; not yet run on SLES 16 / Leap 16 |
+| Cockpit page (`cockpit-custos`) | designed (mockup); to do |
 
 See [packaging/suse/README.md](packaging/suse/README.md) for building on OBS.

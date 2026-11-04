@@ -23,9 +23,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sdrahn/cockpit-agentic/internal/journal"
-	"github.com/sdrahn/cockpit-agentic/internal/peercred"
-	"github.com/sdrahn/cockpit-agentic/internal/relay"
+	"github.com/sdrahn/custos/internal/journal"
+	"github.com/sdrahn/custos/internal/peercred"
+	"github.com/sdrahn/custos/internal/relay"
 )
 
 func main() {
@@ -39,7 +39,7 @@ func run() error {
 	name := flag.String("name", "", "the agent")
 	upstream := flag.String("upstream", "", "the forwarded control API, e.g. http://127.0.0.1:47123")
 	secretFile := flag.String("secret-file", "", "the secret shared with the agent")
-	logs := flag.String("logs", "", "command that streams the agent's output, e.g. '/usr/libexec/cockpit-agentic/agent-openshell-logs agent-NAME'")
+	logs := flag.String("logs", "", "command that streams the agent's output, e.g. '/usr/libexec/custos/agent-openshell-logs agent-NAME'")
 	flag.Parse()
 	if *name == "" || *upstream == "" || *secretFile == "" {
 		return errors.New("--name, --upstream and --secret-file are needed")

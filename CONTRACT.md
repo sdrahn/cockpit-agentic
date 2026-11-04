@@ -1,6 +1,9 @@
-# Governed agentic control plane — Contract
+# Custos — Contract
 
-Status: draft 1 (contract version `1`).
+Status: draft 1 (contract version `1`). The project was named
+custos until before its first release; the names and paths
+below are Custos's (`custos`, `/etc/custos`, …) and are the ones contract
+version 1 keeps.
 
 This contract is the interface between the people who supervise agents
 and the agents themselves. It defines what a Cockpit control plane
@@ -62,7 +65,7 @@ An agent is a directory `/run/agents/<name>/` holding `api.sock`, where
 `GET /v1/status` answers with `"contract": 1`. That is all a control
 plane needs to find agents. `/v1/status` says how the agent is started
 and stopped (`lifecycle`, §3a) and names the host implementation
-(`implementation`). The ADK launcher reports `cockpit-agentic/adk-go`.
+(`implementation`). The ADK launcher reports `custos/adk-go`.
 A host that is not socket-activated still creates the socket while it
 runs, and names its lifecycle. (`units` is the `systemd` lifecycle's
 units, kept for version 1 clients.)
@@ -96,7 +99,7 @@ Rules for every backend:
   (`/run/agents/<name>/api.sock`), owned by a host process that
   identifies callers by `SO_PEERCRED`. For a sandboxed agent, that
   process relays to the agent (Part II, §16a) and passes the caller on
-  as `X-Agentic-Caller: <uid>:<name>` with a secret the relay and the
+  as `X-Custos-Caller: <uid>:<name>` with a secret the relay and the
   agent share; the agent believes the header only with the secret.
 - **Stop works without the agent.** `lifecycle` names what the control
   plane stops (§8); the emergency stop also denies at the gateway.
@@ -215,7 +218,7 @@ the host never writes itself:
   both.
 - The rules are a Rego module added to the gateway's shipped policy
   (`mcp.authz`: `perms` and `denied`), installed as
-  `/usr/share/mcp-gateway/policy/cockpit-agentic/agents.rego`. The gateway
+  `/usr/share/mcp-gateway/policy/custos/agents.rego`. The gateway
   reloads the data within seconds of a change and tells agents that
   their tool lists changed.
 
@@ -432,13 +435,13 @@ and fleet scope is out of scope for SLES 16.2. Nothing here precludes it:
 
 | Path | Owner, mode | Contents |
 |---|---|---|
-| `/usr/libexec/cockpit-agentic/agent-launcher` | root 0755 | the host: one ADK agent per process |
-| `/usr/libexec/cockpit-agentic/agent-delegate` | root 0755 | the gateway's `agents` server (§9) |
+| `/usr/libexec/custos/agent-launcher` | root 0755 | the host: one ADK agent per process |
+| `/usr/libexec/custos/agent-delegate` | root 0755 | the gateway's `agents` server (§9) |
 | `/usr/sbin/agent-admin` (and a link in the libexec directory) | root 0755 | administration (§17) |
 | `/usr/lib/systemd/system/agent@.{service,socket}`, `agent-schedule@.{service,timer}` | root 0644 | unit templates |
-| `/usr/share/mcp-gateway/policy/cockpit-agentic/agents.rego` | root 0644 | the autonomy modes (§6) |
-| `/usr/share/cockpit-agentic/gateway/servers.d/agents.yaml` | root 0644 | the `agents` server definition; copy to `/etc/mcp-gateway/servers.d/` to allow delegation |
-| `/etc/cockpit-agentic/agents/<name>/agent.yaml` | root:agent-`<name>` 0640 | configuration (§14) |
+| `/usr/share/mcp-gateway/policy/custos/agents.rego` | root 0644 | the autonomy modes (§6) |
+| `/usr/share/custos/gateway/servers.d/agents.yaml` | root 0644 | the `agents` server definition; copy to `/etc/mcp-gateway/servers.d/` to allow delegation |
+| `/etc/custos/agents/<name>/agent.yaml` | root:agent-`<name>` 0640 | configuration (§14) |
 | `/etc/sysusers.d/agent-<name>.conf` | root 0644 | the agent's user |
 | `/etc/mcp-gateway/policy/agents/<name>.yaml` | root 0644 | mode, pause, permissions (§6). All agents' files, the emergency stop's `_control.yaml` and the agents' token issuers' `_http.yaml` (§6; both shipped by the package) are in this one directory: mcp-gateway's OPA (`--watch`) watches only directories it loaded a file from when it started |
 | `/etc/credstore.encrypted/agent-<name>.<cred>` | root 0600 | secrets (`systemd-creds encrypt`) |
@@ -487,7 +490,7 @@ it works air-gapped.
 runs `agent-launcher serve` with:
 
 - `User=agent-%i`, `SupplementaryGroups=mcp-users`;
-- `ConfigurationDirectory=cockpit-agentic/agents/%i`, `StateDirectory=agents/%i`;
+- `ConfigurationDirectory=custos/agents/%i`, `StateDirectory=agents/%i`;
 - `ImportCredential=agent-%i.*`;
 - `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`,
   `PrivateDevices=yes`, `NoNewPrivileges=yes`, `CapabilityBoundingSet=`,
@@ -511,7 +514,7 @@ not reach agents' sockets.)
 - **Tools:** ADK's MCP toolset on the gateway's aggregated endpoint,
   reconnecting per connection. The client declares no `elicitation`
   capability, so the gateway never asks the agent to approve its own
-  call. `clientInfo.name` is `cockpit-agentic/<name>`. No other tools,
+  call. `clientInfo.name` is `custos/<name>`. No other tools,
   apart from AG-UI client tools that the configuration allows.
 - **Governance plugin** (ADK plugin): activities (§4), pause, cancel,
   local limits, journal records (§10), approval notices (§7), the
@@ -531,12 +534,12 @@ instead of `agent@.service`:
 
 | Piece | What |
 |---|---|
-| image | `packaging/openshell/Containerfile`: Leap 16 with `agent-launcher` (`AGENTIC_OPENSHELL_IMAGE`, default `localhost/cockpit-agentic-agent:latest`) |
-| sandbox `agent-<name>` | created by `agent-admin` with `--policy`, `--provider agent-<name>-gateway` and the environment: the configuration (`AGENTIC_CONFIG`, base64), the relay secret (`AGENTIC_RELAY_SECRET`), the gateway token's placeholder (`AGENT_GATEWAY_TOKEN`, set by OpenShell). The agent runs as OpenShell's `sandbox` user and serves its control API on `127.0.0.1:<port>` inside the sandbox (port 47000–47999, stable per name) |
-| sandbox policy | `/etc/cockpit-agentic/agents/<name>/openshell-policy.yaml`: Landlock as a hard requirement; the image's system read-only; the network only to the model endpoint, for `agent-launcher` only (the gateway's rule comes with the provider). The host's loopback is `host.openshell.internal` (in the policy and in the configuration the sandbox gets) |
-| provider profile | `cockpit-agentic-gateway-<name>` (`openshell-profile.yaml`): the bearer token `AGENT_GATEWAY_TOKEN`, valid for the gateway's endpoint only, which attaching the provider adds to the sandbox's network policy (`protocol: mcp`, every known MCP method: the tools are the gateway's decision; the protocol revisions `2025-06-18` and `2025-11-25`, since OpenShell refuses the others; for `agent-launcher` only). The agent sends `Authorization: Bearer $AGENT_GATEWAY_TOKEN` (`gateway.token_env`); the supervisor swaps the placeholder for the token on the way out |
+| image | `packaging/openshell/Containerfile`: Leap 16 with `agent-launcher` (`CUSTOS_OPENSHELL_IMAGE`, default `localhost/custos-agent:latest`) |
+| sandbox `agent-<name>` | created by `agent-admin` with `--policy`, `--provider agent-<name>-gateway` and the environment: the configuration (`CUSTOS_CONFIG`, base64), the relay secret (`CUSTOS_RELAY_SECRET`), the gateway token's placeholder (`AGENT_GATEWAY_TOKEN`, set by OpenShell). The agent runs as OpenShell's `sandbox` user and serves its control API on `127.0.0.1:<port>` inside the sandbox (port 47000–47999, stable per name) |
+| sandbox policy | `/etc/custos/agents/<name>/openshell-policy.yaml`: Landlock as a hard requirement; the image's system read-only; the network only to the model endpoint, for `agent-launcher` only (the gateway's rule comes with the provider). The host's loopback is `host.openshell.internal` (in the policy and in the configuration the sandbox gets) |
+| provider profile | `custos-gateway-<name>` (`openshell-profile.yaml`): the bearer token `AGENT_GATEWAY_TOKEN`, valid for the gateway's endpoint only, which attaching the provider adds to the sandbox's network policy (`protocol: mcp`, every known MCP method: the tools are the gateway's decision; the protocol revisions `2025-06-18` and `2025-11-25`, since OpenShell refuses the others; for `agent-launcher` only). The agent sends `Authorization: Bearer $AGENT_GATEWAY_TOKEN` (`gateway.token_env`); the supervisor swaps the placeholder for the token on the way out |
 | relay secret | in the sandbox's environment, which OpenShell flags as readable by the agent. That is intended: it proves to the agent that a request comes from the relay, so the agent must know it; host users who cannot reach the agent's socket must not (`relay.secret` is root's, 0600) |
-| relay | `agent-openshell@<name>.socket` owns `/run/agents/<name>/api.sock`; `agent-openshell@<name>.service` starts the sandbox and `openshell forward`, and runs `agent-openshell-relay` (SELinux `agent_relay_t`): callers by `SO_PEERCRED`, passed on as `X-Agentic-Caller` with `X-Agentic-Relay-Secret` (the agent's `--listen-tcp` mode believes nothing else); and the agent's records from its container's output (`agent-openshell-logs`: `docker logs` or `podman logs` of the sandbox's container; `openshell logs` has only the supervisor's lines), written to the journal with their `AGENT_*` fields |
+| relay | `agent-openshell@<name>.socket` owns `/run/agents/<name>/api.sock`; `agent-openshell@<name>.service` starts the sandbox and `openshell forward`, and runs `agent-openshell-relay` (SELinux `agent_relay_t`): callers by `SO_PEERCRED`, passed on as `X-Custos-Caller` with `X-Custos-Relay-Secret` (the agent's `--listen-tcp` mode believes nothing else); and the agent's records from its container's output (`agent-openshell-logs`: `docker logs` or `podman logs` of the sandbox's container; `openshell logs` has only the supervisor's lines), written to the journal with their `AGENT_*` fields |
 | openshell CLI | `agent-admin` and the relay unit run it as root with `HOME=/root`: the OpenShell gateway named in `sandbox.openshell_gateway` is registered for root (`openshell gateway add ... --name <gateway>`), and the CLI keeps its forwards there |
 | gateway | mcp-gateway's HTTPS listener (`http:` in its configuration): the agent's `gateway.url` is its audience, e.g. `https://host.openshell.internal:8443/mcp`, since the sandbox reaches the host by that name. The certificate names that host. OpenShell's proxy terminates the agent's TLS (to inspect MCP and swap the token in) and verifies the gateway itself, in the sandbox's supervisor, not with the image's trust store: a CA no public root signs goes into the OpenShell gateway's configuration (`[openshell.supervisor.network] additional_ca_bundle = "<ca.pem>"` in its `gateway.toml`, OpenShell 0.1.7 or later), which hands it to every sandbox's supervisor |
 | token | With `gateway.oauth` (the agent is an OAuth client of the issuer): `agent-admin set-credential <name> gateway-client-secret < secret` creates the provider with runtime credentials, gives OpenShell's gateway the client (`openshell provider refresh configure … --strategy oauth2-client-credentials`, the secret through the environment, never a command line), mints the first token (`provider refresh rotate`; a refused client fails here) and creates the sandbox. OpenShell's gateway then renews the token before it expires (the profile's `refresh`: token URL, scopes, `refresh_before`); the sandbox's placeholder resolves to the current token per request, so renewals need no restart of the agent. The issuer's client configuration gives the tokens the subject `agent-<name>` and the gateway's audience (the grant sends no audience). Without `gateway.oauth`: `set-credential <name> gateway-token < token` with a static token, which OpenShell does not renew. Either way the token is an OAuth access token for the gateway's audience, subject `agent-<name>`, from an issuer in `_http.yaml` (§6). It carries no claim of the gateway's `local_user_claim`: the gateway maps a token to a local user only for accounts of persons (UID_MIN..UID_MAX) and refuses system accounts, which agents' users are, so the subject stays the principal |
@@ -561,7 +564,7 @@ Run as root, by hand or by Cockpit with administrative access:
 | `trigger NAME_SCHEDULE` | starts the schedule's activity (run by `agent-schedule@.service`) |
 | `list` | the agents |
 
-## 18. SELinux (`cockpit_agentic` module)
+## 18. SELinux (`custos` module)
 
 SLES 16 and Leap 16 run SELinux enforcing, so every program this
 repository ships runs in a domain the policy accounts for:
@@ -588,8 +591,8 @@ may connect to `agent_sock_t`, and so may Cockpit's bridge
 ## 19. Packaging
 
 OBS packages for SLES 16.0/16.1 and openSUSE Leap 16.0/16.1
-(`packaging/suse`): `cockpit-agentic` (requires `mcp-gateway` ≥ 1.12)
-and `cockpit-agentic-selinux` (required where `selinux-policy-targeted`
+(`packaging/suse`): `custos` (requires `mcp-gateway` ≥ 1.12)
+and `custos-selinux` (required where `selinux-policy-targeted`
 is installed). There is no Cockpit page package yet.
 
 ---

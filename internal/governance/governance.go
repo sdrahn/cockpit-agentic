@@ -25,9 +25,9 @@ import (
 	"google.golang.org/adk/tool"
 	"google.golang.org/genai"
 
-	"github.com/sdrahn/cockpit-agentic/internal/config"
-	"github.com/sdrahn/cockpit-agentic/internal/gateway"
-	"github.com/sdrahn/cockpit-agentic/internal/journal"
+	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/gateway"
+	"github.com/sdrahn/custos/internal/journal"
 )
 
 // Event kinds published to subscribers (the AG-UI CUSTOM event names).
@@ -181,7 +181,7 @@ func New(cfg *config.Config, log journal.Logger) *Governor {
 // Plugin returns the ADK plugin.
 func (g *Governor) Plugin() (*plugin.Plugin, error) {
 	return plugin.New(plugin.Config{
-		Name:                "cockpit-agentic-governance",
+		Name:                "custos-governance",
 		BeforeRunCallback:   g.beforeRun,
 		AfterRunCallback:    g.afterRun,
 		BeforeModelCallback: g.beforeModel,
@@ -695,5 +695,5 @@ func copyFields(f journal.Fields) journal.Fields {
 const TraceArg = "_trace"
 
 // IsDelegation reports whether a gateway tool delegates to another agent
-// (the agents server shipped with cockpit-agentic, CONTRACT.md §9).
+// (the agents server shipped with Custos, CONTRACT.md §9).
 func IsDelegation(tool string) bool { return tool == "agents__delegate" }

@@ -1,6 +1,6 @@
-# Autonomy modes of cockpit-agentic agents (CONTRACT.md §6), added to
+# Autonomy modes of Custos agents (CONTRACT.md §6), added to
 # mcp-gateway's shipped policy (user guide chapter 12, approach A).
-# Installed as /usr/share/mcp-gateway/policy/cockpit-agentic/agents.rego.
+# Installed as /usr/share/mcp-gateway/policy/custos/agents.rego.
 #
 # An agent's principal is its user agent-<name>. Its permissions come
 # only from data.mcp.agents.<name>, which agent-admin writes to

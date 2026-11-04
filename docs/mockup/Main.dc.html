@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Agentic control plane</title>
+<title>Custos</title>
 <script src="./support.js"></script>
 </head>
 <body>
@@ -46,7 +46,7 @@ button{font-family:inherit}
     <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
       <div style="background: #ffffff; border-bottom: 1px solid #d2d2d2; padding: 20px 24px 0">
         <div style="display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap">
-          <h1 style="margin: 0; font-size: 24px; font-weight: 600">Agents</h1>
+          <h1 style="margin: 0; font-size: 24px; font-weight: 600">Custos</h1>
           <span style="color: #4d4d4d; font-size: 14px">Supervise the agents on this host. Policy and approvals are mcp-gateway's; processes are systemd's.</span>
         </div>
         <div role="tablist" style="display: flex; gap: 4px; margin-top: 16px; flex-wrap: wrap">
@@ -537,7 +537,7 @@ class Component extends DCLogic {
       actFilter: 'all', confirmStop: false, stopped: false, stoppedAt: '',
       wiAgent: 'patch-pilot', wiTool: 'zypp__install_patches', draft: '', chatStatus: 'connected',
       agents: [
-        { id: 'patch-pilot', title: 'patch-pilot', desc: 'Keeps the host patched within the maintenance window', state: 'running', mode: 'supervised', impl: 'cockpit-agentic/adk-go', model: 'qwen3-32b (local)',
+        { id: 'patch-pilot', title: 'patch-pilot', desc: 'Keeps the host patched within the maintenance window', state: 'running', mode: 'supervised', impl: 'custos/adk-go', model: 'qwen3-32b (local)',
           perms: [
             { tool: 'zypp__list_*', kind: 'read-only', args: '' },
             { tool: 'zypp__install_patches', kind: 'changes the system', args: '' },
@@ -545,14 +545,14 @@ class Component extends DCLogic {
             { tool: 'systemd__restart_unit', kind: 'changes · autonomous', args: 'unit ^nginx\\.service$' }
           ],
           schedules: [{ name: 'compliance', cal: 'Mon..Fri 06:00', prompt: 'List the pending security patches and report them. Do not install anything.', next: 'next: tomorrow 06:00', on: true }] },
-        { id: 'triage', title: 'triage', desc: 'Morning health check; delegates fixes to specialists', state: 'running', mode: 'advisory', impl: 'cockpit-agentic/adk-go', model: 'qwen3-32b (local)',
+        { id: 'triage', title: 'triage', desc: 'Morning health check; delegates fixes to specialists', state: 'running', mode: 'advisory', impl: 'custos/adk-go', model: 'qwen3-32b (local)',
           perms: [
             { tool: 'systemd__list_log', kind: 'read-only', args: '' },
             { tool: 'systemd__list_*', kind: 'read-only', args: '' },
             { tool: 'agents__delegate', kind: 'read-only', args: 'agent ^(patch-pilot|disk-watch)$' }
           ],
           schedules: [{ name: 'morning-check', cal: '*-*-* 06:00', prompt: 'Check the journal and services since yesterday; hand fixes to the right agent.', next: 'next: tomorrow 06:00', on: true }] },
-        { id: 'disk-watch', title: 'disk-watch', desc: 'Frees space when /var fills up', state: 'idle', mode: 'bounded', impl: 'cockpit-agentic/adk-go', model: 'qwen3-32b (local)',
+        { id: 'disk-watch', title: 'disk-watch', desc: 'Frees space when /var fills up', state: 'idle', mode: 'bounded', impl: 'custos/adk-go', model: 'qwen3-32b (local)',
           perms: [
             { tool: 'fs__du', kind: 'read-only', args: '' },
             { tool: 'zypp__clean_cache', kind: 'changes · autonomous', args: '' },
@@ -711,10 +711,10 @@ class Component extends DCLogic {
     const go = (patch) => () => this.setState(patch);
     const titleOf = (id) => this.agent(id).title;
 
-    const navItems = ['Overview', 'Logs', 'Storage', 'Networking', 'Services', 'Software updates', 'Agents', 'MCP gateway', 'Terminal'];
+    const navItems = ['Overview', 'Logs', 'Storage', 'Networking', 'Services', 'Software updates', 'Custos', 'MCP gateway', 'Terminal'];
     const nav = navItems.map((label) => ({
       label: label,
-      style: label === 'Agents'
+      style: label === 'Custos'
         ? 'padding:10px 20px;font-size:14px;color:#ffffff;font-weight:600;background:#3c3f42;border-left:3px solid #73bcf7'
         : 'padding:10px 20px 10px 23px;font-size:14px;color:#e0e0e0'
     }));

@@ -18,17 +18,17 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/sdrahn/cockpit-agentic/internal/config"
+	"github.com/sdrahn/custos/internal/config"
 )
 
 // Paths inside the sandbox image (packaging/openshell/Containerfile).
 const (
-	Launcher  = "/usr/libexec/cockpit-agentic/agent-launcher"
+	Launcher  = "/usr/libexec/custos/agent-launcher"
 	Workdir   = "/sandbox"
 	StateDir  = "/sandbox/state"
 	TokenEnv  = "AGENT_GATEWAY_TOKEN"
-	SecretEnv = "AGENTIC_RELAY_SECRET"
-	ConfigEnv = "AGENTIC_CONFIG"
+	SecretEnv = "CUSTOS_RELAY_SECRET"
+	ConfigEnv = "CUSTOS_CONFIG"
 )
 
 // Port is the agent's control API port: inside the sandbox (loopback)
@@ -48,7 +48,7 @@ const HostAlias = "host.openshell.internal"
 // Names of an agent's OpenShell objects.
 func SandboxName(agent string) string  { return "agent-" + agent }
 func ProviderName(agent string) string { return "agent-" + agent + "-gateway" }
-func ProfileID(agent string) string    { return "cockpit-agentic-gateway-" + agent }
+func ProfileID(agent string) string    { return "custos-gateway-" + agent }
 
 type endpoint struct {
 	Host        string `yaml:"host"`
@@ -129,7 +129,7 @@ func Profile(cfg *config.Config) ([]byte, error) {
 	return yaml.Marshal(map[string]any{
 		"id":           ProfileID(cfg.Name),
 		"display_name": "mcp-gateway for agent " + cfg.Name,
-		"description":  "Bearer token of agent-" + cfg.Name + " for mcp-gateway (cockpit-agentic)",
+		"description":  "Bearer token of agent-" + cfg.Name + " for mcp-gateway (custos)",
 		"category":     "data",
 		"credentials":  []map[string]any{cred},
 		"endpoints":    []map[string]any{{"host": gw.host, "port": gw.port, "protocol": "mcp", "enforcement": "enforce", "mcp": allMCP}},

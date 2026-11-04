@@ -12,7 +12,7 @@
 # Usage: MCPGW_SRC=DIR OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --disposable [--results DIR]
 #
 # mcp-gateway runs in its development mode (no systemd, no SELinux; the
-# exec supervisor) with its own policy, cockpit-agentic's agents module
+# exec supervisor) with its own policy, custos's agents module
 # and the agents' data from agent-admin, as installed. Its HTTPS listener
 # trusts test/vm/testidp; agents/_http.yaml lists that issuer for agents.
 # agent-sb is an OAuth client there: OpenShell's gateway mints its tokens
@@ -68,15 +68,15 @@ section Install
 make -s -C "$here" install install-tests DESTDIR= PREFIX=/usr SYSCONFDIR=/etc UNITDIR=/etc/systemd/system \
 	SYSUSERSDIR=/usr/lib/sysusers.d TMPFILESDIR=/usr/lib/tmpfiles.d SBINDIR=/usr/sbin >/dev/null
 getent group mcp-users >/dev/null || groupadd -r mcp-users
-systemd-sysusers /usr/lib/sysusers.d/cockpit-agentic.conf
-systemd-tmpfiles --create /usr/lib/tmpfiles.d/cockpit-agentic.conf
+systemd-sysusers /usr/lib/sysusers.d/custos.conf
+systemd-tmpfiles --create /usr/lib/tmpfiles.d/custos.conf
 systemctl daemon-reload
 check "agent-admin is installed" command -v agent-admin
-check "the relay is installed" test -x /usr/libexec/cockpit-agentic/agent-openshell-relay
-check "its log source is installed" test -x /usr/libexec/cockpit-agentic/agent-openshell-logs
+check "the relay is installed" test -x /usr/libexec/custos/agent-openshell-relay
+check "its log source is installed" test -x /usr/libexec/custos/agent-openshell-logs
 
 section "Model on the host"
-systemd-run --unit=osh-fakemodel /usr/libexec/cockpit-agentic/tests/fakemodel --listen 0.0.0.0:8008 >/dev/null
+systemd-run --unit=osh-fakemodel /usr/libexec/custos/tests/fakemodel --listen 0.0.0.0:8008 >/dev/null
 
 section "mcp-gateway on the host (HTTPS)"
 # The agent reaches the host as host.openshell.internal (OpenShell's
@@ -85,7 +85,7 @@ section "mcp-gateway on the host (HTTPS)"
 aud=https://host.openshell.internal:18443/mcp
 issuer=http://127.0.0.1:18445
 mkdir -p "$work/gw/servers.d" "$work/gw/rbac" "$work/tls" /run/mcp-gateway
-openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 -subj /CN=cockpit-agentic-test-ca \
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 -subj /CN=custos-test-ca \
 	-addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign \
 	-keyout "$work/tls/ca.key" -out "$work/tls/ca.pem" 2>/dev/null
 openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj /CN=host.openshell.internal \
@@ -97,7 +97,7 @@ check "the gateway's certificate names host.openshell.internal" bash -c "openssl
 
 # agent-sb's OAuth client; its tokens live 90 s, so the agent outlives one.
 head -c 24 /dev/urandom | base64 | tr -d '/+=' >"$work/client-secret"
-systemd-run --unit=osh-testidp /usr/libexec/cockpit-agentic/tests/testidp --listen 127.0.0.1:18445 --ttl 90 \
+systemd-run --unit=osh-testidp /usr/libexec/custos/tests/testidp --listen 127.0.0.1:18445 --ttl 90 \
 	--client "agent-sb:$(cat "$work/client-secret"):agent-sb:$aud" >/dev/null
 check "the token issuer answers" eventually 20 curl -sf -o /dev/null "$issuer/.well-known/openid-configuration"
 # Its subjects agent-<name> are agents (agents/_http.yaml, CONTRACT.md §16a).
@@ -107,12 +107,12 @@ printf '_http:\n  issuers: ["%s"]\n' "$issuer" >/etc/mcp-gateway/policy/agents/_
 # the agents' data (agent-admin) and the gateway's default role data.
 cp "$mcpgw/policy/mcp/rbac/data.yaml" "$work/gw/rbac/data.yaml"
 systemd-run --unit=osh-opa opa run --server --addr unix:///run/mcp-gateway/opa.sock --watch --log-format json \
-	--ignore rbac --ignore '*.json' "$mcpgw/policy" /usr/share/mcp-gateway/policy/cockpit-agentic \
+	--ignore rbac --ignore '*.json' "$mcpgw/policy" /usr/share/mcp-gateway/policy/custos \
 	mcp:/etc/mcp-gateway/policy "mcp.rbac:$work/gw/rbac" >/dev/null
 check "OPA has the agents' issuer" eventually 30 bash -c "curl -s --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http/issuers | grep -qF '$issuer'"
 
-printf '%s\n' 'version: 1' 'name: agentic-test' 'command: ["/usr/libexec/cockpit-agentic/tests/testsrv"]' 'run_as: gateway' \
-	>"$work/gw/servers.d/agentic-test.yaml"
+printf '%s\n' 'version: 1' 'name: custos-test' 'command: ["/usr/libexec/custos/tests/testsrv"]' 'run_as: gateway' \
+	>"$work/gw/servers.d/custos-test.yaml"
 printf '%s\n' "socket: $work/gw/mcp.sock" "servers_dir: $work/gw/servers.d" "state_dir: $work/gw/state" \
 	"approvals:" "  control_socket: $work/gw/control.sock" \
 	"policy:" "  opa_socket: /run/mcp-gateway/opa.sock" \
@@ -123,7 +123,7 @@ systemd-run --unit=osh-mcp-gateway "$mcpgw/bin/mcp-gateway" --config "$work/gw/g
 check "the gateway's HTTPS listener refuses a request without a token (401)" eventually 30 bash -c \
 	"curl -s -o /dev/null -w '%{http_code}' --cacert '$work/tls/ca.pem' --resolve host.openshell.internal:18443:127.0.0.1 -X POST $aud | grep -qx 401" ||
 	journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
-check "the gateway takes the test server" eventually 30 bash -c "curl -s --unix-socket '$work/gw/control.sock' http://localhost/v1/servers | grep -q agentic-test"
+check "the gateway takes the test server" eventually 30 bash -c "curl -s --unix-socket '$work/gw/control.sock' http://localhost/v1/servers | grep -q custos-test"
 check "the issuer gives agent-sb's client a token" bash -c \
 	"curl -sf -X POST -d grant_type=client_credentials -d client_id=agent-sb --data-urlencode client_secret=\$(cat '$work/client-secret') '$issuer/token' | jq -e '.access_token != null' >/dev/null"
 minted() { curl -s "$issuer/minted" | jq -r '."agent-sb" // 0'; }
@@ -156,7 +156,7 @@ check "the OpenShell gateway restarts with the CA" systemctl --user --machine="$
 check "the OpenShell gateway answers again" eventually 90 osh status
 
 section "Agent image"
-img=localhost/cockpit-agentic-agent:ci
+img=localhost/custos-agent:ci
 check "the agent image builds" docker build -q -t "$img" -f "$here/packaging/openshell/Containerfile" "$here"
 
 section "Creating the agent"
@@ -168,19 +168,19 @@ model: {provider: openai, name: fake, endpoint: "http://127.0.0.1:8008/v1"}
 instruction: You are a test agent.
 gateway:
   url: "$aud"
-  servers: [agentic-test]
+  servers: [custos-test]
   oauth: {token_url: "$issuer/token", client_id: agent-sb, refresh_before_seconds: 30}
 limits: {max_invocation_seconds: 300}
 interaction: {agui: true, client_tools: deny}
 sandbox: {kind: openshell, openshell_gateway: openshell}
 EOF
 agent-admin delete sb >/dev/null 2>&1
-export AGENTIC_OPENSHELL_IMAGE=$img
+export CUSTOS_OPENSHELL_IMAGE=$img
 check "agent-admin create sb (openshell)" agent-admin create sb --from "$work/sb.yaml"
-printf '%s\n' '- {server: agentic-test, tool: probe, read_only: true}' '- {server: agentic-test, tool: change}' >"$work/perms.yaml"
+printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' >"$work/perms.yaml"
 check "agent-admin permissions sb (supervised: change needs an approval)" agent-admin permissions sb <"$work/perms.yaml"
-check "the sandbox policy is written" test -s /etc/cockpit-agentic/agents/sb/openshell-policy.yaml
-check "the provider profile is imported" eventually 10 bash -c 'openshell -g openshell profile list -o json 2>/dev/null | grep -q cockpit-agentic-gateway-sb'
+check "the sandbox policy is written" test -s /etc/custos/agents/sb/openshell-policy.yaml
+check "the provider profile is imported" eventually 10 bash -c 'openshell -g openshell profile list -o json 2>/dev/null | grep -q custos-gateway-sb'
 n0=$(minted)
 check "agent-admin set-credential sb gateway-client-secret (OpenShell mints the token, creates the sandbox)" \
 	agent-admin set-credential sb gateway-client-secret <"$work/client-secret"
@@ -197,7 +197,7 @@ diagnose() {
 	# step leaves running (forward start -d) must not hold a pipe open.
 	local d=$work/diagnose port
 	mkdir -p "$d"
-	port=$(sed -n 's/^FORWARD_PORT=//p' /etc/cockpit-agentic/agents/sb/openshell.env)
+	port=$(sed -n 's/^FORWARD_PORT=//p' /etc/custos/agents/sb/openshell.env)
 	step() { # step <title> <command...>
 		echo "--- $1"
 		shift
@@ -209,12 +209,12 @@ diagnose() {
 		step "relay journal" bash -c "journalctl --no-pager -o short-precise --since @$t0 -u agent-openshell@sb.service | grep -v 'proxy error'"
 		step "openshell forward start $port agent-sb -d (by hand)" openshell -g openshell forward start "$port" agent-sb -d
 		step "the agent, started by hand in the sandbox for 10 s" openshell -g openshell sandbox exec -n agent-sb -- /bin/sh -c \
-			'timeout 10 /usr/libexec/cockpit-agentic/agent-launcher serve --config-env AGENTIC_CONFIG --listen-tcp 127.0.0.1:47999 --idle-exit 0; echo "exit status $?"'
+			'timeout 10 /usr/libexec/custos/agent-launcher serve --config-env CUSTOS_CONFIG --listen-tcp 127.0.0.1:47999 --idle-exit 0; echo "exit status $?"'
 		step "openshell sandbox get agent-sb" openshell -g openshell sandbox get agent-sb
 		step "openshell forward list" openshell -g openshell forward list
 		step "openshell logs agent-sb" openshell -g openshell logs agent-sb
 		step "containers (the relay's log source)" bash -c "docker ps --no-trunc --format '{{.ID}} {{.Names}} {{.Image}}'"
-		step "agent-openshell-logs agent-sb" timeout 5 /usr/libexec/cockpit-agentic/agent-openshell-logs agent-sb
+		step "agent-openshell-logs agent-sb" timeout 5 /usr/libexec/custos/agent-openshell-logs agent-sb
 		step "listening on the host" bash -c "ss -ltnp | grep -E ':47[0-9]{3}\\b'"
 	} >"$d/all" 2>&1
 	echo "    | --- why the relay gets no answer"
@@ -241,7 +241,7 @@ if [ -n "$relay_ok" ]; then
 			# Where OpenShell's proxy takes the gateway's CA from.
 			echo "    | OpenShell's gateway.toml: $(grep -A2 '^\[openshell\.supervisor\.network\]' "$osh_toml" 2>&1 | tr '\n' ' ')"
 			journalctl --user --machine="$osh_user@" -u openshell-gateway --no-pager -o cat --since "@$t0" 2>/dev/null | grep -iE 'additional|ca bundle|trust' | tail -n 5 | sed 's/^/    | openshell-gateway: /'
-			timeout 5 /usr/libexec/cockpit-agentic/agent-openshell-logs agent-sb </dev/null 2>&1 | grep -iE '18443|certificate|tls|trust' | tail -n 6 | sed 's/^/    | supervisor: /'
+			timeout 5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | grep -iE '18443|certificate|tls|trust' | tail -n 6 | sed 's/^/    | supervisor: /'
 		}
 	check "the gateway audited the call as agent-sb over HTTPS" eventually 10 gw_audit_has '.sub == "agent-sb" and .name == "probe" and .effect == "allow"' ||
 		journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
@@ -263,7 +263,7 @@ if [ -n "$relay_ok" ]; then
 		echo "    | the agent answered: $(jq -c '{state, summary, reason}' <<<"$a" 2>/dev/null || head -c 300 <<<"$a")"
 		# Who answered 500: mcp-gateway, or OpenShell's proxy?
 		journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "-120s" | grep -v '"audit":true' | tail -n 12 | sed 's/^/    | gateway: /'
-		timeout 5 /usr/libexec/cockpit-agentic/agent-openshell-logs agent-sb </dev/null 2>&1 | grep -iE '18443|credential|placeholder|refresh|resolve|500' | tail -n 12 | sed 's/^/    | supervisor: /'
+		timeout 5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | grep -iE '18443|credential|placeholder|refresh|resolve|500' | tail -n 12 | sed 's/^/    | supervisor: /'
 		timeout 20 openshell -g openshell provider refresh status agent-sb-gateway </dev/null 2>&1 | tail -n 12 | sed 's/^/    | refresh: /'
 		journalctl --user --machine="$osh_user@" -u openshell-gateway --no-pager -o cat --since "-300s" 2>/dev/null | grep -iE 'refresh|mint|credential|error|warn' | tail -n 10 | sed 's/^/    | openshell-gateway: /'
 	}
@@ -284,7 +284,7 @@ if [ -n "$relay_ok" ]; then
 		# Where the relay's bridge reads the agent's records from.
 		echo "    | relay: $(journalctl --no-pager -o cat --since "@$t0" -u agent-openshell@sb.service 2>&1 | grep -v 'proxy error' | tail -n 8 | tr '\n' '|')"
 		echo "    | containers: $(timeout 10 docker ps --format '{{.Names}} ({{.Image}})' </dev/null 2>&1 | tr '\n' ' ')"
-		echo "    | helper: $(timeout 5 /usr/libexec/cockpit-agentic/agent-openshell-logs agent-sb </dev/null 2>&1 | tail -n 5 | tr '\n' '|')"
+		echo "    | helper: $(timeout 5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | tail -n 5 | tr '\n' '|')"
 		echo "    | journal AGENT_NAME=sb: $(journalctl --no-pager -o cat --since "@$t0" AGENT_NAME=sb 2>&1 | wc -l) records"
 	}
 	check "journal: approval.resolved approved" eventually 60 journal_has approval.resolved '.AGENT_OUTCOME == "approved"'
