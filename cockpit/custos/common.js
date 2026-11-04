@@ -99,6 +99,12 @@ function when(date) {
     return d.toLocaleDateString() + " " + time.replace(/:\d\d$/, "");
 }
 
+/* shortApproval abbreviates a gateway approval id for display
+ * (a-6c88df4c…); the full one is in the element's title. */
+function shortApproval(id) {
+    return id && id.length > 12 ? id.slice(0, 10) + "…" : id;
+}
+
 /* shortId abbreviates an activity id (e-7c21…) for display. */
 function shortId(id) {
     return id && id.length > 6 ? id.slice(0, 6) : id;

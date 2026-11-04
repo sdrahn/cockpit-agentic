@@ -716,9 +716,9 @@ tests, for openQA).
     repository's domains. What it needs is in §16a (the OpenShell user,
     the relay's drop-in, the controllers delegated to user sessions);
   - OpenShell's packaging for SLES and Leap, and its maturity (0.1.x).
-- **O9 — Cockpit page.** The control plane itself: the views of the
-  mockup (`docs/mockup.png`), built only on Part I and the gateway's
-  control API. Started (`cockpit/custos`, package `custos-cockpit`):
+- **O9 — Cockpit page.** Settled: the control plane itself, built only
+  on Part I and the gateway's control API (`cockpit/custos`, package
+  `custos-cockpit`; screenshots of the real page in `docs/screenshots`):
   the Activity tab (§4, §5: activities, delegation chains, tool calls,
   cancel) and the Approvals tab (§7: the approval item, decided as the
   person; today's decisions from the journal, §10), the Agents tab (each
@@ -738,4 +738,7 @@ tests, for openQA).
   agents (`agent-admin create --from -` after `check -`, and `delete`
   after typing the agent's name), and editing an agent's configuration
   (read through the root bridge, `check -`, then `agent-admin edit
-  --from -`). Still open: a test against a real Cockpit.
+  --from -`). Tested against a stub of Cockpit (`make cockpit-test`) and
+  in a real Cockpit in the Leap 16 VM with SELinux enforcing (CI job
+  `cockpit-vm`): logged in as a person, an approval decided in the page
+  is the person's in the gateway's audit, not root's.

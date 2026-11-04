@@ -179,8 +179,8 @@ function renderDetail(acts) {
             c.approval_id
                 ? el("div", null, c.approval === "pending"
                     ? el("button", { class: "link", onclick: () => cockpit.location.go(["approvals", c.approval_id]) },
-                         "Review approval " + c.approval_id)
-                    : el("span", { class: "muted" }, "Approval " + c.approval_id + ": " + (STATE_TEXT[c.approval] || c.approval)))
+                         "Review approval " + shortApproval(c.approval_id))
+                    : el("span", { class: "muted", title: c.approval_id }, "Approval " + shortApproval(c.approval_id) + ": " + (STATE_TEXT[c.approval] || c.approval)))
                 : null)),
         el("p", { class: "mono muted" }, "GET " + agentSocket(a.agent) + " /v1/activities/" + a.id)));
 }

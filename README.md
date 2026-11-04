@@ -17,11 +17,11 @@ contract ([CONTRACT.md](CONTRACT.md) Part I). Cockpit is the first one.
 (amber) inside the guard, whose only way out is the gate, mcp-gateway
 ([docs/logo](docs/logo/README.md)).
 
-![The Activity view: scheduled, delegated, event-driven and chat activities, with the delegation chain of an activity waiting for approval](docs/mockup.png)
+![The Activity tab: a scheduled activity delegated to another agent, whose change waits for an approval, with the delegation chain](docs/screenshots/activity.png)
 
-*Mockup of the Cockpit control plane (design, not yet implemented as a
-Cockpit page). Source: [`docs/mockup/Main.dc.html`](docs/mockup/Main.dc.html).
-How people log in and use it: [docs/user-flow.md](docs/user-flow.md).*
+*The Cockpit page (`custos-cockpit`) in a real Cockpit on openSUSE Leap 16,
+taken by its test ([docs/screenshots](docs/screenshots/README.md)). How
+people log in and use it: [docs/user-flow.md](docs/user-flow.md).*
 
 ## How it works
 
@@ -47,7 +47,7 @@ Agents are started by people (chat over AG-UI or the ADK REST API), by
 schedules (systemd timers), by events, or by other agents. Delegation
 goes through the gateway, where it is governed and traceable.
 
-![The Approvals view: the call as the gateway sees it, next to the agent's self-asserted reason, delegation chain and evidence](docs/mockup-approvals.png)
+![The Approvals tab: the call as the gateway sees it, next to the agent's self-asserted reason, delegation chain and evidence](docs/screenshots/approvals.png)
 
 ## The contract
 
@@ -88,7 +88,7 @@ open items.
 | `examples/patch-pilot` | an example agent and its gateway permissions |
 | `test/vm` | the functional tests on an installed system (`run-tests.sh`) and their helpers (`fakemodel`, `testsrv`), packaged as `custos-tests` |
 | `test/openqa` | the openQA test module and how to run the functional tests |
-| `docs/` | the [logo](docs/logo/README.md), the [user flow](docs/user-flow.md) (who logs in to Cockpit, roles, approving and intervening), the mockup and its screenshots |
+| `docs/` | the [logo](docs/logo/README.md), the [user flow](docs/user-flow.md) (who logs in to Cockpit, roles, approving and intervening), [screenshots](docs/screenshots/README.md) of the Cockpit page |
 
 ## Development
 
@@ -126,6 +126,6 @@ curl --unix-socket /tmp/pp.sock http://agent/v1/status
 | SELinux module | written, not yet built or run on SLES 16 / Leap 16 |
 | OBS packaging | spec and services written, with the `-tests` subpackage; first OBS build to do |
 | Functional tests (`custos-tests`, openQA) | written; not yet run on SLES 16 / Leap 16 |
-| Cockpit page (`custos-cockpit`) | Activity, Approvals, Agents and Policy tabs implemented, smoke-tested against a stub of Cockpit; the emergency stop, the Audit tab, chat, and creating, editing and deleting agents too; a test against a real Cockpit to do |
+| Cockpit page (`custos-cockpit`) | Activity, Approvals, Agents and Policy tabs implemented, the emergency stop, chat, and creating, editing and deleting agents too; smoke-tested against a stub of Cockpit and tested in a real Cockpit in the Leap 16 VM (CI job `cockpit-vm`) |
 
 See [packaging/suse/README.md](packaging/suse/README.md) for building on OBS.

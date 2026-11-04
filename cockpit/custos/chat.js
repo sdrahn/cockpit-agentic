@@ -103,11 +103,11 @@ function run(name, c, text) {
             if (e.name === "agent.approval.pending") {
                 const v = e.value || {};
                 bubble(c, "msg-approval", el("strong", null, "Waiting for approval"), " of ", el("span", { class: "mono" }, v.tool),
-                       " (gateway approval " + v.approval_id + ") ",
+                       " (gateway approval " + shortApproval(v.approval_id) + ") ",
                        el("button", { class: "link", onclick: () => cockpit.location.go(["approvals", v.approval_id]) }, "Review in Approvals"));
             } else if (e.name === "agent.approval.resolved") {
                 const v = e.value || {};
-                bubble(c, "msg-note", "Approval " + v.approval_id + " of " + v.tool + ": ", stateBadge(v.outcome));
+                bubble(c, "msg-note", "Approval " + shortApproval(v.approval_id) + " of " + v.tool + ": ", stateBadge(v.outcome));
             } else if (e.name === "agent.limit.exceeded") {
                 const v = e.value || {};
                 bubble(c, "msg-note", "Stopped at the limit " + v.limit + " (" + v.value + ").");
