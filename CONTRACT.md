@@ -675,11 +675,13 @@ is installed). There is no Cockpit page package yet.
     gateway mints and renews them with the client credentials grant, and
     the spike sees a call succeed on a renewed token after the first
     expired, without restarting the agent;
-  - SLES 16 / Leap 16 with Podman and SELinux enforcing: started. CI's
+  - SLES 16 / Leap 16 with Podman and SELinux enforcing: settled. CI's
     `openshell-podman` job runs the backend in the Leap 16 VM with the
     installed packages, rootless Podman and SELinux enforcing
-    (`test/vm/run-vm.sh` with `SUITE=openshell`), and fails on a denial
-    for the repository's domains; what it finds is open;
+    (`test/vm/run-vm.sh` with `SUITE=openshell`): the whole spike passes
+    with no denial since boot, and the job fails on a denial for the
+    repository's domains. What it needs is in §16a (the OpenShell user,
+    the relay's drop-in, the controllers delegated to user sessions);
   - OpenShell's packaging for SLES and Leap, and its maturity (0.1.x).
 - **O9 — Cockpit page.** The control plane itself: the views of the
   mockup (`docs/mockup.png`), built only on Part I and the gateway's
