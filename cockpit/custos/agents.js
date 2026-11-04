@@ -25,12 +25,16 @@ function modeBadge(mode) {
               mode || "no gateway data");
 }
 
-/* unitsOf are the units that stop and start the agent (§3a lifecycle). */
+/* unitsOf are the units that stop and start the agent (§3a lifecycle):
+ * its socket and service, so that a stopped agent stays stopped (a
+ * request to a listening socket would start it again), and its socket to
+ * start it, which starts the service on the next request. For a stopped
+ * agent, which has no status, the lifecycle refreshState found. */
 function unitsOf(a) {
-    const l = (a.status && a.status.lifecycle) || {};
-    if (l.kind === "openshell") return { stop: [l.service], start: [l.service], service: l.service };
-    const service = l.service || "agent@" + a.name + ".service";
-    const socket = l.socket || "agent@" + a.name + ".socket";
+    const l = (a.status && a.status.lifecycle) || a.lifecycle || {};
+    const openshell = l.kind === "openshell";
+    const service = l.service || (openshell ? "agent-openshell@" : "agent@") + a.name + ".service";
+    const socket = l.socket || (openshell ? "agent-openshell@" : "agent@") + a.name + ".socket";
     return { stop: [socket, service], start: [socket], service };
 }
 

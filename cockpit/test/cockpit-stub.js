@@ -70,6 +70,7 @@
                 { server: "agents", tool: "delegate", read_only: true }, { server: "zypp", tool: "install_patches" }] },
             "disk-watch": { mode: "bounded", paused: false, permissions: [] },
             "old-agent": { mode: "supervised", paused: false, permissions: [] },
+            sandboxed: { mode: "supervised", paused: false, permissions: [] },
         },
         control: { stopped: false },
     };
@@ -133,6 +134,8 @@
 
     function agentRoute(name, method, path, superuser) {
         if (name === "disk-watch") return fail(0, "access-denied");
+        // Stopped: systemd removed the socket file and kept the directory.
+        if (name === "old-agent" || name === "sandboxed") return fail(0, "not-found");
         if (method === "GET" && path === "/v1/status") return ok(status(name));
         if (method === "GET" && path === "/v1/activities") return ok({ activities: activities[name] });
         const cancel = path.match(/^\/v1\/activities\/([^/]+)\/cancel$/);
@@ -273,7 +276,10 @@
                 if (args[1] === "enable" || args[1] === "disable") enabled[args[args.length - 1]] = args[1] === "enable";
                 return Promise.resolve("");
             }
-            if (args[0] === "ls") return Promise.resolve("disk-watch\npatch-pilot\ntriage\nnot_an_agent\n");
+            if (args[0] === "ls") return Promise.resolve("disk-watch\nold-agent\npatch-pilot\nsandboxed\ntriage\nnot_an_agent\n");
+            // A stopped agent's backend, from its socket unit: sandboxed's
+            // OpenShell socket is enabled.
+            if (args[0] === "systemctl" && args[1] === "show") return Promise.resolve(args.includes("agent-openshell@sandboxed.socket") ? "enabled\n" : "disabled\n");
             if (args[0] === "systemctl") {
                 const next = new Date(); next.setHours(next.getHours() + 3, 0, 0, 0);
                 return Promise.resolve(JSON.stringify([
