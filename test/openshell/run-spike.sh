@@ -125,7 +125,7 @@ check "the gateway's HTTPS listener refuses a request without a token (401)" eve
 	journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
 check "the gateway takes the test server" eventually 30 bash -c "curl -s --unix-socket '$work/gw/control.sock' http://localhost/v1/servers | grep -q agentic-test"
 check "the issuer gives agent-sb's client a token" bash -c \
-	"curl -sf -X POST -d grant_type=client_credentials -d client_id=agent-sb --data-urlencode client_secret@'$work/client-secret' '$issuer/token' | jq -e '.access_token != null' >/dev/null"
+	"curl -sf -X POST -d grant_type=client_credentials -d client_id=agent-sb --data-urlencode client_secret=\$(cat '$work/client-secret') '$issuer/token' | jq -e '.access_token != null' >/dev/null"
 minted() { curl -s "$issuer/minted" | jq -r '."agent-sb" // 0'; }
 
 section "OpenShell trusts the gateway's CA"
@@ -259,8 +259,14 @@ if [ -n "$relay_ok" ]; then
 	check "OpenShell mints a new token before the first expires" eventually 120 bash -c "[ \$(curl -s $issuer/minted | jq -r '.\"agent-sb\" // 0') -gt $m1 ]"
 	while [ $((SECONDS - t_first)) -lt 95 ]; do sleep 5; done
 	a=$(run_activity PROBE)
-	check "a call after the first token expired runs (renewed token)" summary_has "$a" "probe ok" ||
+	check "a call after the first token expired runs (renewed token)" summary_has "$a" "probe ok" || {
 		echo "    | the agent answered: $(jq -c '{state, summary, reason}' <<<"$a" 2>/dev/null || head -c 300 <<<"$a")"
+		# Who answered 500: mcp-gateway, or OpenShell's proxy?
+		journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "-120s" | grep -v '"audit":true' | tail -n 12 | sed 's/^/    | gateway: /'
+		timeout 5 /usr/libexec/cockpit-agentic/agent-openshell-logs agent-sb </dev/null 2>&1 | grep -iE '18443|credential|placeholder|refresh|resolve|500' | tail -n 12 | sed 's/^/    | supervisor: /'
+		timeout 20 openshell -g openshell provider refresh status agent-sb-gateway </dev/null 2>&1 | tail -n 12 | sed 's/^/    | refresh: /'
+		journalctl --user --machine="$osh_user@" -u openshell-gateway --no-pager -o cat --since "-300s" 2>/dev/null | grep -iE 'refresh|mint|credential|error|warn' | tail -n 10 | sed 's/^/    | openshell-gateway: /'
+	}
 	check "the agent was not restarted for it (no new agent.start)" test "$(starts)" -eq "$s1"
 	check "and the gateway refused none of its requests" not bash -c \
 		"journalctl -u osh-mcp-gateway.service -o cat --no-pager --since @$t0 | grep -iE 'invalid_token|token is expired|token_expired'"
