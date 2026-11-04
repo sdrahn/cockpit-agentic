@@ -187,9 +187,42 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(await effect("zypp__patch") === "needs approval (outside its window)", "a promoted category outside its window needs approval");
     check(await effect("firewalld__block") === "needs approval", "a category not promoted needs approval, on a bounded agent too");
     check((await page.textContent("#boundaries")).includes("changes · patch-errata"), "a permission shows its category");
+    // The categories with their readiness (agent-admin readiness, through
+    // the root bridge), and promote and demote.
+    await page.waitForFunction(() => !document.querySelector("#category-patch-errata").cells[3].textContent.startsWith("…"));
     const catRow = await page.$eval("#category-patch-errata", r => [...r.cells].map(c => c.textContent));
-    check(catRow[1] === "bounded (promoted)" && catRow[2].includes("02:00–04:00 Europe/Berlin") && catRow[3].startsWith("carol"),
-          "the categories: mode, windows and who promoted it");
+    check(catRow[1] === "bounded (promoted)" && catRow[2].includes("02:00–04:00 Europe/Berlin"), "the categories: mode and windows");
+    check(catRow[3].startsWith("not ready") && catRow[3].includes("override rate 16.7 % above 5.0 %") &&
+          catRow[4].startsWith("16.7 % (2) of max 5.0 %") && catRow[6].startsWith("12 in 3.2 days"),
+          "a category's readiness: not ready, what is unmet, its override rate and proposals");
+    check((await page.textContent("#category-config-lifecycle")).includes("ready") &&
+          !(await page.textContent("#category-config-lifecycle")).includes("not ready"), "a ready category");
+    const sec = await page.$eval("#category-security-response", r => [...r.cells].map(c => c.textContent));
+    check(sec[1] === "supervised" && sec[7].includes("Promote…"),
+          "a category named only by a permission is listed, supervised, with Promote…");
+    check((await spawned("agent-admin readiness disk-watch")).some(c => c[4] === "require"), "readiness is read through the root bridge");
+    await page.fill("#category-reason", "a patch broke nginx");
+    await page.click("#category-config-lifecycle button:text-is('Demote')");
+    await page.waitForFunction(() => document.querySelector("#category-config-lifecycle").cells[1].textContent === "supervised");
+    check((await spawned("agent-admin demote disk-watch config-lifecycle --reason a patch broke nginx")).length === 1,
+          "Demote demotes through agent-admin, with the reason");
+    await page.click("#category-security-response button:text-is('Promote…')");
+    check(await page.$eval("#promote-form", d => d.open) && (await page.inputValue("#category-select")) === "security-response" &&
+          (await page.inputValue("#category-envelope")).includes("windows:"), "Promote… opens the form for that category, with an envelope");
+    await page.click("#promote-form button:text-is('Promote')");
+    await page.waitForFunction(() => document.querySelector("#error").textContent.includes("is not ready"));
+    check((await page.textContent("#error")).includes("security-response is not ready (observed 0.0 days of 14"),
+          "a category that is not ready is refused, saying why");
+    await page.click("#agent-row-disk-watch button");
+    await page.waitForSelector("#category-security-response");
+    await page.click("#category-security-response button:text-is('Promote…')");
+    await page.check("#category-despite");
+    await page.fill("#category-reason", "a year by hand, the journal keeps a week");
+    await page.click("#promote-form button:text-is('Promote')");
+    await page.waitForFunction(() => document.querySelector("#category-security-response").cells[1].textContent === "bounded (promoted)");
+    const prom = (await calls()).filter(c => c[0] === "spawn" && c[1].startsWith("agent-admin promote disk-watch security-response"));
+    check(prom.length === 2 && prom[1][1] === "agent-admin promote disk-watch security-response --envelope - --despite-readiness --reason a year by hand, the journal keeps a week" &&
+          prom[1][4] === "require", "promote despite its readiness, with the reason, through the root bridge");
 
     // Policy tab: the posture and the what-if, on fresh data.
     await page.goto(url + "?policy#/policy");

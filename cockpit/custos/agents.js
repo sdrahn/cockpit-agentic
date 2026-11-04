@@ -191,25 +191,6 @@ async function renderAgentDetail() {
                "agent-admin promote lets act without asking within its windows (§6a). agent-admin checks it, and returns " +
                "once the gateway enforces it."),
             yaml, el("div", { class: "actions" }, save)));
-        const cats = Object.entries(data.categories || {});
-        if (cats.length > 0) {
-            const ct = el("table", { id: "categories" }, el("thead", null, el("tr", null,
-                el("th", null, "Task category"), el("th", null, "Mode"), el("th", null, "Windows"), el("th", null, "Changed by"))));
-            const cb = el("tbody");
-            for (const [name, c] of cats) {
-                const windows = ((c.envelope && c.envelope.windows) || []).map(w =>
-                    (w.days ? w.days.join(",") : "every day") + " " + w.from + "–" + w.to + " " + (w.tz || "UTC")).join("; ");
-                cb.append(el("tr", { id: "category-" + name }, el("td", { class: "mono" }, name),
-                    el("td", null, el("span", { class: "badge " + (c.mode === "bounded" ? "badge-ok" : "badge-waiting") },
-                        c.mode === "bounded" ? "bounded (promoted)" : c.mode)),
-                    el("td", { class: "muted" }, windows || "always"),
-                    el("td", { class: "muted" }, c.mode === "bounded" ? (c.promoted_by || "") : (c.demoted_by || ""))));
-            }
-            ct.append(cb);
-            bounds.append(el("h3", null, "Task categories"),
-                el("p", { class: "muted" }, "Promoted with agent-admin promote: within its windows a bounded category's changes run " +
-                   "without an approval (CONTRACT.md §6a)."), ct);
-        }
     }
 
     const scheds = (a.status && a.status.schedules) || [];
@@ -228,7 +209,7 @@ async function renderAgentDetail() {
             toggle), el("div", { class: "muted" }, "“" + s.prompt + "”")));
     }
 
-    box.replaceChildren(head, mode, bounds, schedules, configEditor(a), chatSection(a));
+    box.replaceChildren(head, mode, bounds, categoriesSection(a, data), schedules, configEditor(a), chatSection(a));
 }
 
 tabs.agents = {
@@ -243,3 +224,101 @@ tabs.agents = {
         if (!editing) await renderAgentDetail();
     },
 };
+
+/* categoriesSection: the agent's task categories (§6a), their mode and
+ * envelope, their readiness (agent-admin readiness, which reads the
+ * journal: through the root bridge), and promote and demote. */
+const ENVELOPE_TEMPLATE = "windows:\n  - {days: [sat], from: '02:00', to: '04:00', tz: UTC}\n";
+
+function windowsText(c) {
+    return ((c && c.envelope && c.envelope.windows) || []).map(w =>
+        (w.days ? w.days.join(",") : "every day") + " " + w.from + "–" + w.to + " " + (w.tz || "UTC")).join("; ");
+}
+
+function pctText(x) { return (x * 100).toFixed(1) + " %"; }
+
+function categoriesSection(a, data) {
+    const box = el("section", { class: "card", id: "categories-card" }, el("h2", null, "Task categories"),
+        el("p", { class: "muted" }, "A category is promoted on its own: within its windows a bounded category's changes run without an " +
+           "approval; outside them, and in every other category, they need one (CONTRACT.md §6a). The demotion evaluator " +
+           "(custos-demote.timer) demotes it again on its override rate or its rollback conditions."));
+    if (!data) return box;
+    const states = data.categories || {};
+    const names = [...new Set([...(data.permissions || []).map(p => p.category).filter(Boolean), ...Object.keys(states)])].sort();
+    if (names.length === 0) {
+        box.append(el("p", { class: "muted" }, "No permission names a category: add category: NAME to a permission to promote it later."));
+        return box;
+    }
+    const table = el("table", { id: "categories" }, el("thead", null, el("tr", null,
+        el("th", null, "Task category"), el("th", null, "Mode"), el("th", null, "Windows"), el("th", null, "Readiness"),
+        el("th", null, "Overrides"), el("th", null, "Incidents"), el("th", null, "Proposals"), el("th", null, ""))));
+    const tbody = el("tbody");
+    const reason = el("input", { id: "category-reason", type: "text", placeholder: "Reason (recorded)", "aria-label": "Reason" });
+    const env = el("textarea", { id: "category-envelope", rows: "5", spellcheck: "false", "aria-label": "Envelope (YAML)" });
+    const despite = el("input", { id: "category-despite", type: "checkbox" });
+    const which = el("select", { id: "category-select", "aria-label": "Category" }, ...names.map(n => el("option", { value: n }, n)));
+    const fillEnvelope = () => {
+        const c = states[which.value];
+        env.value = c && c.envelope ? JSON.stringify(c.envelope, null, 2) + "\n" : ENVELOPE_TEMPLATE;
+    };
+    which.addEventListener("change", fillEnvelope);
+    fillEnvelope();
+    const cells = {};
+    for (const n of names) {
+        const c = states[n] || { mode: "supervised" };
+        const bounded = c.mode === "bounded";
+        const demote = el("button", { class: "secondary" }, "Demote");
+        demote.hidden = !bounded;
+        demote.addEventListener("click", () => act(demote, "Demoting " + n,
+            () => admin(["demote", a.name, n, "--reason", reason.value.trim() || "demoted in Cockpit"])));
+        const promote = el("button", { class: "secondary" }, bounded ? "Change envelope…" : "Promote…");
+        promote.addEventListener("click", () => {
+            which.value = n;
+            fillEnvelope();
+            form.open = true;
+            env.focus();
+        });
+        cells[n] = { ready: el("td", { class: "muted" }, "…"), over: el("td", { class: "muted" }), inc: el("td", { class: "muted" }), props: el("td", { class: "muted" }) };
+        tbody.append(el("tr", { id: "category-" + n }, el("td", { class: "mono" }, n),
+            el("td", null, el("span", { class: "badge " + (bounded ? "badge-ok" : "badge-waiting") }, bounded ? "bounded (promoted)" : c.mode)),
+            el("td", { class: "muted" }, bounded ? (windowsText(c) || "always") : "–"),
+            cells[n].ready, cells[n].over, cells[n].inc, cells[n].props,
+            el("td", null, el("span", { class: "actions" }, promote, demote)),
+        ));
+    }
+    table.append(tbody);
+    const go = el("button", null, "Promote");
+    go.addEventListener("click", () => {
+        const args = ["promote", a.name, which.value, "--envelope", "-"];
+        if (despite.checked) args.push("--despite-readiness");
+        if (reason.value.trim()) args.push("--reason", reason.value.trim());
+        act(go, "Promoting " + which.value, () => admin(args, env.value));
+    });
+    const form = el("details", { id: "promote-form" }, el("summary", null, "Promote a category"),
+        el("p", { class: "muted" }, "The envelope: its windows (days mon…sun, from and to as HH:MM, tz), and optionally rollback " +
+           "(on: tool_error, limit_exceeded, health_check_failed; health_check: a command). agent-admin checks it and refuses a " +
+           "category that is not ready, unless you promote it despite its readiness, with a reason."),
+        el("div", { class: "toolbar" }, which), env,
+        el("label", null, despite, " Promote despite its readiness (needs a reason)"),
+        el("div", { class: "actions" }, go));
+    box.append(table, el("div", { class: "toolbar" }, reason), form);
+    // Readiness, as the person with administrative access (it reads the
+    // agent's and the gateway's journal).
+    admin(["readiness", a.name]).then(out => {
+        const r = JSON.parse(out);
+        for (const n of names) {
+            const m = r.categories && r.categories[n];
+            if (!m) continue;
+            const th = r.thresholds || {};
+            cells[n].ready.replaceChildren(el("span", { class: "badge " + (m.ready ? "badge-ok" : "badge-waiting") }, m.ready ? "ready" : "not ready"),
+                m.ready ? "" : el("div", { class: "muted" }, (m.unmet || []).join("; ")));
+            cells[n].over.textContent = pctText(m.override_rate) + " (" + m.overrides + ") of max " + pctText(th.override_rate || 0);
+            cells[n].inc.textContent = pctText(m.incident_rate) + " (" + m.incidents + ") of max " + pctText(th.incident_rate || 0);
+            cells[n].props.textContent = m.proposals + " in " + m.observed_days.toFixed(1) + " days · " + m.tools + " tools, " + m.distinct_calls + " distinct calls";
+        }
+    }).catch(ex => {
+        for (const n of names) cells[n].ready.textContent = "unknown";
+        box.append(el("p", { id: "readiness-note", class: "muted" }, "Readiness: " + ex.message));
+    });
+    return box;
+}

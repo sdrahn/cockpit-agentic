@@ -89,7 +89,9 @@ EOF
 	agent-admin create "$1" --from - <"$work/$1.yaml" >/dev/null
 }
 agent patch-pilot "Keeps the host patched within the maintenance window." custos-test
-printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' |
+# change is in the task category patch-errata (§6a): supervised until
+# promoted, and its proposals count for the Agents tab's readiness.
+printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change, category: patch-errata}' |
 	agent-admin permissions patch-pilot >/dev/null
 agent disk-watch "Frees space when /var fills up." custos-test
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change, autonomous: true}' |

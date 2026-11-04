@@ -907,7 +907,7 @@ the product and release process, tracked here so that nothing is lost.
 | Policy-bounded autonomy as a named destination, with an envelope (hosts, windows, rates, blast radius, rollback) | §6a | `bounded` with `windows`, and `rollback` (the demotion evaluator), done; rates need mcp-gateway (O12); hosts and blast radius across hosts parked with the fleet (O13) |
 | Observation period, override rate, explicit authenticated promotion, demotion path | §6a, §10 | observation, override rate, promotion and demotion by hand, and automatic demotion on the override rate and rollback conditions, done; on repeated rate caps and reviews open (O11) |
 | Per-category, not whole-agent, promotion; audit per category | §6a, §10 | done: `promote`, `demote`, promotion records (O11) |
-| Promotion-readiness view (override rate, incident rate, diversity, envelope size) | §6a | measures, thresholds and `agent-admin readiness` done, and `promote` checks them; envelope size and the Cockpit view open (O11) |
+| Promotion-readiness view (override rate, incident rate, diversity, envelope size) | §6a | measures, thresholds, `agent-admin readiness` and the Cockpit view done, and `promote` checks them; envelope size open (O11) |
 | Hard capability limits, audit trail, emergency stop | §6, §8, §10, §15, §18 | done |
 | Prompt-injection defence | §6 (the gateway decides every call, never the model), §16a (egress fence) | the boundaries are done; detection and evaluation of injection attempts open (O14) |
 | Service identity; privilege only through existing surfaces; MCP | §2, §6, §17 | done |
@@ -1009,14 +1009,15 @@ the product and release process, tracked here so that nothing is lost.
   without `--despite-readiness`) and `demote`, the demotion evaluator
   (`agent-admin evaluate`, `custos-demote.timer`) on the override rate
   and the envelope's `rollback` (`tool_error`, `limit_exceeded`,
-  `health_check_failed`), the promotion records, and `show` with the
-  categories; tested with OPA against the gateway's policy and in the
-  functional tests. Open: the after-the-fact review of autonomous
-  actions (`category.review`) and the demotion on it, telling the
-  approvers of an automatic demotion, the readiness view in Cockpit,
-  and in the measures: the agent data in force at a call's time,
-  emergency stops as incidents, the envelope's size, and the proposals
-  behind each number.
+  `health_check_failed`), the promotion records, `show` with the
+  categories, and the Cockpit page's view of an agent's categories with
+  their readiness, **Promote…** and **Demote**. Tested with OPA against
+  the gateway's policy, in the functional tests and in a real Cockpit.
+  Open: the after-the-fact review of autonomous actions
+  (`category.review`) and the demotion on it, telling the approvers of
+  an automatic demotion, and in the measures: the agent data in force
+  at a call's time, emergency stops as incidents, the envelope's size,
+  and the proposals behind each number.
 - **O12 — envelope limits in the gateway.** A per-agent, per-category
   call counter in mcp-gateway, with the window and the limit from the
   agent data, so that `rate` is enforced where the approvals are.

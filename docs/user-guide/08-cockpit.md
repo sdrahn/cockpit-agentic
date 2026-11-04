@@ -97,6 +97,14 @@ Selecting an agent shows:
 - **Autonomy mode**: advisory, supervised or bounded, one click each;
 - **Tool boundaries**: its permissions and their effect now, and **Edit
   the permissions** as a YAML list;
+- **Task categories**: each category its permissions name, with its
+  mode and windows, its readiness (ready or not, and what is not met;
+  the override and incident rates against their limits; the proposals),
+  **Demote** for a bounded one, and **Promote…**, which opens a form with
+  the envelope. A category that is not ready is refused unless you
+  promote it despite its readiness, with a reason. Readiness and the
+  actions need administrative access
+  ([chapter 6](06-permissions-and-modes.md#readiness));
 - **Schedules**: each with its calendar, next run and **Enable**/**Disable**;
 - **Configuration**: **Edit configuration** loads `agent.yaml`, **Check**
   validates it, **Save and apply** runs `agent-admin edit`;

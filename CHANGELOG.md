@@ -27,6 +27,9 @@ removed.
   (14 days, 50 proposals, at most 5 % overrides and 2 % incidents; your
   own in `/etc/custos/promotion.yaml`) unless given
   `--despite-readiness --reason TEXT`.
+- The Cockpit page: an agent's task categories with their readiness
+  (ready or not, what is not met, override and incident rates,
+  proposals), **Promote…** with the envelope, and **Demote**.
 - The demotion evaluator: `custos-demote.timer` (every 5 minutes;
   `promote` enables it) runs `agent-admin evaluate`, which demotes a
   bounded category whose override rate since its promotion is above the
