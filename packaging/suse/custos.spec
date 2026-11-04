@@ -62,6 +62,21 @@ SELinux domain agent_t for custos's agents (they may reach the
 gateway's MCP socket, never its control socket nor another agent's
 socket), and mcpsrv_agents_t for the gateway's delegation server.
 
+%package cockpit
+Summary:        Cockpit page for custos's agents
+Group:          System/Management
+BuildArch:      noarch
+Requires:       %{name} = %{version}
+Requires:       cockpit-bridge
+Recommends:     mcp-gateway-cockpit
+
+%description cockpit
+The Custos page in Cockpit: what the agents on the host do (their
+activities, who started them, delegation chains, tool calls) and the
+calls waiting for an approval, decided through mcp-gateway as the
+logged-in person. Members of agent-clients see the agents; mcp-gateway's
+approver rules say who may decide.
+
 %package tests
 Summary:        Functional tests of custos, for openQA
 Group:          Development/Tools/Other
@@ -98,10 +113,11 @@ make selinux
 %sysusers_generate_pre packaging/sysusers/custos.conf %{name} %{name}.conf
 
 %install
-%make_install install install-selinux install-tests \
+%make_install install install-selinux install-tests install-cockpit \
     PREFIX=%{_prefix} LIBEXECDIR=%{_libexecdir} DATADIR=%{_datadir} SBINDIR=%{_sbindir} \
     SYSCONFDIR=%{_sysconfdir} UNITDIR=%{_unitdir} SYSUSERSDIR=%{_sysusersdir} \
-    TMPFILESDIR=%{_tmpfilesdir} SELINUXDIR=%{_datadir}/selinux/packages/%{selinuxtype}
+    TMPFILESDIR=%{_tmpfilesdir} SELINUXDIR=%{_datadir}/selinux/packages/%{selinuxtype} \
+    COCKPITDIR=%{_datadir}/cockpit/custos
 
 %check
 export GOFLAGS="-mod=vendor"
@@ -173,6 +189,10 @@ done
 %config(noreplace) %{_sysconfdir}/mcp-gateway/policy/agents/_control.yaml
 %config(noreplace) %{_sysconfdir}/mcp-gateway/policy/agents/_http.yaml
 %{_datadir}/custos
+
+%files cockpit
+%dir %{_datadir}/cockpit
+%{_datadir}/cockpit/custos
 
 %files tests
 %dir %{_libexecdir}/custos

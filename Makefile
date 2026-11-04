@@ -9,6 +9,7 @@ SYSUSERSDIR ?= $(PREFIX)/lib/sysusers.d
 TMPFILESDIR ?= $(PREFIX)/lib/tmpfiles.d
 SYSCONFDIR ?= /etc
 SELINUXDIR ?= $(DATADIR)/selinux/packages/targeted
+COCKPITDIR ?= $(DATADIR)/cockpit/custos
 SELINUX_DEVEL ?= /usr/share/selinux/devel/Makefile
 GO         ?= go
 OPA        ?= opa
@@ -20,7 +21,7 @@ BINS := agent-launcher agent-admin agent-delegate agent-openshell-relay
 # The functional tests' helpers (package custos-tests).
 TESTBINS := fakemodel testsrv testidp
 
-.PHONY: all build build-tests test check fmt-check vet policy-test selinux install install-selinux install-tests clean
+.PHONY: all build build-tests test check fmt-check vet policy-test cockpit-test selinux install install-selinux install-tests install-cockpit clean
 
 all: build
 
@@ -53,6 +54,13 @@ policy-test:
 	$(OPA) test $(GATEWAY_POLICY) gateway/policy
 
 check: fmt-check vet test
+
+# The Cockpit page against a stub of cockpit.js, in a headless browser
+# (needs node and playwright-core or playwright; CHROME=path if not
+# Playwright's own Chromium).
+cockpit-test:
+	for f in cockpit/custos/*.js cockpit/test/*.js; do node --check "$$f" || exit 1; done
+	node cockpit/test/smoke.js
 
 # Needs selinux-policy-devel and mcp_gateway.if (mcp-gateway-selinux).
 selinux: selinux/custos.pp
@@ -87,6 +95,12 @@ install-tests: build-tests
 	install -Dm0755 bin/tests/fakemodel $(DESTDIR)$(LIBEXECDIR)/custos/tests/fakemodel
 	install -Dm0755 bin/tests/testsrv $(DESTDIR)$(LIBEXECDIR)/custos/tests/testsrv
 	install -Dm0755 bin/tests/testidp $(DESTDIR)$(LIBEXECDIR)/custos/tests/testidp
+
+# The Cockpit page (package custos-cockpit).
+install-cockpit:
+	install -d $(DESTDIR)$(COCKPITDIR)
+	install -m 0644 cockpit/custos/*.html cockpit/custos/*.js cockpit/custos/*.css cockpit/custos/*.svg \
+		cockpit/custos/manifest.json $(DESTDIR)$(COCKPITDIR)/
 
 install-selinux: selinux
 	install -d $(DESTDIR)$(SELINUXDIR)

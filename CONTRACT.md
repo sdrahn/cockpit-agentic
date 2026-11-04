@@ -618,7 +618,9 @@ may connect to `agent_sock_t`, and so may Cockpit's bridge
 OBS packages for SLES 16.0/16.1 and openSUSE Leap 16.0/16.1
 (`packaging/suse`): `custos` (requires `mcp-gateway` ≥ 1.12)
 and `custos-selinux` (required where `selinux-policy-targeted`
-is installed). There is no Cockpit page package yet.
+is installed), `custos-cockpit` (the Cockpit page, in
+`/usr/share/cockpit/custos`) and `custos-tests` (the functional
+tests, for openQA).
 
 ---
 
@@ -628,9 +630,9 @@ is installed). There is no Cockpit page package yet.
 
 | Requirement | Contract | State in this repository |
 |---|---|---|
-| See activity not started in chat (schedules, events), what runs, waits, ran | §3, §4, §5, §10 | host side done and tested (scheduled and API activities, states, history); Cockpit page to do |
+| See activity not started in chat (schedules, events), what runs, waits, ran | §3, §4, §5, §10 | host side done and tested (scheduled and API activities, states, history); Cockpit Activity tab done, smoke-tested against a stub of Cockpit (O9) |
 | …including delegation chains, traceable to the origin | §4 `parent`/`root`, §9, §10 | done and tested (trace verified by `SO_PEERCRED`); bridge `agent-delegate` built, untested against a real gateway |
-| Pending action as an approval item with actions, evidence, impact; nothing state-changing without approval | §6 supervised default, §7 | enforcement done in gateway policy (tested with OPA against the gateway's policy); approval flow tested end to end with a fake gateway; impact and evidence are the agent's self-asserted rationale plus the activity (O6) |
+| Pending action as an approval item with actions, evidence, impact; nothing state-changing without approval | §6 supervised default, §7 | enforcement done in gateway policy (tested with OPA against the gateway's policy); approval flow tested end to end with a fake gateway; impact and evidence are the agent's self-asserted rationale plus the activity (O6); Cockpit Approvals tab done, decisions as the person (O9) |
 | Outcome after execution; proposed → approved/rejected → executed history | §4, §10 "History of an action" | done (journal and activity API) |
 | Chat as one mode | §11 | AG-UI and ADK REST, tested |
 | See autonomy mode and policy; adjust where permitted | §6 | gateway data + `agent-admin mode/permissions`; Cockpit page to do |
@@ -693,4 +695,10 @@ is installed). There is no Cockpit page package yet.
   - OpenShell's packaging for SLES and Leap, and its maturity (0.1.x).
 - **O9 — Cockpit page.** The control plane itself: the views of the
   mockup (`docs/mockup.png`), built only on Part I and the gateway's
-  control API.
+  control API. Started (`cockpit/custos`, package `custos-cockpit`):
+  the Activity tab (§4, §5: activities, delegation chains, tool calls,
+  cancel) and the Approvals tab (§7: the approval item, decided as the
+  person; today's decisions from the journal, §10). Still open: the
+  Agents and Policy tabs (§6, `agent-admin`), Audit (§10 with the
+  gateway's audit), chat (§11), the emergency stop (§8), and a test
+  against a real Cockpit.

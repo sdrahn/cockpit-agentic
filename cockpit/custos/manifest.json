@@ -1,0 +1,12 @@
+{
+    "requires": {
+        "cockpit": "137"
+    },
+
+    "menu": {
+        "index": {
+            "label": "Custos",
+            "order": 190
+        }
+    }
+}

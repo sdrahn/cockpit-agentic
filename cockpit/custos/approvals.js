@@ -1,0 +1,179 @@
+/* Approvals tab: the calls waiting for a decision (CONTRACT.md §7), each
+ * as the approval item: the call, from mcp-gateway, beside the agent's
+ * account of it (self-asserted). Decisions go to the gateway as the
+ * person, never as root (§2). #/approvals/<id> highlights one.
+ */
+"use strict";
+
+function scopeTitle(s) {
+    if (s === "once") return "Approve once";
+    if (s === "session") return "Approve for this session";
+    const m = /^(\d+)h$/.exec(s);
+    return m ? "Approve for " + m[1] + " h" : "Approve for " + s;
+}
+
+function highlightedApproval() {
+    const p = cockpit.location.path;
+    return p[0] === "approvals" ? p[1] : null;
+}
+
+/* callOf finds the agent's call an approval is for, by approval id
+ * (§4 calls[].approval_id), with its activity. */
+function callOf(approvalId) {
+    for (const a of state.activities) {
+        const c = (a.calls || []).find(c => c.approval_id === approvalId);
+        if (c) return { activity: a, call: c };
+    }
+    return null;
+}
+
+async function decide(id, decision, scope, buttons) {
+    buttons.forEach(b => { b.disabled = true });
+    try {
+        await gateway.post("/v1/approvals/" + encodeURIComponent(id), { decision, scope, via: "cockpit" });
+        showError(null);
+    } catch (ex) {
+        let code = null;
+        try { code = JSON.parse(ex.body).code } catch { /* not the gateway's JSON */ }
+        showError(ex && ex.status === 404
+            ? "Approval " + id + " is no longer pending (decided elsewhere, or timed out)."
+            : code === "password_required"
+                ? "Approving your own request needs your password: use the MCP Gateway page or mcp-gateway-admin approvals approve " + id + "."
+                : ex && ex.status === 403
+                    ? "You may not decide approval " + id + ": the gateway's approver rules do not name you."
+                    : describeGatewayFailure(ex));
+    }
+    tabs.approvals.refresh();
+}
+
+function principalText(p) {
+    let t = p.sub;
+    if (p.uid !== undefined) t += " (uid " + p.uid + ", by SO_PEERCRED)";
+    else if (p.iss) t += " (" + p.iss + ")";
+    return t;
+}
+
+function gatewayHalf(p) {
+    return el("div", { class: "half" },
+        el("h3", null, "The call, from mcp-gateway"),
+        el("dl", null,
+           el("dt", null, "Principal"), el("dd", { class: "mono" }, principalText(p.principal || {})),
+           p.prompt ? [el("dt", null, "Policy"), el("dd", null, p.prompt)] : null,
+           p.approvers ? [el("dt", null, "Who may decide"), el("dd", { class: "mono" }, p.approvers.join(", "))] : null,
+           el("dt", null, "Asked via"), el("dd", null, p.channel)),
+        el("pre", null, JSON.stringify(p.args || {}, null, 2)),
+        p.waiting === false
+            ? el("p", { class: "note" }, "The agent is no longer waiting (its call ended, or the gateway restarted). " +
+                 "Approving lets its next identical call through.")
+            : null);
+}
+
+function agentHalf(p, found) {
+    const head = el("h3", null, "The agent's account", el("span", { class: "badge badge-waiting" }, "self-asserted"));
+    if (!found) {
+        const sub = (p.principal || {}).sub || "";
+        return el("div", { class: "half" }, head, el("p", { class: "muted" }, sub.startsWith("agent-")
+            ? "Agent " + sub.slice(6) + " names no call for this approval (yet, or it is not on this host)."
+            : sub + " is not an agent of this host: there is no account of the call."));
+    }
+    const { activity: a, call: c } = found;
+    const earlier = (a.calls || []).slice(0, (a.calls || []).indexOf(c));
+    return el("div", { class: "half" }, head,
+        el("p", null, el("span", { class: "muted" }, "Stated reason and impact: "),
+           c.rationale || el("span", { class: "muted" }, "none given")),
+        el("div", { class: "muted" }, "Started by"),
+        chainView(chainOf(a)),
+        el("p", { class: "muted" }, "Evidence: the activity's earlier calls"),
+        earlier.length
+            ? earlier.map(e => el("div", null, el("span", { class: "mono" }, e.tool), " ", stateBadge(e.state)))
+            : el("div", { class: "muted" }, "none"));
+}
+
+function renderApprovals(pending) {
+    const box = document.getElementById("approvals");
+    const focus = highlightedApproval();
+    box.replaceChildren();
+    if (pending.length === 0) {
+        box.append(el("p", { class: "card muted" },
+                      focus ? "Approval " + focus + " is not pending (anymore)." : "Nothing to decide."));
+        return;
+    }
+    for (const p of pending) {
+        const found = callOf(p.id);
+        const buttons = [];
+        const actions = el("div", { class: "actions" });
+        (p.scopes || ["once"]).forEach((scope, i) => {
+            const b = el("button", { class: i === 0 ? null : "secondary", onclick: () => decide(p.id, "approve", scope, buttons) },
+                         scopeTitle(scope));
+            buttons.push(b);
+            actions.append(b);
+        });
+        const decline = el("button", { class: "danger", onclick: () => decide(p.id, "deny", "", buttons) }, "Decline");
+        buttons.push(decline);
+        actions.append(decline);
+        if (found) {
+            actions.append(el("button", { class: "link", onclick: () =>
+                cockpit.location.go(["activity", found.activity.agent, found.activity.id]) }, "Open activity"));
+        }
+        const since = (found && found.call.since) || p.created;
+        const agent = found ? found.activity.agent : (p.principal || {}).sub;
+        box.append(el("div", { class: "card approval" + (p.id === focus ? " highlight" : ""), id: "approval-" + p.id },
+            el("div", { class: "head" },
+               el("span", { class: "badge badge-waiting" }, since ? "Waiting " + relative(since).replace(/ ago$/, "") : "Waiting"),
+               el("span", { class: "mono" }, p.server + "__" + p.name),
+               el("span", { class: "muted" }, agent + " · approval " + p.id +
+                  (p.expires ? " · times out at " + new Date(p.expires).toLocaleTimeString() : ""))),
+            el("div", { class: "halves" }, gatewayHalf(p), agentHalf(p, found)),
+            actions));
+    }
+    const card = focus && document.getElementById("approval-" + focus);
+    if (card && !card.dataset.scrolled) {
+        card.dataset.scrolled = "1";
+        card.scrollIntoView({ block: "center" });
+    }
+}
+
+/* renderDecided lists today's decisions from the agents' journal records
+ * (approval.resolved, §10), as far as the person may read the journal. */
+async function renderDecided() {
+    const box = document.getElementById("decided");
+    let out;
+    try {
+        out = await cockpit.spawn(["journalctl", "--no-pager", "--since", "today", "-o", "json",
+                                   "AGENT_EVENT=approval.resolved"], { err: "message" });
+    } catch {
+        box.replaceChildren(el("p", { class: "muted" }, "Reading the journal needs access to it (systemd-journal or wheel)."));
+        return;
+    }
+    const recs = out.split("\n").filter(Boolean).map(l => { try { return JSON.parse(l) } catch { return null } })
+        .filter(Boolean).reverse();
+    box.replaceChildren(...(recs.length
+        ? recs.map(r => el("div", { class: "decided" },
+            stateBadge(r.AGENT_OUTCOME), el("span", { class: "mono" }, r.AGENT_TOOL),
+            el("span", { class: "muted" }, r.AGENT_NAME + " · approval " + r.AGENT_APPROVAL_ID + " · " +
+               when(new Date(Number(r.__REALTIME_TIMESTAMP) / 1000)) +
+               (r.AGENT_OUTCOME === "declined" ? " · not executed" : ""))))
+        : [el("p", { class: "muted" }, "Nothing decided today.")]));
+}
+
+tabs.approvals = {
+    intervalMs: 2000,
+    async refresh() {
+        const [pending] = await Promise.all([
+            gateway.get("/v1/approvals").catch(ex => { throw { userMessage: describeGatewayFailure(ex) } }),
+            refreshState()]);
+        renderApprovals(pending);
+        setTabCount("approvals", pending.length);
+        await renderDecided();
+    },
+};
+
+/* refreshApprovalCount keeps the Approvals tab's count while another tab
+ * is shown. */
+async function refreshApprovalCount() {
+    try {
+        setTabCount("approvals", (await gateway.get("/v1/approvals")).length);
+    } catch {
+        // the tab says why when shown
+    }
+}

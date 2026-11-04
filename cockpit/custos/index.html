@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Custos</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="custos.css">
+    <script src="../base1/cockpit.js"></script>
+    <script src="common.js" defer></script>
+    <script src="activity.js" defer></script>
+    <script src="approvals.js" defer></script>
+    <script src="main.js" defer></script>
+</head>
+<body>
+    <header>
+        <picture>
+            <source srcset="custos-mark-dark.svg" media="(prefers-color-scheme: dark)">
+            <img src="custos-mark.svg" alt="" width="32" height="32">
+        </picture>
+        <h1>Custos</h1>
+        <span class="muted">Supervise the agents on this host. Policy and approvals are
+        mcp-gateway's; processes are systemd's.</span>
+        <span id="whoami" class="muted"></span>
+    </header>
+    <nav id="tabs" role="tablist">
+        <button role="tab" data-tab="activity">Activity <span class="count" hidden></span></button>
+        <button role="tab" data-tab="approvals">Approvals <span class="count count-warn" hidden></span></button>
+    </nav>
+    <div id="error" class="error" hidden></div>
+    <main>
+        <div id="tab-activity" class="tab" hidden>
+            <div id="summary" class="cards">
+                <div class="card stat"><div class="muted">Running now</div>
+                    <div class="value" id="stat-running">–</div><div class="muted" id="stat-running-note"></div></div>
+                <div class="card stat"><div class="muted">Waiting for approval</div>
+                    <div class="value" id="stat-waiting">–</div><div class="muted" id="stat-waiting-note"></div></div>
+                <div class="card stat"><div class="muted">Next scheduled</div>
+                    <div class="value" id="stat-next">–</div><div class="muted" id="stat-next-note"></div></div>
+                <div class="card stat"><div class="muted">Ended in 24 h</div>
+                    <div class="value" id="stat-ended">–</div><div class="muted" id="stat-ended-note"></div></div>
+            </div>
+            <div class="split">
+                <section class="card list">
+                    <div class="toolbar">
+                        <h2>Activities</h2>
+                        <span class="chips" id="filters" role="group" aria-label="Show">
+                            <button class="chip" data-filter="all">All</button>
+                            <button class="chip" data-filter="open">Running and waiting</button>
+                            <button class="chip" data-filter="unattended">Not from chat</button>
+                            <button class="chip" data-filter="chat">Chat</button>
+                        </span>
+                    </div>
+                    <div id="agents-note" class="note" hidden></div>
+                    <div id="activities"></div>
+                </section>
+                <section class="card detail" id="activity-detail">
+                    <p class="muted">Select an activity to see who started it and its tool calls.</p>
+                </section>
+            </div>
+        </div>
+
+        <div id="tab-approvals" class="tab" hidden>
+            <p class="muted">Calls that policy holds for a decision. You decide through
+            mcp-gateway, which records you as the approver. The agent cannot approve its own
+            calls.</p>
+            <div id="approvals"></div>
+            <section class="card">
+                <h2>Decided today</h2>
+                <div id="decided"></div>
+            </section>
+        </div>
+    </main>
+</body>
+</html>
