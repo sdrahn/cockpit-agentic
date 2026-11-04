@@ -99,6 +99,54 @@ list_dirs_pattern(unconfined_t, agent_runtime_t, agent_runtime_t)
 stream_connect_pattern(unconfined_t, agent_runtime_t, agent_sock_t, init_t)
 stream_connect_pattern(unconfined_t, agent_runtime_t, agent_sock_t, agent_t)
 
+# The relay of an agent in an OpenShell sandbox (agent-openshell@.service,
+# CONTRACT.md §16a): serves the agent's socket, connects to OpenShell's
+# port forward on the loopback (47000-47999, unreserved ports), runs the
+# openshell CLI for the sandbox's log stream (which talks to the local
+# OpenShell gateway over HTTP and reads root's OpenShell configuration),
+# and writes the agent's records to the journal.
+type agent_relay_t;
+type agent_relay_exec_t;
+init_daemon_domain(agent_relay_t, agent_relay_exec_t)
+
+allow agent_relay_t agent_sock_t:sock_file getattr;
+allow agent_relay_t init_t:unix_stream_socket { accept read write getattr getopt setopt shutdown };
+allow agent_relay_t self:unix_stream_socket create_stream_socket_perms;
+allow agent_relay_t self:tcp_socket create_stream_socket_perms;
+allow agent_relay_t self:udp_socket create_socket_perms;
+allow agent_relay_t self:process { getsched signal signull };
+allow agent_relay_t self:fifo_file rw_fifo_file_perms;
+list_dirs_pattern(agent_relay_t, agent_runtime_t, agent_runtime_t)
+read_files_pattern(agent_relay_t, agent_conf_t, agent_conf_t)
+list_dirs_pattern(agent_relay_t, agent_conf_t, agent_conf_t)
+corenet_tcp_connect_unreserved_ports(agent_relay_t)
+corenet_tcp_connect_http_port(agent_relay_t)
+corenet_tcp_connect_http_cache_port(agent_relay_t)
+corecmd_exec_bin(agent_relay_t)
+corecmd_exec_shell(agent_relay_t)
+libs_use_ld_so(agent_relay_t)
+libs_use_shared_libs(agent_relay_t)
+files_read_etc_files(agent_relay_t)
+files_read_usr_files(agent_relay_t)
+files_search_pids(agent_relay_t)
+kernel_read_system_state(agent_relay_t)
+miscfiles_read_localization(agent_relay_t)
+miscfiles_read_generic_certs(agent_relay_t)
+auth_use_nsswitch(agent_relay_t)
+sysnet_dns_name_resolve(agent_relay_t)
+dev_read_urand(agent_relay_t)
+logging_send_syslog_msg(agent_relay_t)
+userdom_search_admin_dir(agent_relay_t)
+userdom_read_admin_home_files(agent_relay_t)
+# agent-openshell-logs: docker or podman logs of the sandbox's container
+# (with Docker, through its socket). Podman as root under SELinux is open
+# (CONTRACT.md §21, O10).
+optional_policy(`
+	gen_require(`
+		type container_runtime_t, container_var_run_t;
+	')
+	stream_connect_pattern(agent_relay_t, container_var_run_t, container_var_run_t, container_runtime_t)
+')
 # systemd creates the agents' sockets (agent@.socket, DirectoryMode=)
 # and tmpfiles /run/agents: with the right labels even before a relabel
 # (the package's tmpfiles run before this module is loaded).
@@ -143,3 +191,5 @@ gen_require(`
 	class process2 { nnp_transition nosuid_transition };
 ')
 allow init_t agent_t:process2 { nnp_transition nosuid_transition };
+# The relay's unit has NoNewPrivileges=yes too.
+allow init_t agent_relay_t:process2 { nnp_transition nosuid_transition };

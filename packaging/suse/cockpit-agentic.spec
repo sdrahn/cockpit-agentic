@@ -27,6 +27,8 @@ BuildRequires:  pkgconfig(systemd)
 BuildRequires:  sysuser-tools
 BuildRequires:  systemd-rpm-macros
 # The agents' tools, policy and approvals are mcp-gateway's (CONTRACT.md §1).
+# NVIDIA OpenShell is optional (sandbox kind openshell, CONTRACT.md §16a).
+Suggests:       openshell
 Requires:       mcp-gateway >= 1.12
 Requires(pre):  group(mcp-users)
 Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
@@ -149,11 +151,15 @@ done
 %dir %{_libexecdir}/cockpit-agentic
 %{_libexecdir}/cockpit-agentic/agent-launcher
 %{_libexecdir}/cockpit-agentic/agent-delegate
+%{_libexecdir}/cockpit-agentic/agent-openshell-relay
+%{_libexecdir}/cockpit-agentic/agent-openshell-logs
 %{_libexecdir}/cockpit-agentic/agent-admin
 %{_unitdir}/agent@.service
 %{_unitdir}/agent@.socket
 %{_unitdir}/agent-schedule@.service
 %{_unitdir}/agent-schedule@.timer
+%{_unitdir}/agent-openshell@.service
+%{_unitdir}/agent-openshell@.socket
 %{_sysusersdir}/%{name}.conf
 %{_tmpfilesdir}/%{name}.conf
 %dir %{_sysconfdir}/cockpit-agentic
@@ -173,6 +179,7 @@ done
 %{_libexecdir}/cockpit-agentic/tests/run-tests.sh
 %{_libexecdir}/cockpit-agentic/tests/fakemodel
 %{_libexecdir}/cockpit-agentic/tests/testsrv
+%{_libexecdir}/cockpit-agentic/tests/fakegateway
 
 %files selinux
 %dir %{_datadir}/selinux/packages/%{selinuxtype}

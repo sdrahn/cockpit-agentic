@@ -1,0 +1,17 @@
+# The socket of agent %i, which runs in an NVIDIA OpenShell sandbox
+# (cockpit-agentic CONTRACT.md §3a, §16a). The relay behind it passes
+# callers on to the agent.
+[Unit]
+Description=Agent %i in OpenShell (socket)
+Documentation=https://github.com/sdrahn/cockpit-agentic/blob/main/CONTRACT.md
+
+[Socket]
+ListenStream=/run/agents/%i/api.sock
+SocketMode=0660
+SocketUser=root
+SocketGroup=agent-clients
+DirectoryMode=0755
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

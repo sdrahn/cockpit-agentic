@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
+	"os"
 	"regexp"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -25,6 +27,35 @@ func (t *Transport) Connect(ctx context.Context) (mcp.Connection, error) {
 		return nil, fmt.Errorf("mcp-gateway: %w", err)
 	}
 	return (&mcp.IOTransport{Reader: c, Writer: c}).Connect(ctx)
+}
+
+// HTTPTransport connects to mcp-gateway's Streamable HTTP endpoint. The
+// bearer token is read from the environment variable tokenEnv for every
+// request: under OpenShell it holds a placeholder the supervisor
+// replaces on the way out (CONTRACT.md §3a).
+func HTTPTransport(endpoint, tokenEnv string, base http.RoundTripper) mcp.Transport {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return &mcp.StreamableClientTransport{
+		Endpoint:   endpoint,
+		HTTPClient: &http.Client{Transport: bearer{env: tokenEnv, next: base}},
+	}
+}
+
+type bearer struct {
+	env  string
+	next http.RoundTripper
+}
+
+func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
+	if b.env != "" {
+		if tok := os.Getenv(b.env); tok != "" {
+			r = r.Clone(r.Context())
+			r.Header.Set("Authorization", "Bearer "+tok)
+		}
+	}
+	return b.next.RoundTrip(r)
 }
 
 // Notice is an approval notice of the gateway's broker.

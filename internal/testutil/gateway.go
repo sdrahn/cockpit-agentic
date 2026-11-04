@@ -3,7 +3,11 @@ package testutil
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -24,6 +28,7 @@ type Gateway struct {
 	decisions map[string]chan bool
 	Executed  []string // tools actually run, in order
 	Initializ []map[string]any
+	tokens    []string
 }
 
 // StartGateway listens on dir/mcp.sock.
@@ -160,4 +165,110 @@ func splitTool(n string) (string, string) {
 		}
 	}
 	return "", n
+}
+
+// StartHTTPGateway serves the same fake gateway over MCP Streamable HTTP
+// (as mcp-gateway's listener for remote and sandboxed agents): JSON
+// answers, and an SSE stream for tools/call that carries the approval
+// notice before the result. It records the Authorization headers.
+func StartHTTPGateway(t *testing.T, tools []string) (*Gateway, string) {
+	g := NewGateway(tools)
+	srv := httptest.NewServer(http.HandlerFunc(g.serveHTTP))
+	t.Cleanup(srv.Close)
+	return g, srv.URL + "/mcp"
+}
+
+// NewGateway returns a fake gateway to serve with Handler.
+func NewGateway(tools []string) *Gateway {
+	return &Gateway{Tools: tools, Ask: map[string]string{}, Block: map[string]bool{}, decisions: map[string]chan bool{}}
+}
+
+// Handler serves the gateway's MCP Streamable HTTP endpoint.
+func (g *Gateway) Handler() http.Handler { return http.HandlerFunc(g.serveHTTP) }
+
+// Pending reports whether approval id waits for Decide.
+func (g *Gateway) Pending(id string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	_, ok := g.decisions[id]
+	return ok
+}
+
+// Tokens returns the bearer tokens the HTTP gateway saw.
+func (g *Gateway) Tokens() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]string(nil), g.tokens...)
+}
+
+func (g *Gateway) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	g.mu.Lock()
+	g.tokens = append(g.tokens, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+	g.mu.Unlock()
+	switch r.Method {
+	case http.MethodPost:
+	case http.MethodGet:
+		http.Error(w, "no standalone stream", http.StatusMethodNotAllowed)
+		return
+	case http.MethodDelete:
+		w.WriteHeader(http.StatusNoContent)
+		return
+	default:
+		http.Error(w, "method", http.StatusMethodNotAllowed)
+		return
+	}
+	var m rpc
+	if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if m.ID == nil {
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+	reply := func(v any) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Mcp-Session-Id", "fake-session")
+		json.NewEncoder(w).Encode(v)
+	}
+	switch m.Method {
+	case "initialize":
+		var p map[string]any
+		json.Unmarshal(m.Params, &p)
+		g.mu.Lock()
+		g.Initializ = append(g.Initializ, p)
+		g.mu.Unlock()
+		reply(rpc{JSONRPC: "2.0", ID: m.ID, Result: map[string]any{
+			"protocolVersion": p["protocolVersion"], "capabilities": map[string]any{"tools": map[string]any{}, "logging": map[string]any{}},
+			"serverInfo": map[string]any{"name": "mcp-gateway", "version": "1.12.4"},
+		}})
+	case "tools/list":
+		var ts []map[string]any
+		for _, n := range g.Tools {
+			ts = append(ts, map[string]any{"name": n, "description": "fake " + n, "inputSchema": map[string]any{"type": "object"}})
+		}
+		reply(rpc{JSONRPC: "2.0", ID: m.ID, Result: map[string]any{"tools": ts}})
+	case "tools/call":
+		var p struct {
+			Name      string         `json:"name"`
+			Arguments map[string]any `json:"arguments"`
+		}
+		json.Unmarshal(m.Params, &p)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Mcp-Session-Id", "fake-session")
+		w.WriteHeader(http.StatusOK)
+		fl, _ := w.(http.Flusher)
+		n := 0
+		write := func(v any) {
+			b, _ := json.Marshal(v)
+			n++
+			fmt.Fprintf(w, "id: s-%d\nevent: message\ndata: %s\n\n", n, b)
+			if fl != nil {
+				fl.Flush()
+			}
+		}
+		g.call(m.ID, p.Name, p.Arguments, write)
+	default:
+		reply(map[string]any{"jsonrpc": "2.0", "id": m.ID, "error": map[string]any{"code": -32601, "message": "method not found"}})
+	}
 }

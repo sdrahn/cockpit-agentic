@@ -91,3 +91,49 @@ func TestGuardAgents(t *testing.T) {
 		t.Error("Agent()")
 	}
 }
+
+func TestRelayed(t *testing.T) {
+	var got Caller
+	h := Relayed("s3cret", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, _ = From(r.Context())
+		if r.Header.Get(HeaderSecret) != "" {
+			t.Error("secret passed on")
+		}
+	}))
+	for _, tc := range []struct {
+		secret, caller string
+		want           int
+	}{
+		{"s3cret", "1000:alice", 200},
+		{"wrong", "0:root", 403},
+		{"", "0:root", 403},
+		{"s3cret", "", 403},
+		{"s3cret", "x:alice", 403},
+		{"s3cret", "5:", 403},
+	} {
+		r := httptest.NewRequest("GET", "/v1/status", nil)
+		if tc.secret != "" {
+			r.Header.Set(HeaderSecret, tc.secret)
+		}
+		if tc.caller != "" {
+			r.Header.Set(HeaderCaller, tc.caller)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != tc.want {
+			t.Errorf("%+v: %d", tc, w.Code)
+		}
+	}
+	if got.UID != 1000 || got.Name != "alice" {
+		t.Errorf("caller %+v", got)
+	}
+	// No secret configured: nothing gets through.
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set(HeaderSecret, "")
+	r.Header.Set(HeaderCaller, "0:root")
+	Relayed("", http.NotFoundHandler()).ServeHTTP(w, r)
+	if w.Code != 403 {
+		t.Errorf("empty secret: %d", w.Code)
+	}
+}

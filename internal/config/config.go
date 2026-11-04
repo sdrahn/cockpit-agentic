@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,6 +26,18 @@ const (
 )
 
 var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}[a-z0-9]$`)
+
+var envRE = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
+
+func isLoopback(h string) bool {
+	// host.openshell.internal is what the host's loopback becomes in an
+	// OpenShell sandbox (the configuration the sandbox gets).
+	if h == "localhost" || h == "host.openshell.internal" {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
+}
 
 var credRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
@@ -60,7 +74,15 @@ type Model struct {
 }
 
 type Gateway struct {
-	Socket  string   `yaml:"socket"`
+	Socket string `yaml:"socket"`
+	// URL is mcp-gateway's Streamable HTTP endpoint (aggregated), for
+	// sandboxed agents that cannot reach the socket (CONTRACT.md §3a).
+	URL string `yaml:"url"`
+	// TokenEnv names the environment variable holding the bearer token
+	// for URL. Under OpenShell it holds a placeholder that the supervisor
+	// replaces with the real token (the agent never sees it).
+	TokenEnv string `yaml:"token_env"`
+
 	Servers []string `yaml:"servers"`
 	Tools   []string `yaml:"tools"`
 }
@@ -189,7 +211,7 @@ func Parse(b []byte) (*Config, error) {
 }
 
 func (c *Config) defaults() {
-	if c.Gateway.Socket == "" {
+	if c.Gateway.Socket == "" && c.Gateway.URL == "" {
 		c.Gateway.Socket = GatewaySocket
 	}
 	if c.Limits.MaxLLMCalls == 0 {
@@ -208,7 +230,7 @@ func (c *Config) defaults() {
 		c.Sandbox.Kind = "systemd"
 	}
 	if c.Sandbox.Kind == "openshell" && c.Sandbox.OpenShellGateway == "" {
-		c.Sandbox.OpenShellGateway = "local"
+		c.Sandbox.OpenShellGateway = "openshell" // the name OpenShell's installer registers
 	}
 }
 
@@ -248,8 +270,25 @@ func (c *Config) Check() error {
 	if c.Instruction != "" && c.InstructionFile != "" {
 		bad("instruction and instruction_file: set one of them")
 	}
-	if !filepath.IsAbs(c.Gateway.Socket) {
+	switch {
+	case c.Gateway.URL != "" && c.Gateway.Socket != "":
+		bad("gateway: set socket or url, not both")
+	case c.Gateway.URL != "":
+		u, err := url.Parse(c.Gateway.URL)
+		if err != nil || (u.Scheme != "https" && !(u.Scheme == "http" && isLoopback(u.Hostname()))) || u.Host == "" {
+			bad("gateway.url: %q: want an https URL (http only on the host's loopback, for tests)", c.Gateway.URL)
+		}
+		if c.Gateway.TokenEnv != "" && !envRE.MatchString(c.Gateway.TokenEnv) {
+			bad("gateway.token_env: %q: want an environment variable name", c.Gateway.TokenEnv)
+		}
+	case !filepath.IsAbs(c.Gateway.Socket):
 		bad("gateway.socket: %q: want an absolute path", c.Gateway.Socket)
+	}
+	if c.Gateway.TokenEnv != "" && c.Gateway.URL == "" {
+		bad("gateway.token_env: only with gateway.url")
+	}
+	if c.Sandbox.Kind == "openshell" && c.Gateway.URL == "" {
+		bad("gateway.url: an openshell agent reaches the gateway over HTTPS (CONTRACT.md §3a)")
 	}
 	if len(c.Gateway.Servers) == 0 {
 		bad("gateway.servers: name at least one gateway server")

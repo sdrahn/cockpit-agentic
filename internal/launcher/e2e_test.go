@@ -458,6 +458,22 @@ func waitFor(t *testing.T, f func() bool) {
 	t.Fatal("timed out")
 }
 
+// In a sandbox nobody makes the state directory (STATE_DIRECTORY): the
+// launcher does.
+func TestStateDirectoryMade(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state", "deeper")
+	cfg, err := config.Parse([]byte("version: 1\nname: pp\nmodel: {provider: openai, name: m, endpoint: \"http://127.0.0.1:1\"}\ngateway: {servers: [zypp]}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(context.Background(), Options{Config: cfg, Log: &journal.Memory{}, StateDir: dir, Model: &testutil.Model{}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "sessions.db")); err != nil {
+		t.Errorf("sessions.db: %v", err)
+	}
+}
+
 // A run that ends in an error the runner returns (here: the gateway's
 // tools cannot be listed) is a failed activity with the error as reason,
 // not a finished one.
