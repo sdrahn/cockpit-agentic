@@ -157,6 +157,16 @@ details > summary { cursor: pointer; margin-top: 0.75rem; color: var(--accent); 
 .action .step .badge { min-width: 6.5rem; text-align: center; }
 td.details { overflow-wrap: anywhere; }
 
+.chat-log { display: flex; flex-direction: column; gap: 0.4rem; max-height: 28rem; overflow-y: auto; margin: 0.75rem 0; }
+.msg { max-width: 80%; padding: 0.4rem 0.75rem; border-radius: 8px; border: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg-user { align-self: flex-end; background: var(--selected); border-color: var(--accent); }
+.msg-agent { align-self: flex-start; background: var(--page); }
+.msg-tool, .msg-note { align-self: flex-start; font-size: 0.9em; }
+.msg-approval { align-self: stretch; max-width: none; background: var(--warn-bg); border-color: var(--warn-border); }
+.msg-error { align-self: stretch; max-width: none; background: var(--error-bg); border-color: var(--danger); }
+.chat-form { display: flex; gap: 0.5rem; }
+.chat-input { flex: 1; }
+
 .decided { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; border-top: 1px solid var(--border); padding: 0.5rem 0; }
 
 @media (max-width: 600px) {

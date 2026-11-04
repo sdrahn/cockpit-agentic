@@ -190,7 +190,7 @@ async function renderAgentDetail() {
             toggle), el("div", { class: "muted" }, "“" + s.prompt + "”")));
     }
 
-    box.replaceChildren(head, mode, bounds, schedules);
+    box.replaceChildren(head, mode, bounds, schedules, chatSection(a));
 }
 
 tabs.agents = {
@@ -198,8 +198,9 @@ tabs.agents = {
     async refresh() {
         await refreshState();
         renderAgentList();
-        // Not while someone edits the permissions.
-        const editing = document.activeElement && document.activeElement.id === "permissions-yaml";
+        // Not while someone edits the permissions or types a message.
+        const f = document.activeElement;
+        const editing = f && (f.id === "permissions-yaml" || f.closest(".chat"));
         if (!editing) await renderAgentDetail();
     },
 };

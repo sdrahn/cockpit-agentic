@@ -193,6 +193,46 @@ function site() {
     check(rel.length === 1 && rel[0][4] === "require" && rel[0][2] === "SUDO_USER=carol", "release-all names the person too");
     check(!(await page.$eval("#stop-all", b => b.disabled)), "Stop all agents is back");
 
+    // Chat: the person's own thread over AG-UI, as the person.
+    await page.goto(url + "?chat#/agents/patch-pilot");
+    await page.waitForSelector("#chat-patch-pilot .chat-input");
+    await page.fill("#chat-patch-pilot .chat-input", "Patch the host.");
+    await page.click("#chat-patch-pilot button:has-text('Send')");
+    await page.waitForSelector("#chat-patch-pilot .msg-approval");
+    const chat = await page.textContent("#chat-patch-pilot .chat-log");
+    check(chat.includes("Patch the host.") && chat.includes("You asked: Patch the host.. Installing 1 patch."),
+          "the agent's streamed text, from events split across chunks");
+    check(chat.includes("zypp__install_patches") && chat.includes("Waiting for approval") && chat.includes("a-42"),
+          "a tool call and its pending approval in the chat");
+    const agui = (await calls()).find(c => c[0] === "POST" && c[2] === "/agui");
+    const input = agui && JSON.parse(agui[3]);
+    check(agui && agui[1] === "/run/agents/patch-pilot/api.sock" && agui[4] === "", "chat goes to the agent's socket as the person");
+    check(input && input.messages.length === 1 && input.messages[0].role === "user" && input.threadId.startsWith("t-carol-"),
+          "only the new message is sent, on the person's thread");
+    await page.waitForTimeout(5500); // the tab's refresh must keep the conversation
+    check((await page.textContent("#chat-patch-pilot .chat-log")).includes("Installing 1 patch."), "the conversation survives a refresh");
+    await page.fill("#chat-patch-pilot .chat-input", "And then?");
+    await page.click("#chat-patch-pilot button:has-text('Send')");
+    await page.waitForFunction(() => document.querySelectorAll("#chat-patch-pilot .msg-approval").length === 2);
+    const aguis = (await calls()).filter(c => c[2] === "/agui").map(c => JSON.parse(c[3]));
+    check(aguis.length === 2 && aguis[0].threadId === aguis[1].threadId && aguis[0].runId !== aguis[1].runId,
+          "the next message continues the thread in a new run");
+    await page.click("#chat-patch-pilot .msg-approval button:has-text('Review in Approvals')");
+    await page.waitForSelector("#approval-a-42");
+    check(await page.$eval("#approval-a-42", e => e.classList.contains("highlight")), "Review in Approvals opens the approval");
+    if (shots) {
+        await page.goto(url + "?chatshot#/agents/patch-pilot");
+        await page.waitForSelector("#chat-patch-pilot .chat-input");
+        await page.fill("#chat-patch-pilot .chat-input", "Patch the host.");
+        await page.click("#chat-patch-pilot button:has-text('Send')");
+        await page.waitForSelector("#chat-patch-pilot .msg-approval");
+        await page.$eval("#chat-patch-pilot", e => e.scrollIntoView());
+        await page.screenshot({ path: path.join(shots, "chat.png") });
+    }
+    await page.goto(url + "?nochat#/agents/triage");
+    await page.waitForSelector("#agent-detail h2");
+    check((await page.textContent("#agent-detail")).includes("does not offer chat"), "an agent without AG-UI says so");
+
     // Audit tab: each state-changing action's history, and the records.
     await page.goto(url + "?audit#/audit");
     await page.waitForSelector("#action-a-17");
