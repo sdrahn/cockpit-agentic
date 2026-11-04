@@ -59,7 +59,8 @@ Events: `agent.start`, `agent.stop`, `config.invalid`, `agent.paused`,
 `journalctl MESSAGE_ID=…` finds one kind across agents.
 
 ```bash
-journalctl -t agent-patch-pilot --since today                    # one agent, readable
+journalctl -u agent@patch-pilot.service --since today            # one agent: its unit's messages and its records
+journalctl -t agent-patch-pilot -f                               # its records only, as they come
 journalctl -o json AGENT_CONTRACT=1 AGENT_EVENT=approval.pending  # every agent's pending approvals
 journalctl -o json AGENT_NAME=patch-pilot AGENT_INVOCATION=e-0daa8a73-… | jq -r '[.AGENT_EVENT, .MESSAGE] | @tsv'
 ```

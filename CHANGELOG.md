@@ -7,6 +7,13 @@ removed.
 
 ## Unreleased
 
+### Added
+
+- The Cockpit page: **Restart** and **Logs** for an agent. Restart
+  restarts its service (an OpenShell agent's relay and sandbox); Logs
+  opens Cockpit's journal for the agent's unit, with the unit's messages
+  and the agent's records.
+
 ### Fixed
 
 - An OpenShell agent's unit could fail to start after a restart (a

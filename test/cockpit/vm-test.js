@@ -161,6 +161,18 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
               "Pause, with administrative access, records " + user + " in the gateway data");
         await frame().locator("#agent-detail button:has-text('Resume')").click({ timeout: 30000 });
         check(await vmEventually(30, "! grep -q 'paused: true' /etc/mcp-gateway/policy/agents/patch-pilot.yaml"), "Resume");
+        // Restart: a new invocation of the agent's service (started now if
+        // it had exited on idle).
+        const before = vm("systemctl show -p InvocationID --value agent@patch-pilot.service").trim();
+        await frame().locator("#agent-detail button:text-is('Restart')").click({ timeout: 30000 });
+        check(await vmEventually(60, `id=$(systemctl show -p InvocationID --value agent@patch-pilot.service); [ -n "$id" ] && [ "$id" != "${before}" ] && systemctl is-active -q agent@patch-pilot.service`),
+              "Restart restarts agent@patch-pilot.service");
+        // Logs: Cockpit's own journal page, for the agent's unit.
+        await frame().locator("#agent-detail button:text-is('Logs')").click();
+        await page.waitForURL(/\/system\/logs#\/\?.*service=agent%40patch-pilot\.service/, { timeout: 30000 });
+        const logs = page.frameLocator("iframe[name='cockpit1:localhost/system/logs']");
+        await logs.getByText(/agent-patch-pilot|Agent patch-pilot/).first().waitFor({ timeout: 60000 });
+        check(true, "Logs opens Cockpit's journal with agent@patch-pilot.service's entries");
     });
 
     await step("chat", async () => {
