@@ -3,10 +3,13 @@ package gateway
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -95,6 +98,45 @@ func TestDroppedCallNotRetried(t *testing.T) {
 	}
 	if drop.Load() != 1 {
 		t.Errorf("the call was sent %d times, want once", 2-drop.Load())
+	}
+}
+
+// refusing fails the dial of the next n requests, as the sandbox's
+// network fence did around a token renewal (connect: permission denied).
+type refusing struct {
+	n    atomic.Int32
+	next http.RoundTripper
+}
+
+func (f *refusing) RoundTrip(r *http.Request) (*http.Response, error) {
+	if n := f.n.Load(); n > 0 && f.n.CompareAndSwap(n, n-1) {
+		return nil, &net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connect", syscall.EACCES)}
+	}
+	return f.next.RoundTrip(r)
+}
+
+// A connection that could not be made sent nothing, so every request is
+// tried again, a tools/call too.
+func TestRefusedConnectRetried(t *testing.T) {
+	url, _, _, _ := proxiedDropping(t)
+	ctx := context.Background()
+	f := &refusing{next: http.DefaultTransport}
+	s, err := mcp.NewClient(&mcp.Implementation{Name: "agent"}, nil).Connect(ctx, HTTPTransport(url, "GW_TOKEN", f), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	f.n.Store(2)
+	if r, err := s.ListTools(ctx, nil); err != nil || len(r.Tools) != 1 {
+		t.Fatalf("tools/list through refused connects: %v %v", r, err)
+	}
+	f.n.Store(2)
+	r, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "probe"})
+	if err != nil || r.Content[0].(*mcp.TextContent).Text != "probe ok" {
+		t.Fatalf("tools/call through refused connects: %v %v", r, err)
+	}
+	if f.n.Load() != 0 {
+		t.Errorf("not every refused connect was retried: %d left", f.n.Load())
 	}
 }
 
