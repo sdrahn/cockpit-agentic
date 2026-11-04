@@ -13,7 +13,8 @@ contract ([CONTRACT.md](CONTRACT.md) Part I). Cockpit is the first one.
 ![The Activity view: scheduled, delegated, event-driven and chat activities, with the delegation chain of an activity waiting for approval](docs/mockup.png)
 
 *Mockup of the Cockpit control plane (design, not yet implemented as a
-Cockpit page). Source: [`docs/mockup/Main.dc.html`](docs/mockup/Main.dc.html).*
+Cockpit page). Source: [`docs/mockup/Main.dc.html`](docs/mockup/Main.dc.html).
+How people log in and use it: [docs/user-flow.md](docs/user-flow.md).*
 
 ## How it works
 
@@ -79,7 +80,7 @@ open items.
 | `examples/patch-pilot` | an example agent and its gateway permissions |
 | `test/vm` | the functional tests on an installed system (`run-tests.sh`) and their helpers (`fakemodel`, `testsrv`), packaged as `custos-tests` |
 | `test/openqa` | the openQA test module and how to run the functional tests |
-| `docs/` | the mockup and its screenshots |
+| `docs/` | the [user flow](docs/user-flow.md) (who logs in to Cockpit, roles, approving and intervening), the mockup and its screenshots |
 
 ## Development
 
