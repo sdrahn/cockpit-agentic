@@ -15,6 +15,8 @@ type rec struct {
 	cmds []string
 	// fail makes the commands it reports fail (systemctl is-active, say).
 	fail func(cmd string) bool
+	// gone answers the probes (openshell sandbox get): nil when the sandbox is there.
+	gone func(cmd string) error
 }
 
 func newAdmin(t *testing.T) (*Admin, *rec) {
@@ -45,6 +47,17 @@ func newAdmin(t *testing.T) (*Admin, *rec) {
 		},
 		Image:  "localhost/agent:test",
 		Secret: func() string { return "0123456789abcdef0123456789abcdef" },
+		// OpenShell has deleted a sandbox by the first look, unless gone says otherwise.
+		Probe: func(name string, args ...string) error {
+			c := name + " " + strings.Join(args, " ")
+			r.cmds = append(r.cmds, c)
+			if r.gone != nil {
+				return r.gone(c)
+			}
+			return errors.New("not found")
+		},
+		Sleep:       func(time.Duration) {},
+		SandboxGone: 5 * time.Second,
 	}
 	return a, r
 }
@@ -664,5 +677,38 @@ func TestConfigurationFromStdin(t *testing.T) {
 	a.In = nil
 	if err := a.Check("-"); err == nil {
 		t.Error("check - without stdin")
+	}
+}
+
+// Deleting a running sandbox is only accepted at first: the new one is
+// created once OpenShell no longer knows the old one (the spike on a real
+// host: "sandbox 'agent-sb' already exists").
+func TestEditOpenShellWaitsForDeletion(t *testing.T) {
+	a, r := openShellRunning(t, oshYml)
+	left := 3
+	r.gone = func(c string) error {
+		if strings.Contains(c, "sandbox get agent-sb") && left > 0 {
+			left--
+			return nil
+		}
+		return errors.New("not found")
+	}
+	if err := edit(t, a, oshYml+"limits: {max_llm_calls: 7}\n"); err != nil {
+		t.Fatal(err)
+	}
+	if n := countPrefix(r.cmds, "openshell -g openshell sandbox get agent-sb"); n != 4 {
+		t.Errorf("%d probes, want 4:\n%s", n, strings.Join(r.cmds, "\n"))
+	}
+	if w := inOrder(r.cmds, "sandbox delete agent-sb", "sandbox get agent-sb", "sandbox get agent-sb", "sandbox get agent-sb", "sandbox get agent-sb", "sandbox create --name agent-sb"); w != "" {
+		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.cmds, "\n"))
+	}
+	// A sandbox that does not go away: an error, no create.
+	a, r = openShellRunning(t, oshYml)
+	r.gone = func(string) error { return nil }
+	if err := edit(t, a, oshYml+"limits: {max_llm_calls: 8}\n"); err == nil || !strings.Contains(err.Error(), "still there") {
+		t.Errorf("a sandbox that stays: %v", err)
+	}
+	if all := strings.Join(r.cmds, "\n"); strings.Contains(all, "sandbox create") {
+		t.Errorf("created over the old sandbox:\n%s", all)
 	}
 }

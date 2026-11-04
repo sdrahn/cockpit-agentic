@@ -58,6 +58,13 @@ type Admin struct {
 	// nil: changes are not waited for. PolicyWait bounds the wait.
 	OPAData    func(path string) (any, error)
 	PolicyWait time.Duration
+	// Probe runs a command for its exit status only, without its output
+	// (openshell sandbox get while a sandbox is deleted); nil: Run.
+	Probe func(name string, args ...string) error
+	// Sleep waits between probes (tests: no wait); nil: time.Sleep.
+	Sleep func(time.Duration)
+	// SandboxGone bounds the wait for a deleted sandbox to be gone.
+	SandboxGone time.Duration
 }
 
 func New() *Admin {
@@ -85,6 +92,10 @@ func New() *Admin {
 		},
 		OPAData:    opaData,
 		PolicyWait: 20 * time.Second,
+		Probe: func(name string, args ...string) error {
+			return exec.Command(name, args...).Run()
+		},
+		SandboxGone: 2 * time.Minute,
 	}
 }
 
@@ -337,6 +348,9 @@ func (a *Admin) createSandbox(cfg *config.Config, image string) error {
 		return err
 	}
 	a.Run(nil, "openshell", "-g", g, "sandbox", "delete", openshell.SandboxName(cfg.Name))
+	if err := a.waitSandboxGone(cfg); err != nil {
+		return err
+	}
 	args, err := openshell.CreateArgs(cfg, image, filepath.Join(dir, "openshell-policy.yaml"), strings.TrimSpace(string(secret)), openshell.Port(cfg.Name))
 	if err != nil {
 		return err
@@ -481,6 +495,30 @@ func (a *Admin) editOpenShell(old *config.Config, name string) error {
 		return nil
 	}
 	return a.Run(nil, "systemctl", append([]string{"start"}, start...)...)
+}
+
+// waitSandboxGone waits until OpenShell no longer knows the sandbox:
+// deleting a running sandbox is only accepted at first ("cleanup is
+// pending"), and a create of the same name until then fails ("already
+// exists").
+func (a *Admin) waitSandboxGone(cfg *config.Config) error {
+	probe, sleep := a.Probe, a.Sleep
+	if probe == nil {
+		probe = func(name string, args ...string) error { return a.Run(nil, name, args...) }
+	}
+	if sleep == nil {
+		sleep = time.Sleep
+	}
+	const step = time.Second
+	for waited := time.Duration(0); ; waited += step {
+		if probe("openshell", "-g", cfg.Sandbox.OpenShellGateway, "sandbox", "get", openshell.SandboxName(cfg.Name)) != nil {
+			return nil
+		}
+		if waited >= a.SandboxGone {
+			return fmt.Errorf("sandbox %s is still there %s after its deletion", openshell.SandboxName(cfg.Name), a.SandboxGone)
+		}
+		sleep(step)
+	}
 }
 
 // credentialChanged: the provider's credential is made differently (a
