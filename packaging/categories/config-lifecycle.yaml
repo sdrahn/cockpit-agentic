@@ -1,0 +1,6 @@
+# A task category (CONTRACT.md §6a), installed in
+# /usr/share/custos/categories.d/. A file of the same name in
+# /etc/custos/categories.d/ replaces it; an empty one disables it.
+config-lifecycle:
+  title: Configuration and lifecycle
+  description: Changing configuration files and starting, stopping or restarting services.

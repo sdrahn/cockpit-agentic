@@ -90,6 +90,8 @@ install: build
 	install -D -m 0644 examples/patch-pilot/agent.yaml $(DESTDIR)$(DATADIR)/custos/examples/patch-pilot/agent.yaml
 	install -D -m 0644 examples/patch-pilot/permissions.yaml $(DESTDIR)$(DATADIR)/custos/examples/patch-pilot/permissions.yaml
 	install -d -m 0755 $(DESTDIR)$(SYSCONFDIR)/custos/agents
+	install -d -m 0755 $(DESTDIR)$(DATADIR)/custos/categories.d $(DESTDIR)$(SYSCONFDIR)/custos/categories.d
+	install -m 0644 packaging/categories/*.yaml $(DESTDIR)$(DATADIR)/custos/categories.d/
 
 # The functional tests, for openQA (test/openqa/README.md).
 install-tests: build-tests

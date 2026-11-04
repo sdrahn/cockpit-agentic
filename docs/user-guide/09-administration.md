@@ -23,12 +23,15 @@ person behind `sudo` (`SUDO_USER`), else `USER`.
 | `agent-admin delete NAME [--keep-state]` | remove an agent |
 | `agent-admin mode NAME MODE` | `advisory`, `supervised` or `bounded` |
 | `agent-admin permissions NAME < list.yaml` | replace its permissions |
+| `agent-admin categories` | the task categories, as JSON (no root needed) |
+| `agent-admin promote NAME CATEGORY --envelope FILE --despite-readiness --reason TEXT` | let a category act without approval within its windows ([chapter 6](06-permissions-and-modes.md#promote)) |
+| `agent-admin demote NAME CATEGORY [--reason TEXT]` | back to supervised |
 | `agent-admin set-credential NAME CRED < secret` | store a secret for it |
 | `agent-admin pause NAME`, `resume NAME` | hold it, let it go on |
 | `agent-admin stop-all`, `release-all` | the emergency stop and its end |
 | `agent-admin trigger NAME_SCHEDULE` | start a schedule's run (what its timer runs) |
 
-`mode`, `permissions`, `pause`, `resume`, `stop-all` and `release-all`
+`mode`, `permissions`, `promote`, `demote`, `pause`, `resume`, `stop-all` and `release-all`
 return once the gateway's policy engine has the change, so it is in
 force when the command ends. If the engine does not load it within 20
 seconds, the command says so and fails

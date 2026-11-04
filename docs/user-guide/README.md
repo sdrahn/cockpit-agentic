@@ -51,6 +51,8 @@ first working agent.
 | How do I let an agent do something without asking? | [06-permissions-and-modes.md#permissions](06-permissions-and-modes.md#permissions), [06-permissions-and-modes.md#examples](06-permissions-and-modes.md#examples) |
 | How do I approve or deny a call? | [07-approvals.md#cockpit](07-approvals.md#cockpit), [07-approvals.md#command-line](07-approvals.md#command-line) |
 | Who is recorded as having approved? | [07-approvals.md#who-is-recorded](07-approvals.md#who-is-recorded) |
+| How do I let a kind of work (patching, say) run without approval in a maintenance window? | [06-permissions-and-modes.md#categories](06-permissions-and-modes.md#categories), [06-permissions-and-modes.md#promote](06-permissions-and-modes.md#promote) |
+| How do I take that back? | [06-permissions-and-modes.md#demote](06-permissions-and-modes.md#demote) |
 | How do I pause one agent? | [09-administration.md#pause](09-administration.md#pause) |
 | How do I stop all agents at once? | [09-administration.md#emergency-stop](09-administration.md#emergency-stop), [08-cockpit.md#emergency-stop](08-cockpit.md#emergency-stop) |
 | How do I change or delete an agent? | [09-administration.md#edit](09-administration.md#edit), [09-administration.md#delete](09-administration.md#delete) |

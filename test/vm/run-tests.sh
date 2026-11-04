@@ -377,6 +377,40 @@ check "the gateway audited the call as agent-t1" eventually 10 gw_audit_has '.su
 agent-admin mode t1 supervised
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' | agent-admin permissions t1
 
+section "Task categories"
+# A change of the category waits for an approval, which is then declined.
+asks_and_deny() {
+	local id aid
+	id=$(start_activity t1 CHANGE)
+	eventually 30 activity_state_is t1 "$id" waiting_approval || return 1
+	aid=$(approval_of t1 "$id")
+	gw "/v1/approvals/$aid" -X POST -d '{"decision":"deny","scope":"once"}' >/dev/null
+	eventually 30 activity_state_is t1 "$id" finished
+}
+check "the catalog has patch-errata" bash -c "agent-admin categories | jq -e '.\"patch-errata\".title' >/dev/null"
+printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change, category: patch-errata}' | agent-admin permissions t1
+check "a category starts supervised: its change waits for an approval" asks_and_deny
+# Today, all day (UTC); not in the last minutes of a day.
+[ "$(date -u +%H%M)" -ge 2357 ] && sleep 180
+today=$(date -u +%a | tr '[:upper:]' '[:lower:]')
+other=$(date -u -d tomorrow +%a | tr '[:upper:]' '[:lower:]')
+printf 'windows:\n  - {days: [%s], from: "00:00", to: "23:59", tz: UTC}\n' "$today" >"$work/now.yaml"
+printf 'windows:\n  - {days: [%s], from: "00:00", to: "23:59", tz: UTC}\n' "$other" >"$work/other.yaml"
+check "promote refuses without readiness" not agent-admin promote t1 patch-errata --envelope "$work/now.yaml"
+check "promote refuses a rate (not enforced yet)" not bash -c "{ cat '$work/now.yaml'; echo 'rate: {calls: 1, per: 1h}'; } | agent-admin promote t1 patch-errata --envelope - --despite-readiness --reason test"
+check "agent-admin promote t1 patch-errata" agent-admin promote t1 patch-errata --envelope "$work/now.yaml" --despite-readiness --reason "functional test"
+check "show: patch-errata is bounded" bash -c "agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"bounded\"' >/dev/null"
+n0=$(count t1 approval.pending)
+check "within its window, the category's change runs without an approval" eventually 30 runs_with t1 CHANGE 'changed test'
+check "no approval was asked" test "$(count t1 approval.pending)" = "$n0"
+check "journal: category.promoted by root, with the reason" eventually 10 journal_has t1 category.promoted '.SYSLOG_IDENTIFIER == "custos-promotion" and .AGENT_CATEGORY == "patch-errata" and .AGENT_MODE_TO == "bounded" and .AGENT_REASON == "functional test"'
+check "promote with a window of another day" agent-admin promote t1 patch-errata --envelope "$work/other.yaml" --despite-readiness --reason "functional test"
+check "outside its window, the change waits for an approval" asks_and_deny
+check "agent-admin demote t1 patch-errata" agent-admin demote t1 patch-errata --reason "functional test"
+check "demoted: the change waits for an approval" asks_and_deny
+check "journal: category.demoted" eventually 10 journal_has t1 category.demoted '.AGENT_CATEGORY == "patch-errata" and .AGENT_MODE_TO == "supervised"'
+printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' | agent-admin permissions t1
+
 # --- intervention -----------------------------------------------------------------
 
 section Pause

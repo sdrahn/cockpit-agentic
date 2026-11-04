@@ -1,0 +1,6 @@
+# A task category (CONTRACT.md §6a), installed in
+# /usr/share/custos/categories.d/. A file of the same name in
+# /etc/custos/categories.d/ replaces it; an empty one disables it.
+security-response:
+  title: Security response
+  description: Responding to a security finding, such as isolating a service, rotating a credential or blocking an address.
