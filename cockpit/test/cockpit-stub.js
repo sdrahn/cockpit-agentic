@@ -44,6 +44,7 @@
     const status = name => ({ contract: 1, implementation: "custos/adk-go", name, version: "test", model: "qwen3-32b (local)",
         paused: posture.agents[name] ? posture.agents[name].paused : false,
         running: (activities[name] || []).filter(a => a.state === "running" || a.state === "waiting_approval").length,
+        interaction: { agui: name !== "triage", client_tools: "deny" },
         schedules: name === "triage" ? [{ name: "morning-check", on_calendar: "*-*-* 06:00", prompt: "Check the host and patch what is due." }] : [],
         lifecycle: { kind: "systemd", service: "agent@" + name + ".service", socket: "agent@" + name + ".socket" } });
     let pending = [
@@ -162,7 +163,36 @@
                 if (sock === "/run/mcp-gateway/control.sock") return gatewayRoute(method, path, body);
                 return fail(0, "not-found");
             };
-            return { get: path => route("GET", path), post: (path, body) => route("POST", path, body) };
+            return {
+                get: path => route("GET", path), post: (path, body) => route("POST", path, body),
+                // AG-UI (§11): the events in pieces that split lines, as a
+                // stream may.
+                request(o) {
+                    log.push([o.method, sock, o.path, o.body || "", opts.superuser || ""]);
+                    let onData = () => {};
+                    const m = JSON.parse(o.body || "{}");
+                    const text = (m.messages || []).slice(-1)[0].content;
+                    const events = [
+                        { type: "RUN_STARTED", threadId: m.threadId, runId: m.runId },
+                        { type: "STATE_SNAPSHOT", snapshot: {} },
+                        { type: "TEXT_MESSAGE_START", messageId: "x1", role: "assistant" },
+                        { type: "TEXT_MESSAGE_CONTENT", messageId: "x1", delta: "You asked: " + text + ". " },
+                        { type: "TEXT_MESSAGE_CONTENT", messageId: "x1", delta: "Installing 1 patch." },
+                        { type: "TEXT_MESSAGE_END", messageId: "x1" },
+                        { type: "TOOL_CALL_START", toolCallId: "c9", toolCallName: "zypp__install_patches" },
+                        { type: "TOOL_CALL_ARGS", toolCallId: "c9", delta: "{}" },
+                        { type: "TOOL_CALL_END", toolCallId: "c9" },
+                        { type: "CUSTOM", name: "agent.approval.pending",
+                          value: { approval_id: "a-42", tool: "zypp__install_patches", call_id: "c9", approval_url: "" } },
+                    ];
+                    const wire = events.map(e => "data: " + JSON.stringify(e) + "\n\n").join("");
+                    const p = new Promise(resolve => setTimeout(() => {
+                        for (let i = 0; i < wire.length; i += 37) onData(wire.slice(i, i + 37));
+                        resolve("");
+                    }, 50));
+                    return { stream(f) { onData = f; return this; }, then: (ok, bad) => p.then(ok, bad) };
+                },
+            };
         },
         spawn(args, opts) {
             opts = opts || {};

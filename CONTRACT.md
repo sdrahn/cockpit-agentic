@@ -637,7 +637,7 @@ tests, for openQA).
 | …including delegation chains, traceable to the origin | §4 `parent`/`root`, §9, §10 | done and tested (trace verified by `SO_PEERCRED`); bridge `agent-delegate` built, untested against a real gateway |
 | Pending action as an approval item with actions, evidence, impact; nothing state-changing without approval | §6 supervised default, §7 | enforcement done in gateway policy (tested with OPA against the gateway's policy); approval flow tested end to end with a fake gateway; impact and evidence are the agent's self-asserted rationale plus the activity (O6); Cockpit Approvals tab done, decisions as the person (O9) |
 | Outcome after execution; proposed → approved/rejected → executed history | §4, §10 "History of an action" | done (journal and activity API); Cockpit Audit tab done, the join tested on a real gateway (O9) |
-| Chat as one mode | §11 | AG-UI and ADK REST, tested |
+| Chat as one mode | §11 | AG-UI and ADK REST, tested; Cockpit chat done, smoke-tested against a stub of Cockpit (O9) |
 | See autonomy mode and policy; adjust where permitted | §6 | gateway data + `agent-admin mode/permissions/show`; Cockpit Agents and Policy tabs done, smoke-tested against a stub of Cockpit (O9) |
 | Stop / pause / override in-flight or scheduled activity; emergency stop | §8 | cancel, pause (host and gateway), stop-all done; tested on the host side and in policy |
 | On-premises, air-gapped | §14 (`provider: openai` with a local server), §19 (OBS) | done; no external service needed |
@@ -712,5 +712,7 @@ tests, for openQA).
   `release-all` through the root bridge), and the Audit tab (§10: each
   state-changing action's history, proposed → decided → executed, joined
   by approval id from the agents' records and the gateway's, and the
-  records themselves, filtered). Still open: creating and deleting
-  agents, chat (§11), and a test against a real Cockpit.
+  records themselves, filtered), and chat (§11: the person's own thread
+  with an agent over AG-UI, in the agent's view, with its tool calls and
+  pending approvals linked to the Approvals tab). Still open: creating
+  and deleting agents, and a test against a real Cockpit.
