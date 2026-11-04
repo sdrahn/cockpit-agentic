@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,6 +16,14 @@ import (
 // proxied is an MCP server behind a stand-in for OpenShell's proxy, which
 // answers 500 to the next fail requests (all of them while fail < 0).
 func proxied(t *testing.T) (url string, fail *atomic.Int32, token *atomic.Value) {
+	url, fail, _, token = proxiedDropping(t)
+	return url, fail, token
+}
+
+// proxiedDropping is proxied, whose proxy also closes the connection
+// without an answer to the next drop POSTs, as OpenShell's proxy may
+// around a renewal.
+func proxiedDropping(t *testing.T) (url string, fail, drop *atomic.Int32, token *atomic.Value) {
 	t.Helper()
 	old1, old2 := retryFirst, retryLast
 	retryFirst, retryLast = 5*time.Millisecond, 40*time.Millisecond
@@ -25,10 +34,17 @@ func proxied(t *testing.T) (url string, fail *atomic.Int32, token *atomic.Value)
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "probe ok"}}}, nil, nil
 	})
 	inner := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, nil)
-	fail, token = &atomic.Int32{}, &atomic.Value{}
+	fail, drop, token = &atomic.Int32{}, &atomic.Int32{}, &atomic.Value{}
 	p := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token.Store(r.Header.Get("Authorization"))
 		if r.Method == http.MethodPost {
+			if n := drop.Load(); n > 0 && drop.CompareAndSwap(n, n-1) {
+				c, _, err := w.(http.Hijacker).Hijack()
+				if err == nil {
+					c.Close()
+				}
+				return
+			}
 			if n := fail.Load(); n < 0 || (n > 0 && fail.CompareAndSwap(n, n-1)) {
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				return
@@ -38,7 +54,70 @@ func proxied(t *testing.T) (url string, fail *atomic.Int32, token *atomic.Value)
 	}))
 	t.Cleanup(p.Close)
 	t.Setenv("GW_TOKEN", "placeholder-1")
-	return p.URL, fail, token
+	return p.URL, fail, drop, token
+}
+
+// A dropped connection to a listing is retried: the agent's tool list
+// survives the proxy closing a connection around a token renewal.
+func TestDroppedListingRetried(t *testing.T) {
+	url, _, drop, _ := proxiedDropping(t)
+	ctx := context.Background()
+	s, err := mcp.NewClient(&mcp.Implementation{Name: "agent"}, nil).Connect(ctx, HTTPTransport(url, "GW_TOKEN", nil), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	drop.Store(2)
+	r, err := s.ListTools(ctx, nil)
+	if err != nil || len(r.Tools) != 1 {
+		t.Fatalf("tools/list through dropped connections: %v %v", r, err)
+	}
+	if drop.Load() != 0 {
+		t.Errorf("not every drop was retried: %d left", drop.Load())
+	}
+}
+
+// A dropped tools/call is not sent again: it may have reached the
+// gateway, and a change must not run twice.
+func TestDroppedCallNotRetried(t *testing.T) {
+	url, _, drop, _ := proxiedDropping(t)
+	ctx := context.Background()
+	s, err := mcp.NewClient(&mcp.Implementation{Name: "agent"}, nil).Connect(ctx, HTTPTransport(url, "GW_TOKEN", nil), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	drop.Store(2)
+	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if _, err := s.CallTool(tctx, &mcp.CallToolParams{Name: "probe"}); err == nil {
+		t.Fatal("a dropped call succeeded: it was sent again")
+	}
+	if drop.Load() != 1 {
+		t.Errorf("the call was sent %d times, want once", 2-drop.Load())
+	}
+}
+
+func TestIdempotent(t *testing.T) {
+	for body, want := range map[string]bool{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`:                       true,
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`:           true,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`:               true,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"x"}}`: false,
+		`[{"jsonrpc":"2.0","id":1,"method":"tools/list"}]`:                     false,
+		`{"jsonrpc":"2.0","id":3,"method":"something/new"}`:                    false,
+		`not json`: false,
+	} {
+		r, _ := http.NewRequest(http.MethodPost, "http://gw/mcp", strings.NewReader(body))
+		if got := idempotent(r); got != want {
+			t.Errorf("%s: %v, want %v", body, got, want)
+		}
+	}
+	get, _ := http.NewRequest(http.MethodGet, "http://gw/mcp", nil)
+	del, _ := http.NewRequest(http.MethodDelete, "http://gw/mcp", nil)
+	if !idempotent(get) || idempotent(del) {
+		t.Error("GET is the session's stream (again is fine); DELETE ends the session")
+	}
 }
 
 // A short burst of 500s, as OpenShell's proxy sends around a token
