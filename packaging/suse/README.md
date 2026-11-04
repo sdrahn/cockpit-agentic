@@ -84,6 +84,51 @@ spec, `_service` and the rpmlintrc again whenever they change here.
 `custos-cockpit` is the Cockpit page (`/usr/share/cockpit/custos`), the
 control plane built on CONTRACT.md Part I; see `docs/screenshots`.
 
+## Releases
+
+As for mcp-gateway: each release has a branch `release-X.Y` and tags
+`vX.Y.Z`. Pushing a tag publishes a GitHub release with
+`custos-X.Y.Z.tar.gz`, `vendor.tar.gz` and `SHA256SUMS`
+(`.github/workflows/release.yml`), with the tag's section of
+`CHANGELOG.md` as its notes. On a release branch, `_service` fetches
+that branch and takes the version from its latest tag (`@PARENT_TAG@`
+without the leading `v`), so the package version is `X.Y.Z`. On main it
+builds snapshots, `X.Y.Z+git<date>.<hash>`.
+
+To release X.Y.0:
+
+1. From the latest main, branch `release-X.Y`. Its first commit makes
+   `_service` build from `release-X.Y` with `@PARENT_TAG@`.
+2. The release commit turns `## Unreleased` in `CHANGELOG.md` into
+   `## vX.Y.Z — <date>`, with what to know when upgrading. The spec
+   already says `Version: X.Y.Z`.
+3. `tools/check-release vX.Y.Z` checks that the spec, the first
+   `CHANGELOG.md` section and `_service` name the release, and that the
+   tree holds sources only (`tools/check-tree`, which CI runs on every
+   change). Then tag and push: `git tag -a vX.Y.Z -m "Custos X.Y.Z"`,
+   `git push origin release-X.Y vX.Y.Z`. The Release workflow runs the
+   same check before it builds anything. After publishing, it downloads
+   the files again and checks them against `SHA256SUMS` and `git
+   archive` of the tag.
+4. On main, the next change sets the spec to the next version
+   (`X.(Y+1).0`) and starts a new `## Unreleased`.
+
+A fix release X.Y.Z+1 goes on the branch: the fix (from main), then a
+release commit with its `CHANGELOG.md` section. An OBS project that
+follows a release takes the spec, `_service` and `custos-rpmlintrc` of
+the release's tag, runs `osc service manualrun`, then
+`osc vc -m "Update to X.Y.Z"` with the release's section, and commits:
+
+```bash
+tag=vX.Y.Z
+for f in custos.spec _service custos-rpmlintrc; do
+  curl -sSfL -o "$f" "https://raw.githubusercontent.com/sdrahn/custos/$tag/packaging/suse/$f"
+done
+osc service manualrun
+osc vc -m "Update to ${tag#v}"
+osc commit
+```
+
 ## After installation
 
 ```bash

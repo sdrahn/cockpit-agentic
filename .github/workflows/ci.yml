@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Sources only (no binaries, nothing over 1 MiB)
+        run: tools/check-tree
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
