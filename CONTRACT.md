@@ -1,7 +1,7 @@
 # Custos — Contract
 
 Status: draft 1 (contract version `1`). The project was named
-custos until before its first release; the names and paths
+cockpit-agentic until before its first release; the names and paths
 below are Custos's (`custos`, `/etc/custos`, …) and are the ones contract
 version 1 keeps.
 
