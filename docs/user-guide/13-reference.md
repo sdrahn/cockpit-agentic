@@ -38,6 +38,7 @@ fields, gateway data, AG-UI events) are defined in the contract,
 | `/usr/share/mcp-gateway/policy/custos/agents.rego` | root 0644 | the autonomy policy module |
 | `/usr/share/custos/gateway/servers.d/agents.yaml` | root 0644 | the `agents` server, to copy to `/etc/mcp-gateway/servers.d/` |
 | `/usr/share/custos/categories.d/*.yaml` | root 0644 | the task categories ([chapter 6](06-permissions-and-modes.md#categories)) |
+| `/etc/custos/promotion.yaml` | root 0644 | readiness thresholds ([chapter 6](06-permissions-and-modes.md#readiness)); none: the defaults |
 | `/etc/custos/categories.d/*.yaml` | root 0644 | your categories: a shipped name replaces, an empty file disables |
 | `/usr/share/custos/examples/patch-pilot/` | root 0644 | the example agent and permissions |
 | `/usr/share/custos/openshell/Containerfile` | root 0644 | the OpenShell agent image |

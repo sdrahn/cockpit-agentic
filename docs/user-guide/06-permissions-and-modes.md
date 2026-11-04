@@ -145,6 +145,41 @@ promoted, whatever the agent's mode. `advisory` still caps everything.
 A permission without a category keeps the agent's mode and its
 `autonomous` flag, and `autonomous` cannot be combined with `category`.
 
+## Is a category ready to promote? {#readiness}
+
+While a category is supervised, every proposal of it is an approval
+item, and the journal keeps how approvers decided. `agent-admin
+readiness` measures that per category, over the last 30 days:
+
+```bash
+agent-admin readiness patch-pilot patch-errata | jq '.categories["patch-errata"]'
+```
+
+| Field | Meaning |
+|---|---|
+| `proposals` | the category's approval items that an approver decided (expired ones do not count) |
+| `declined`, `cancelled` | declined, and approved but then cancelled before the call ran |
+| `override_rate` | (`declined` + `cancelled`) / `proposals` |
+| `incidents`, `incident_rate` | approved calls that failed, hit a limit, or had the agent paused during their activity; their share of the approved calls that ran |
+| `tools`, `distinct_calls` | how varied the proposals were |
+| `observed_days` | since the first proposal |
+| `ready`, `unmet` | whether every threshold is met, and which are not |
+
+The thresholds are 14 days, 50 proposals, at most 5 % overrides and at
+most 2 % incidents. Set your own in `/etc/custos/promotion.yaml`, for
+example:
+
+```yaml
+proposals: 30
+override_rate: 0.03
+```
+
+The keys are `observation_days`, `proposals`, `override_rate`,
+`incident_rate` (fractions: `0.05` is 5 %) and `window_days`. The
+command reads the agent's and the gateway's journal, so run it as root
+or as a member of `systemd-journal`. It counts a call in a category by
+the agent's current permissions.
+
 ## Promoting a category {#promote}
 
 A promoted category acts without approval, but only within its
@@ -162,14 +197,19 @@ and `to` (`HH:MM`; `from` before `to`, so a window across midnight is
 two windows) and `tz` (an IANA zone; `UTC` if left out). Then promote:
 
 ```bash
-agent-admin promote patch-pilot patch-errata --envelope window.yaml \
-    --despite-readiness --reason "patched by hand for a month without overrides"
+agent-admin promote patch-pilot patch-errata --envelope window.yaml
 ```
 
-`--despite-readiness` and a reason are required for now: Custos does
-not measure readiness (how often approvers overrode the category's
-proposals) yet, so the reason is the record of why you promoted.
-`promote` refuses:
+A category that is not [ready](#readiness) is refused, and the message
+says what is not met. To promote it anyway, give a reason; it is
+recorded with the promotion:
+
+```bash
+agent-admin promote patch-pilot patch-errata --envelope window.yaml \
+    --despite-readiness --reason "patched by hand for a year, the journal only keeps a week"
+```
+
+`promote` also refuses:
 
 - a category that is not in the catalog, or in which the agent has no
   permission;
@@ -179,7 +219,7 @@ proposals) yet, so the reason is the record of why you promoted.
   ignore them.
 
 It returns once the gateway has the change, and writes a
-`category.promoted` record ([chapter 10](10-monitoring-and-audit.md#promotion-records)).
+`category.promoted` record with the readiness measures at that moment ([chapter 10](10-monitoring-and-audit.md#promotion-records)).
 Promoting a promoted category again replaces its envelope.
 `agent-admin show NAME` lists the agent's categories with their mode,
 envelope and who promoted them.

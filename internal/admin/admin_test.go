@@ -58,6 +58,8 @@ func newAdmin(t *testing.T) (*Admin, *rec) {
 		},
 		Sleep:       func(time.Duration) {},
 		SandboxGone: 5 * time.Second,
+		// No records: nothing observed yet.
+		JournalJSON: func(...string) ([]byte, error) { return nil, nil },
 	}
 	return a, r
 }

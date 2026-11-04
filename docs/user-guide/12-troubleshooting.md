@@ -189,7 +189,9 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 |---|---|
 | any `version:`, `name:`, `model.`, `gateway.`, `schedules[…]`, `client_tools:`, `sandbox.kind:` message | [Configuration errors](#configuration-errors) |
 | `no task category "…" (the catalog has: …)` | the name is not in `agent-admin categories` ([chapter 6](06-permissions-and-modes.md#categories)) |
-| `readiness is not measured yet (CONTRACT.md O11): promote with --despite-readiness --reason TEXT` | add both ([chapter 6](06-permissions-and-modes.md#promote)) |
+| `agent … category … is not ready (…); see agent-admin readiness …, or promote with --despite-readiness --reason TEXT` | the measures are below the thresholds ([chapter 6](06-permissions-and-modes.md#readiness)): wait and keep approving, adjust `/etc/custos/promotion.yaml`, or promote with a reason |
+| `/etc/custos/promotion.yaml: …` | a key that is not `observation_days`, `proposals`, `override_rate`, `incident_rate` or `window_days`, or a rate outside 0 to 1 |
+| `reading agent …'s journal`, `reading mcp-gateway's journal` | `agent-admin readiness` needs root or the `systemd-journal` group |
 | `agent … has no permission in category …` | give a permission `category:` first |
 | `agent … is advisory, which caps every category` | [A promoted category still asks](#promotion) |
 | `envelope: rate is not enforced by mcp-gateway yet`, `envelope: rollback needs the demotion evaluator`, `envelope: hosts needs the fleet`, `envelope: blast_radius needs the fleet` | leave the part out; only `windows` is enforced so far |

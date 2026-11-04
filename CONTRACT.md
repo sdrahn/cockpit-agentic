@@ -248,9 +248,9 @@ local limits. A different host implementation changes none of this.
 
 *Draft 2, partly implemented (O11).* Implemented: the catalog, the
 `category` field, the effective mode in the agents module, the
-envelope's `windows`, `promote` and `demote`, and their records. Not
-yet: readiness (so every promotion is made `--despite-readiness`, with a
-reason), the review of autonomous actions, the demotion evaluator and
+envelope's `windows`, readiness and its thresholds, `promote` (refused
+below readiness without `--despite-readiness`) and `demote`, and their
+records. Not yet: the review of autonomous actions, the demotion evaluator and
 `rollback`, and `rate` (O12); an envelope with `rate` or `rollback` is
 refused until they are. Part I defines the data, the measures and
 the records. The commands named here are the reference implementation's
@@ -348,25 +348,44 @@ notifies the approvers.
 
 Before promotion, a category runs supervised for an **observation
 period**. Each proposal of the category is an approval item (§7), so the
-record already holds what readiness needs. A call belongs to the
-category of the permission that matched it in the agent data. The
-evaluator matches the gateway's records against the agent data in force
-at the time; hosts need write no category of their own.
+record already holds what readiness needs: the agent's records (§10)
+and the gateway's decision for each approval id (its `mcp-approval`
+audit record: `id`, `ok`, `by`, `principal`). A call belongs to a
+category when a permission of that category that is not `read_only`
+matches its tool (`server__tool`, the permission's `server` and `tool`
+as globs). Hosts write no category of their own.
 
-| Measure | Definition, over the observation window |
+| Measure | Definition, over the last `window_days` |
 |---|---|
-| proposals | approval items of the category that were decided (approved or declined), not expired |
-| **override rate** | declined, plus approved and then cancelled by a person before it ran, divided by proposals |
-| incident rate | among the approved calls: `tool.result` errors, `limit.exceeded`, and pauses or emergency stops during the category's activities, divided by approved calls |
-| diversity | distinct tools, and distinct `AGENT_ARGS_SHA256` per tool, among the proposals |
-| envelope size | window hours per week × `rate`, shown next to what was observed |
+| proposals | `approval.pending` records of the category whose approval id has a decision of the gateway (approved or declined). An approval without one (expired, or still pending) is no proposal |
+| approved, declined | by the gateway's decision, never by the agent's `approval.resolved` (which also reports a tool's error after an approval as declined) |
+| cancelled | approved, then an `activity.cancel` for its activity after the decision and before the call's `tool.result` |
+| **override rate** | (declined + cancelled) / proposals |
+| incident rate | incidents / (approved − cancelled); an incident is an approved call whose `tool.result` is an error, whose activity has a `limit.exceeded`, or during whose activity (from the proposal to `invocation.end`) the agent was paused (`agent.paused`) |
+| diversity | distinct tools, and distinct tool and `AGENT_ARGS_SHA256` pairs, among the proposals |
+| observed days | from the first proposal to now |
 
-Defaults, which the site may set in `/etc/custos/promotion.yaml`:
-at least 14 days and 50 proposals, an override rate of at most 5 %,
-an incident rate of at most 2 %. The **readiness view**
-(`agent-admin readiness NAME [CATEGORY]`, the control plane, the Cockpit
-page) shows these measures per category against the thresholds, with
-the proposals behind each number.
+The thresholds are in `/etc/custos/promotion.yaml` (each key optional,
+unknown keys refused), with these defaults:
+
+```yaml
+observation_days: 14   # observed days at least
+proposals: 50          # proposals at least
+override_rate: 0.05    # at most 5 %
+incident_rate: 0.02    # at most 2 %
+window_days: 30        # how far back the records are read
+```
+
+A category is **ready** when it meets all of them. The **readiness
+view** (`agent-admin readiness NAME [CATEGORY]`, §17; the control
+plane; the Cockpit page) shows these measures per category against the
+thresholds, with what is not met.
+
+Not yet (O11): matching calls against the agent data in force at their
+time (the reference implementation uses the current permissions);
+counting an emergency stop during an activity as an incident; the
+envelope's size next to what was observed (it needs `rate`, O12); and
+listing the proposals behind each number.
 
 In a `bounded` category, nothing is approved beforehand. Its override
 rate is measured **afterwards**: the approvers review a sample of its
@@ -805,8 +824,8 @@ standard error:
 | `list` | the agents |
 | `show [NAME…]` | the gateway data (§6) of the named agents, or of all, and the emergency stop (§8), as JSON: `{"agents": {"<name>": {"mode", "paused", "paused_by"?, "permissions", "categories"?}}, "control": {"stopped", "by"?, "at"?}}`, where `categories` is §6a's entries. Needs no root: the files are readable by everyone |
 | `categories` | the catalog (§6a), as JSON: `{"<category>": {"title", "description"?}}`. Needs no root |
-| `promote NAME CATEGORY --envelope FILE --despite-readiness --reason TEXT`, `demote NAME CATEGORY [--reason TEXT]` | a category's promotion with its envelope (`FILE` `-` is stdin), and its demotion (§6a). They write `categories.<category>` in the gateway data and a promotion record (§10), and return once the gateway has loaded the change, as `mode` does. Until readiness is measured, `promote` needs `--despite-readiness` with a reason |
-| `readiness NAME [CATEGORY]` | *designed (§6a, O11)*: a category's readiness measures |
+| `promote NAME CATEGORY --envelope FILE [--despite-readiness --reason TEXT]`, `demote NAME CATEGORY [--reason TEXT]` | a category's promotion with its envelope (`FILE` `-` is stdin), and its demotion (§6a). They write `categories.<category>` in the gateway data and a promotion record (§10), and return once the gateway has loaded the change, as `mode` does. `promote` refuses a category that is not ready, naming what is not met, unless it is given `--despite-readiness` with a reason; its record's `AGENT_READINESS` is the category's measures |
+| `readiness NAME [CATEGORY…]` | the readiness of the agent's categories (those its permissions name), or of the given ones, as JSON: `{"agent", "thresholds": {"observation_days", "proposals", "override_rate", "incident_rate", "window_days"}, "categories": {"<category>": {"proposals", "approved", "declined", "cancelled", "overrides", "override_rate", "incidents", "incident_rate", "tools", "distinct_calls", "observed_days", "first_proposal"?, "ready", "unmet"?}}}` (§6a). Reads the agent's journal and mcp-gateway's, so it needs root or the `systemd-journal` group |
 
 ## 18. SELinux (`custos` module)
 
@@ -873,9 +892,9 @@ the product and release process, tracked here so that nothing is lost.
 |---|---|---|
 | Supervised by default for every category; not configurable away at install | §6, §6a | done (§6, §6a) |
 | Policy-bounded autonomy as a named destination, with an envelope (hosts, windows, rates, blast radius, rollback) | §6a | `bounded` with `windows` done; rates and rollback designed (O11); rates need mcp-gateway (O12); hosts and blast radius across hosts parked with the fleet (O13) |
-| Observation period, override rate, explicit authenticated promotion, demotion path | §6a, §10 | promotion and demotion by hand done; observation, override rate and automatic demotion designed (O11) |
+| Observation period, override rate, explicit authenticated promotion, demotion path | §6a, §10 | observation, override rate, promotion and demotion by hand done; automatic demotion designed (O11) |
 | Per-category, not whole-agent, promotion; audit per category | §6a, §10 | done: `promote`, `demote`, promotion records (O11) |
-| Promotion-readiness view (override rate, incident rate, diversity, envelope size) | §6a | designed (O11) |
+| Promotion-readiness view (override rate, incident rate, diversity, envelope size) | §6a | measures, thresholds and `agent-admin readiness` done, and `promote` checks them; envelope size and the Cockpit view open (O11) |
 | Hard capability limits, audit trail, emergency stop | §6, §8, §10, §15, §18 | done |
 | Prompt-injection defence | §6 (the gateway decides every call, never the model), §16a (egress fence) | the boundaries are done; detection and evaluation of injection attempts open (O14) |
 | Service identity; privilege only through existing surfaces; MCP | §2, §6, §17 | done |
@@ -971,12 +990,17 @@ the product and release process, tracked here so that nothing is lost.
 - **O11 — task categories and promotion.** §6a. Done: the catalog
   (`categories.d`, `agent-admin categories`), the `category` field, the
   effective mode and the envelope's `windows` in the agents module,
-  `agent-admin promote` and `demote`, the promotion records, and `show`
-  with the categories; tested with OPA against the gateway's policy and
-  in the functional tests. Open: `readiness` and the thresholds in
-  `/etc/custos/promotion.yaml`, the demotion evaluator and `rollback`,
-  the after-the-fact review of autonomous actions (`category.review`),
-  and the readiness view in Cockpit.
+  readiness (`agent-admin readiness`, the thresholds in
+  `/etc/custos/promotion.yaml`) from the agents' records and the
+  gateway's decisions, `agent-admin promote` (refused below readiness
+  without `--despite-readiness`) and `demote`, the promotion records,
+  and `show` with the categories; tested with OPA against the gateway's
+  policy and in the functional tests. Open: the demotion evaluator and
+  `rollback`, the after-the-fact review of autonomous actions
+  (`category.review`), the readiness view in Cockpit, and in the
+  measures: the agent data in force at a call's time, emergency stops
+  as incidents, the envelope's size, and the proposals behind each
+  number.
 - **O12 — envelope limits in the gateway.** A per-agent, per-category
   call counter in mcp-gateway, with the window and the limit from the
   agent data, so that `rate` is enforced where the approvals are.

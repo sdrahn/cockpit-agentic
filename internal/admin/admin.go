@@ -69,6 +69,9 @@ type Admin struct {
 	// Journal gives the promotion records' logger for an agent (§10);
 	// nil: journald as custos-promotion.
 	Journal func(name string) journal.Logger
+	// JournalJSON reads journal records (journalctl -o json with these
+	// matches, over the readiness window); nil: journalctl.
+	JournalJSON func(args ...string) ([]byte, error)
 }
 
 // New is agent-admin on a host. Its standard output is its own messages

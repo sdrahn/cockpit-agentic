@@ -1,15 +1,19 @@
 package admin
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/sdrahn/custos/internal/journal"
+	"github.com/sdrahn/custos/internal/readiness"
 )
 
 // catalog writes the shipped categories (packaging/categories) into the
@@ -161,7 +165,7 @@ func TestPromoteRefuses(t *testing.T) {
 		{"no permission in it", func() error { return promote(a, "security-response", sat) }, "no permission in category security-response"},
 		{"no readiness", func() error {
 			return a.Promote("patch-pilot", "patch-errata", "alice", Promotion{Envelope: []byte(sat)})
-		}, "readiness is not measured yet"},
+		}, "category patch-errata is not ready (observed 0.0 days of 14; 0 proposals of 50)"},
 		{"no reason", func() error {
 			return a.Promote("patch-pilot", "patch-errata", "alice", Promotion{Envelope: []byte(sat), DespiteReadiness: true})
 		}, "needs --reason"},
@@ -262,5 +266,86 @@ func TestPromoteAgainWaitsForTheNewEnvelope(t *testing.T) {
 	sun := "windows:\n  - {days: [sun], from: '02:00', to: '04:00', tz: Europe/Berlin}\n"
 	if err := promote(a, "patch-errata", sun); err == nil || !strings.Contains(err.Error(), "did not load the change") {
 		t.Errorf("returned while the gateway had the old envelope: %v", err)
+	}
+}
+
+// journal is an agent's records and the gateway's decisions as
+// journalctl -o json gives them, for agent-admin readiness.
+func readinessJournal(n int, declined int, start time.Time) func(args ...string) ([]byte, error) {
+	var agent, gw []string
+	line := func(m map[string]any) string { b, _ := json.Marshal(m); return string(b) }
+	us := func(t time.Time) string { return strconv.FormatInt(t.UnixMicro(), 10) }
+	for i := 0; i < n; i++ {
+		at := start.Add(time.Duration(i) * time.Hour)
+		inv, id := fmt.Sprintf("e-%d", i), fmt.Sprintf("a-%d", i)
+		agent = append(agent,
+			line(map[string]any{"AGENT_EVENT": "tool.call", "AGENT_INVOCATION": inv, "AGENT_CALL_ID": "c1", "AGENT_TOOL": "zypp__install_patches", "AGENT_ARGS_SHA256": "x", "__REALTIME_TIMESTAMP": us(at)}),
+			line(map[string]any{"AGENT_EVENT": "approval.pending", "AGENT_INVOCATION": inv, "AGENT_CALL_ID": "c1", "AGENT_TOOL": "zypp__install_patches", "AGENT_APPROVAL_ID": id, "__REALTIME_TIMESTAMP": us(at.Add(time.Second))}),
+			line(map[string]any{"AGENT_EVENT": "tool.result", "AGENT_INVOCATION": inv, "AGENT_CALL_ID": "c1", "AGENT_OUTCOME": "ok", "__REALTIME_TIMESTAMP": us(at.Add(2 * time.Minute))}))
+		msg, _ := json.Marshal(map[string]any{"msg": "mcp", "event": "mcp-approval", "id": id, "ok": i >= declined, "by": "alice", "principal": "agent-patch-pilot"})
+		gw = append(gw, line(map[string]any{"MESSAGE": string(msg), "__REALTIME_TIMESTAMP": us(at.Add(time.Minute))}))
+	}
+	return func(args ...string) ([]byte, error) {
+		for _, a := range args {
+			if a == "mcp-gateway.service" {
+				return []byte(strings.Join(gw, "\n")), nil
+			}
+		}
+		return []byte(strings.Join(agent, "\n")), nil
+	}
+}
+
+func TestReadinessReport(t *testing.T) {
+	a, _ := withCategories(t)
+	start := a.Now().AddDate(0, 0, -20)
+	a.JournalJSON = readinessJournal(60, 4, start)
+	r, err := a.Readiness("patch-pilot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pe := r.Categories["patch-errata"]
+	if pe.Proposals != 60 || pe.Declined != 4 || pe.Approved != 56 || pe.Ready || !strings.Contains(strings.Join(pe.Unmet, ";"), "override rate 6.7 % above 5.0 %") {
+		t.Errorf("patch-errata %+v", pe)
+	}
+	if cl, ok := r.Categories["config-lifecycle"]; !ok || cl.Proposals != 0 {
+		t.Errorf("config-lifecycle %+v (every category of the permissions)", cl)
+	}
+	if r.Thresholds != readiness.Defaults {
+		t.Errorf("thresholds %+v", r.Thresholds)
+	}
+	// The site's thresholds: 4 of 60 overrides is within 10 %.
+	writeFile(a.p(PromotionConfig), []byte("override_rate: 0.1\nproposals: 40\n"), 0o644)
+	r, _ = a.Readiness("patch-pilot", "patch-errata")
+	if pe := r.Categories["patch-errata"]; !pe.Ready || r.Thresholds.Proposals != 40 || len(r.Categories) != 1 {
+		t.Errorf("with the site's thresholds: %+v %+v", r.Thresholds, pe)
+	}
+}
+
+func TestThresholdsFile(t *testing.T) {
+	a, _ := withCategories(t)
+	for body, says := range map[string]string{
+		"override_rate: 5\n":  "fractions from 0 to 1",
+		"window_days: 0\n":    "window_days 1 or more",
+		"overide_rate: 0.1\n": "overide_rate",
+	} {
+		writeFile(a.p(PromotionConfig), []byte(body), 0o644)
+		if _, err := a.Thresholds(); err == nil || !strings.Contains(err.Error(), says) {
+			t.Errorf("%q: %v, want %q", body, err, says)
+		}
+	}
+}
+
+// A ready category is promoted without --despite-readiness, and the
+// record carries the measures.
+func TestPromoteWhenReady(t *testing.T) {
+	a, mem := withCategories(t)
+	a.JournalJSON = readinessJournal(60, 0, a.Now().AddDate(0, 0, -20))
+	if err := a.Promote("patch-pilot", "patch-errata", "alice", Promotion{Envelope: []byte(sat)}); err != nil {
+		t.Fatal(err)
+	}
+	r := mem.Events(journal.CategoryPromoted)
+	var m readiness.Measures
+	if len(r) != 1 || json.Unmarshal([]byte(r[0].Fields["READINESS"]), &m) != nil || !m.Ready || m.Proposals != 60 {
+		t.Errorf("record %v", r)
 	}
 }
