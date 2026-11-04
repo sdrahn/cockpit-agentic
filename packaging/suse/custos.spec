@@ -169,6 +169,7 @@ done
 %{_libexecdir}/custos/agent-delegate
 %{_libexecdir}/custos/agent-openshell-relay
 %{_libexecdir}/custos/agent-openshell-logs
+%{_libexecdir}/custos/agent-openshell-start
 %{_libexecdir}/custos/agent-admin
 %{_unitdir}/agent@.service
 %{_unitdir}/agent@.socket

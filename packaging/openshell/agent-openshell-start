@@ -1,0 +1,52 @@
+#!/bin/sh
+# agent-openshell-start GATEWAY SANDBOX: starts the agent's sandbox for
+# agent-openshell@.service and returns once OpenShell has it Ready
+# (CONTRACT.md §16a). On a restart the unit's ExecStopPost has just
+# stopped it, and OpenShell refuses a start while a sandbox is still
+# Stopping, Starting or has a driver operation pending: those are waited
+# for and the start is tried again. A sandbox that is not Ready within
+# AGENT_START_SECONDS (default 120) fails the unit, so that systemd's
+# Restart= tries again, instead of a relay that forwards to nothing.
+set -u
+gateway=${1:?usage: agent-openshell-start GATEWAY SANDBOX}
+sandbox=${2:?usage: agent-openshell-start GATEWAY SANDBOX}
+limit=${AGENT_START_SECONDS:-120}
+step=${AGENT_START_STEP:-2}
+
+# The sandbox's lifecycle phase: "phase" at the top of openshell's JSON
+# (Ready, Stopped, Stopping, …); the provisioning record's lower-case
+# "phase" is not it.
+phase() {
+	openshell -g "$gateway" sandbox get "$sandbox" -o json 2>/dev/null |
+		grep -oE '"phase": *"[A-Z][A-Za-z]*"' | head -n 1 | sed 's/.*"\([A-Za-z]*\)"$/\1/'
+}
+
+waited=0
+last=
+while :; do
+	p=$(phase)
+	case $p in
+	Ready)
+		exit 0
+		;;
+	Stopped | Completed | Suspended | Error)
+		# start waits until Ready itself; a refusal (an operation still
+		# pending) is tried again.
+		out=$(openshell -g "$gateway" sandbox start "$sandbox" 2>&1) && exit 0
+		last=$out
+		;;
+	"")
+		last="openshell does not know sandbox $sandbox"
+		;;
+	*)
+		# Stopping, Starting, Provisioning, Suspending, Deleting, Unknown.
+		last="sandbox $sandbox is $p"
+		;;
+	esac
+	if [ "$waited" -ge "$limit" ]; then
+		echo "agent-openshell-start: sandbox $sandbox is not Ready after ${limit}s: $(echo "$last" | tail -n 3 | tr '\n' ' ')" >&2
+		exit 1
+	fi
+	sleep "$step"
+	waited=$((waited + step))
+done
