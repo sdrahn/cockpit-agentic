@@ -404,7 +404,9 @@ if [ -n "$system" ]; then
 	section SELinux
 	# Denials since the start for the domains this repository ships
 	# (agent_t, agent_relay_t, mcpsrv_agents_t) and for what they reach.
-	avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$t0" '+%x %T')" 2>/dev/null)
+	# Since boot (the VM's whole run): a start time in the locale's format
+	# that ausearch does not take would make the check blind.
+	avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts boot 2>/dev/null)
 	[ -n "$avc" ] || avc=$(journalctl -k --no-pager -o cat --since "@$t0" 2>/dev/null | grep -E 'avc: +denied')
 	[ -n "$results" ] && mkdir -p "$results" && printf '%s\n' "$avc" >"$results/avc.txt"
 	check "no SELinux denial for custos's domains" not grep -qE 'scontext=[^ ]*:(agent_t|agent_relay_t|mcpsrv_agents_t):' <<<"$avc" ||

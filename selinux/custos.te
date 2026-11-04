@@ -120,6 +120,9 @@ list_dirs_pattern(agent_relay_t, agent_runtime_t, agent_runtime_t)
 read_files_pattern(agent_relay_t, agent_conf_t, agent_conf_t)
 list_dirs_pattern(agent_relay_t, agent_conf_t, agent_conf_t)
 corenet_tcp_connect_unreserved_ports(agent_relay_t)
+# The agents' forwarded ports (47000-47999, openshell forward) are in the
+# kernel's ephemeral range, ephemeral_port_t rather than unreserved.
+corenet_tcp_connect_all_ephemeral_ports(agent_relay_t)
 corenet_tcp_connect_http_port(agent_relay_t)
 corenet_tcp_connect_http_cache_port(agent_relay_t)
 corecmd_exec_bin(agent_relay_t)
