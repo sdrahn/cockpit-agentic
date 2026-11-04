@@ -9,11 +9,10 @@
     <param name="url">https://github.com/sdrahn/custos.git</param>
     <param name="scm">git</param>
     <param name="revision">main</param>
-    <param name="versionformat">0.1.0+git%cd.%h</param>
+    <param name="versionformat">0.2.0+git%cd.%h</param>
     <param name="filename">custos</param>
     <param name="exclude">.git</param>
     <param name="exclude">.github</param>
-    <param name="exclude">docs/mockup.png</param>
   </service>
   <service name="recompress" mode="manual">
     <param name="file">*.tar</param>
