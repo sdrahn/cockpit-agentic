@@ -102,7 +102,11 @@ func Policy(cfg *config.Config) ([]byte, error) {
 		"version": 1,
 		"filesystem_policy": map[string]any{
 			"include_workdir": true,
-			"read_only":       []string{"/usr", "/lib", "/lib64", "/etc"},
+			// /var/lib/ca-certificates: the trust store /etc/ssl/ca-bundle.pem
+			// points to on openSUSE and SLES. OpenShell's proxy verifies the
+			// gateway with it (the gateway's CA, CONTRACT.md §16a); without
+			// it the bundle is unreadable and every TLS upstream is refused.
+			"read_only": []string{"/usr", "/lib", "/lib64", "/etc", "/var/lib/ca-certificates"},
 		},
 		"landlock":         map[string]any{"compatibility": "hard_requirement"},
 		"process":          map[string]any{"run_as_user": "sandbox", "run_as_group": "sandbox"},
