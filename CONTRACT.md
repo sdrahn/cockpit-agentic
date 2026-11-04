@@ -1,6 +1,7 @@
 # Custos — Contract
 
-Status: draft 1 (contract version `1`). The project was named
+Status: draft 1 (contract version `1`); §6a and §12a are draft 2 designs,
+not yet implemented. The project was named
 cockpit-agentic until before its first release; the names and paths
 below are Custos's (`custos`, `/etc/custos`, …) and are the ones contract
 version 1 keeps.
@@ -243,6 +244,161 @@ for the mode, the pause flag and the permissions. It reads the gateway's
 role data for the approver rules, and `GET /v1/status` for the host's
 local limits. A different host implementation changes none of this.
 
+## 6a. Task categories and the promotion path (draft 2, O11)
+
+*Design, not yet implemented.* Part I defines the data, the measures and
+the records. The commands named here are the reference implementation's
+(§17); another host or control plane provides the same actions. An
+agent's autonomy is promoted **per
+task category**, never for the whole agent. Promoting one category
+changes nothing for another, and the audit records each category's
+changes separately.
+
+### Categories
+
+A category names a kind of work. The catalog is data, shipped in
+`/usr/share/custos/categories.d/*.yaml`; an administrator adds or
+overrides entries in `/etc/custos/categories.d/` (the same name
+replaces, an empty file disables):
+
+```yaml
+# /usr/share/custos/categories.d/patch-errata.yaml
+patch-errata:
+  title: Patch and errata management
+  description: Installing patches and errata, refreshing repositories.
+```
+
+GA ships at least `patch-errata`, `security-response` and
+`config-lifecycle`. A category name has the form of an agent name
+(§13). Each permission in the agent data may name its category (an added
+field, §6):
+
+```yaml
+<name>:
+  mode: supervised            # as §6: the default for every category
+  permissions:
+    - {server: zypp, tool: 'list_*', read_only: true}
+    - {server: zypp, tool: install_patches, category: patch-errata}
+    - {server: systemd, tool: restart_unit, category: config-lifecycle, args: {unit: '^nginx\.service$'}}
+  categories:                 # added: one entry per category that left the default
+    patch-errata:
+      mode: bounded
+      envelope: {…}           # below
+      promoted_by: "alice 2026-12-01T09:00:00Z"
+      promotion: p-3f9c…      # the promotion record's id (§10)
+```
+
+A permission's effective mode is its category's `mode` when the
+category has an entry, otherwise the agent's `mode`. Two exceptions:
+`advisory` on the agent caps every category, and a permission without
+a category (`uncategorized`) can never be promoted. §6's table applies
+unchanged to the effective mode, and so do `read_only` and pause, which
+need no category. Within a promoted category, the `autonomous: true` flag
+of §6 is not needed: every permission of a `bounded` category is
+autonomous inside its envelope. An agent-level `mode: bounded` keeps
+its version-1 meaning, but only for permissions without a category, and
+is not part of the promotion path.
+
+New agents and new categories start `supervised`, and no install-time
+option changes that (§6). Only the promotion action below moves a
+category to `bounded`.
+
+### The policy envelope
+
+A category is promoted only together with an envelope. The envelope
+says where, when and how much the agent may act without an approval:
+
+```yaml
+envelope:
+  hosts: ['web-*.example.com']          # fleet (§12a); a single host: [this host]
+  windows:                              # when; outside them the category is supervised
+    - {days: [sat], from: '02:00', to: '04:00', tz: Europe/Berlin}
+  rate: {calls: 20, per: 1h}            # state-changing calls of this category, per host
+  blast_radius: {hosts: 5}              # hosts acting in this category at once, fleet-wide
+  rollback:                             # conditions that demote at once (below)
+    on: [tool_error, health_check_failed, limit_exceeded]
+    health_check: 'systemctl is-system-running --quiet'
+```
+
+| Part | Enforced by | Outside it |
+|---|---|---|
+| `hosts` | the control plane distributes the category's `bounded` mode only to matching hosts (§12a); the others get `supervised` | supervised |
+| `windows` | the gateway's policy (`time.now_ns()` in the agents module) | the call needs an approval, as supervised |
+| `rate` | the gateway: a per-agent, per-category counter it keeps itself (mcp-gateway, O12) | the call needs an approval |
+| `blast_radius` | the control plane: it gives a host a lease for the category, at most `hosts` leases at once (§12a) | without a lease the category is supervised on that host |
+| `rollback` | the demotion evaluator (below), outside the agent | the category is demoted |
+
+Everything that relaxes an approval is enforced by the gateway or the
+control plane, never by the agent. An envelope part that the installed
+gateway cannot enforce makes `promote` fail rather than be ignored.
+Undoing an action (a snapshot rollback, say) is tool-specific and not
+part of the envelope. A rollback condition demotes the category and
+notifies the approvers.
+
+### Observation, override rate and readiness
+
+Before promotion, a category runs supervised for an **observation
+period**. Each proposal of the category is an approval item (§7), so the
+record already holds what readiness needs. A call belongs to the
+category of the permission that matched it in the agent data. The
+evaluator matches the gateway's records against the agent data in force
+at the time; hosts need write no category of their own.
+
+| Measure | Definition, over the observation window |
+|---|---|
+| proposals | approval items of the category that were decided (approved or declined), not expired |
+| **override rate** | declined, plus approved and then cancelled by a person before it ran, divided by proposals |
+| incident rate | among the approved calls: `tool.result` errors, `limit.exceeded`, and pauses or emergency stops during the category's activities, divided by approved calls |
+| diversity | distinct tools, and distinct `AGENT_ARGS_SHA256` per tool, among the proposals |
+| envelope size | matching hosts × window hours per week × `rate`, shown next to what was observed |
+
+Defaults, which the site may set in `/etc/custos/promotion.yaml`:
+at least 14 days and 50 proposals, an override rate of at most 5 %,
+an incident rate of at most 2 %. The **readiness view**
+(`agent-admin readiness NAME [CATEGORY]`, the control plane, the Cockpit
+page) shows these measures per category against the thresholds, with
+the proposals behind each number.
+
+In a `bounded` category, nothing is approved beforehand. Its override
+rate is measured **afterwards**: the approvers review a sample of its
+autonomous actions (all of them below 20 a week, then 20), and an
+action marked "should not have run" counts as an override.
+
+### Promotion
+
+```
+agent-admin promote NAME CATEGORY --envelope FILE [--reason TEXT]
+```
+
+The command checks the envelope against what the gateway can enforce,
+and readiness against the thresholds. It refuses when readiness is not
+met, unless it is given `--despite-readiness --reason TEXT`. It runs
+as root, through sudo or Cockpit's administrative access, so the person
+is authenticated, and it records the person (`SUDO_USER`). It writes
+the category's entry in the agent data and a promotion record (§10).
+The control plane does the same for a fleet (§12a).
+
+### Demotion
+
+```
+agent-admin demote NAME CATEGORY [--reason TEXT]
+```
+
+Demotion sets the category back to `supervised` and keeps the envelope
+for a later promotion. A person demotes by hand. The **demotion
+evaluator** (`custos-demote.timer`, every 5 minutes, as root, outside
+any agent) demotes on its own when one of these holds:
+
+- the category's override rate, over the last 7 days, exceeds the
+  threshold;
+- a `rollback` condition fires;
+- the gateway's rate cap is reached repeatedly (three times in a day);
+- an approver marks an autonomous action as an incident.
+
+An automatic demotion takes effect as soon as the gateway loads the
+data (§6), and it is recorded with the trigger as its reason. Pause and
+the emergency stop (§8) still override everything.
+
 ## 7. Approvals
 
 Approvals are the gateway's (mcp-gateway architecture §5.6.1). Neither
@@ -396,6 +552,27 @@ the approval `id`, `principal`, `ok`, the approver `by`, `scope` and
 `journalctl -o json -u mcp-gateway.service` (gateway records have
 `"audit":true`, `sub`, `server`, `name`). Retention is journald's.
 
+**Promotion records** (§6a). `agent-admin` and the demotion evaluator
+write them with `SYSLOG_IDENTIFIER=custos-promotion`, `AGENT_CONTRACT`,
+`AGENT_NAME` and these added fields:
+
+| Field | Value |
+|---|---|
+| `AGENT_CATEGORY` | the task category |
+| `AGENT_PROMOTION` | the record's id (`p-…`), also in the agent data's `promotion` |
+| `AGENT_MODE_FROM`, `AGENT_MODE_TO` | `supervised`, `bounded` |
+| `AGENT_BY` | the person, or `custos-demote` for an automatic demotion |
+| `AGENT_REASON` | the reason given, or the trigger (`override_rate 7.1% > 5%`, `rollback tool_error`, …) |
+| `AGENT_ENVELOPE_SHA256` | SHA-256 of the envelope's JSON with sorted keys |
+| `AGENT_READINESS` | the readiness measures at the time, as JSON |
+| `AGENT_HOST` | the host, in a fleet (§12a) |
+
+| `AGENT_EVENT` | `MESSAGE_ID` |
+|---|---|
+| `category.promoted` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a660` |
+| `category.demoted` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a661` |
+| `category.review` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a662` (an approver's verdict on an autonomous action) |
+
 ## 11. Interaction (chat as one mode)
 
 Conversation with an agent is one mode of the control plane, for
@@ -438,20 +615,41 @@ The stream is ephemeral and reaches only whoever is connected.
 Approvals (§7), intervention (§8) and the audit record (§10) never
 depend on it.
 
-## 12. Scope: one system, fleet not precluded
+## 12. Scope: one system, and a fleet
 
-Version 1 is **single-system**: every interface is local to the host,
-and fleet scope is out of scope for SLES 16.2. Nothing here precludes it:
+Every interface in §2 to §11 is local to the host and stays so: each
+host's gateway enforces its own agents' modes, approvals and stops,
+whether or not a fleet exists. SLES 16.2 also ships a fleet, because the
+requirement in §20a makes a **control plane mandatory for on-premises
+deployments above a defined fleet size** (`N` hosts, open decision O13).
+§12a defines it. It adds to the host interfaces and replaces none of them:
 
-- every interface is reachable through Cockpit's bridge on that host, so
-  Cockpit's host switcher already gives per-host supervision of many
-  systems;
-- identifiers are unique per host, and a fleet view keys everything by
+- Cockpit's host switcher still gives per-host supervision;
+- identifiers are unique per host, and fleet views key everything by
   `(host, agent, activity)`;
-- delegation chains across hosts would need a cross-host transport for
-  `agents__delegate` (the gateway's Streamable HTTP with OAuth). The
-  trace fields already carry the agent names, and would gain a host
-  part (open item O7).
+- delegation across hosts needs a cross-host transport for
+  `agents__delegate` (the gateway's Streamable HTTP with OAuth), with a
+  host part in the trace fields (O7).
+
+## 12a. The fleet control plane (draft 2, O13)
+
+*Design, not yet implemented.* `custos-control` is a service on a
+management host inside the customer's boundary. It runs with no network
+egress beyond the managed hosts and the site's IdP.
+
+| Function | How | The host's part |
+|---|---|---|
+| inventory | hosts enrolled with their machine id; a host belongs to the fleet once enrolled | none |
+| policy distribution | the control plane is the source of each host's agent data (modes, categories, envelopes, permissions; §6, §6a). Delivery goes through the site's configuration management: a Salt state for SUSE Multi-Linux Manager, or the control plane over SSH. Either way it runs `agent-admin apply FILE` on the host | `agent-admin apply` validates and writes, as `permissions` and `mode` do; the gateway enforces |
+| approvals | lists every host's pending approvals from the hosts' gateways (their control API over HTTPS, with the person's OIDC token), and decides them as the person | the gateway's approvals (§7), unchanged |
+| audit aggregation | the hosts' journals through `systemd-journal-upload` to `systemd-journal-remote` on the management host. The fields of §10 are unchanged, and `_MACHINE_ID` and `_HOSTNAME` give the host | `systemd-journal-upload` configured |
+| readiness and demotion | §6a's measures and the demotion evaluator, computed fleet-wide per category from the aggregated record | the local evaluator also runs, for a host the control plane cannot reach |
+| blast radius | category leases (§6a): a host acts autonomously in a category only while it holds one; leases expire | the agent data carries the lease's expiry; the gateway's policy treats an expired lease as supervised |
+| emergency stop | `stop-all` on every host, through the same delivery as policy | `agent-admin stop-all` (§8) |
+
+People log in to the control plane with the site's IdP. Roles map to
+the gateway's (`admin`, approvers per server), so whoever may approve
+on a host may approve from the control plane, and nobody else may.
 
 ---
 
@@ -611,6 +809,8 @@ standard error:
 | `trigger NAME_SCHEDULE` | starts the schedule's activity (run by `agent-schedule@.service`) |
 | `list` | the agents |
 | `show [NAME…]` | the gateway data (§6) of the named agents, or of all, and the emergency stop (§8), as JSON: `{"agents": {"<name>": {"mode", "paused", "paused_by"?, "permissions"}}, "control": {"stopped", "by"?, "at"?}}`. Needs no root: the files are readable by everyone |
+| `promote NAME CATEGORY --envelope FILE`, `demote NAME CATEGORY`, `readiness NAME [CATEGORY]` | *designed (§6a, O11)*: a category's promotion with its envelope, its demotion, and its readiness measures. `promote` and `demote` return once the gateway has loaded the change, as `mode` does |
+| `apply FILE` | *designed (§12a, O13)*: the agent data the fleet control plane distributes for this host, validated and written as `mode` and `permissions` would |
 
 ## 18. SELinux (`custos` module)
 
@@ -662,7 +862,34 @@ tests, for openQA).
 | Stop / pause / override in-flight or scheduled activity; emergency stop | §8 | cancel, pause (host and gateway), stop-all done; tested on the host side and in policy |
 | On-premises, air-gapped | §14 (`provider: openai` with a local server), §19 (OBS) | done; no external service needed |
 | Independent of kit / any host | Part I is host-independent; §3 discovery by contract only | contract done; a second host (kit adapter or a mock) to demonstrate (O8) |
-| Fleet scope addressed | §12 | out of scope for 16.2, not precluded |
+| Fleet scope addressed | §12, §12a | required for 16.2 (§20a); designed (O13) |
+
+## 20a. Requirement: agentic systems management as a GA component (SLES 16.2)
+
+On-premises is the reference configuration: it comes first in CI, the
+docs and the safety report. Rows marked *outside* are deliverables of
+the product and release process, tracked here so that nothing is lost.
+
+| Requirement | Contract | State in this repository |
+|---|---|---|
+| Supervised by default for every category; not configurable away at install | §6, §6a | done for agents (§6); categories designed (§6a, O11) |
+| Policy-bounded autonomy as a named destination, with an envelope (hosts, windows, rates, blast radius, rollback) | §6a | designed (O11); rates need mcp-gateway (O12); hosts and blast radius need the control plane (O13) |
+| Observation period, override rate, explicit authenticated promotion, demotion path | §6a, §10 | designed (O11) |
+| Per-category, not whole-agent, promotion; audit per category | §6a, §10 | designed (O11) |
+| Promotion-readiness view (override rate, incident rate, diversity, envelope size) | §6a | designed (O11) |
+| Hard capability limits, audit trail, emergency stop | §6, §8, §10, §15, §18 | done |
+| Prompt-injection defence | §6 (the gateway decides every call, never the model), §16a (egress fence) | the boundaries are done; detection and evaluation of injection attempts open (O14) |
+| Service identity; privilege only through existing surfaces; MCP | §2, §6, §17 | done |
+| Fleet control plane: audit aggregation, policy distribution, approvals; mandatory above `N` hosts | §12, §12a | designed (O13) |
+| Integration with SLES identity, RBAC, audit, configuration management | §2, §10, §12a | identity, RBAC, audit done per host; configuration management designed (O13) |
+| Multiple inference backends, ordered on-premises → customer's cloud → vendor SaaS | §14 | `openai` (any OpenAI-compatible server: on-premises, or the customer's cloud) and `gemini`/`vertex` supported; the ladder in that order in the user guide and the field briefing open (O15) |
+| Zero required egress; each egress flow documented and disable-able | §14, §16a, §12a | agents need only the model and the gateway; the full list of flows open (O15) |
+| Air-gapped as a release-gate test | §19 | CI runs without a model service (scripted model); a gate with a real local model and no network open (O15) |
+| Signed distro component, updated through the errata pipeline | §19 | OBS packaging done; signing and errata *outside* |
+| Model serving runtime, model artifacts through errata and offline mirrors | — | *outside* |
+| Tested open-weight models (2 or 3) with model cards, validation evidence, deprecation policy | — | *outside*; the validation suite to run them against is O15 |
+| Reference hardware sizing for x86_64 and aarch64 (riscv64 excluded) | — | *outside* |
+| Safety report and EU AI Act high-risk evidence; support terms for AI-specific failures | — | *outside*; §6a, §10 and §12a supply the oversight and logging evidence |
 
 ## 21. Open items
 
@@ -686,8 +913,8 @@ tests, for openQA).
   from the model's text and are self-asserted. A structured proposal
   (planned actions, expected impact) that the gateway shows with the
   approval would need a gateway field, e.g. in the call's `_meta`.
-- **O7 — fleet.** A cross-host delegation transport, a host part in the
-  trace, and an aggregated view.
+- **O7 — fleet.** A cross-host delegation transport and a host part in
+  the trace. Required since §20a; the aggregated view is §12a (O13).
 - **O8 — second host.** Demonstrating host independence: a mock host
   (or a kit adapter) serving §5, §10 and §11 for the Cockpit page to run
   against.
@@ -742,3 +969,26 @@ tests, for openQA).
   in a real Cockpit in the Leap 16 VM with SELinux enforcing (CI job
   `cockpit-vm`): logged in as a person, an approval decided in the page
   is the person's in the gateway's audit, not root's.
+- **O11 — task categories and promotion.** §6a: the catalog, the
+  `category` field, the effective mode in the agents module, `agent-admin
+  promote`, `demote`, `readiness`, the demotion evaluator, the readiness
+  view in Cockpit, and the after-the-fact review of autonomous actions.
+- **O12 — envelope limits in the gateway.** A per-agent, per-category
+  call counter in mcp-gateway, with the window and the limit from the
+  agent data, so that `rate` is enforced where the approvals are.
+- **O13 — fleet control plane.** §12a, and the open decision on `N`: the
+  fleet size above which an on-premises deployment needs it. Also the
+  delivery through SUSE Multi-Linux Manager or SSH, and category leases
+  for the blast radius.
+- **O14 — prompt injection.** The boundaries hold whatever the model is
+  told: the gateway decides each call, the sandbox fences egress. Open
+  are an evaluation suite of injection attempts against the tested
+  models, and showing a suspected injection with the approval item (the
+  call's rationale and the tool output that preceded it).
+- **O15 — on-premises reference and air-gapped gate.** A release-gate
+  test that installs the packages and a tested open-weight model from an
+  offline mirror on a VM without network, then runs the functional tests
+  against it. Also the documented list of egress flows (model updates,
+  opted-in telemetry, incident reports), each with its switch, and the
+  inference backends in the documentation in the order of §20a:
+  on-premises, the customer's own cloud account, vendor-hosted.
