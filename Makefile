@@ -18,7 +18,7 @@ GATEWAY_POLICY ?= $(DATADIR)/mcp-gateway/policy
 LDFLAGS := -X github.com/sdrahn/custos/internal/launcher.Version=$(VERSION)
 BINS := agent-launcher agent-admin agent-delegate agent-openshell-relay
 # The functional tests' helpers (package custos-tests).
-TESTBINS := fakemodel testsrv fakegateway testidp
+TESTBINS := fakemodel testsrv testidp
 
 .PHONY: all build build-tests test check fmt-check vet policy-test selinux install install-selinux install-tests clean
 
@@ -86,7 +86,6 @@ install-tests: build-tests
 	install -Dm0755 test/vm/run-tests.sh $(DESTDIR)$(LIBEXECDIR)/custos/tests/run-tests.sh
 	install -Dm0755 bin/tests/fakemodel $(DESTDIR)$(LIBEXECDIR)/custos/tests/fakemodel
 	install -Dm0755 bin/tests/testsrv $(DESTDIR)$(LIBEXECDIR)/custos/tests/testsrv
-	install -Dm0755 bin/tests/fakegateway $(DESTDIR)$(LIBEXECDIR)/custos/tests/fakegateway
 	install -Dm0755 bin/tests/testidp $(DESTDIR)$(LIBEXECDIR)/custos/tests/testidp
 
 install-selinux: selinux

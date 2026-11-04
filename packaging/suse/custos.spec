@@ -180,7 +180,6 @@ done
 %{_libexecdir}/custos/tests/run-tests.sh
 %{_libexecdir}/custos/tests/fakemodel
 %{_libexecdir}/custos/tests/testsrv
-%{_libexecdir}/custos/tests/fakegateway
 %{_libexecdir}/custos/tests/testidp
 
 %files selinux
