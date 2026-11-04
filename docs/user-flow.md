@@ -1,5 +1,9 @@
 # User flow
 
+> For using the page, see the user guide,
+> [chapter 8](user-guide/08-cockpit.md). This document is the design
+> behind it.
+
 How people use Custos from Cockpit: who logs in, what each person
 can see and do, and what happens behind each action, in the Cockpit page
 (`custos-cockpit`; [screenshots](screenshots/README.md)). Each step names

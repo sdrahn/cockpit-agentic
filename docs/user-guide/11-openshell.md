@@ -1,0 +1,353 @@
+---
+title: "11. Agents in OpenShell sandboxes, the gateway's HTTPS listener and the identity provider"
+description: Running an agent in an NVIDIA OpenShell sandbox step by step - OpenShell with rootless Podman, the agent image, mcp-gateway's HTTPS listener, trusting its certificate, the identity provider (Keycloak) and the agent's OAuth client, the issuer list, the agent's configuration, the credential, renewal, editing and checking.
+tags: [openshell, sandbox, podman, https, oauth, idp, keycloak, tokens, client credentials]
+---
+
+# 11. Agents in OpenShell sandboxes, the gateway's HTTPS listener and the identity provider
+
+An agent with `sandbox: {kind: openshell}` runs inside an NVIDIA OpenShell
+sandbox instead of a systemd unit. The sandbox confines its files,
+processes and network: its only ways out are the model endpoint and
+mcp-gateway. It reaches the gateway over HTTPS with an OAuth token that
+the sandbox's supervisor adds; the agent never holds the token. This
+backend is a draft in contract version 1 (`CONTRACT.md` §16a):
+production use of an identity provider other than the test issuer is
+not yet verified by this project's tests ([below](#idp-status)).
+
+## How an OpenShell agent is put together {#architecture}
+
+- **The sandbox** `agent-<name>` runs the image `custos-agent` with
+  `agent-launcher` as OpenShell's `sandbox` user. It is created with a
+  policy (`/etc/custos/agents/<name>/openshell-policy.yaml`) that allows
+  the model endpoint and, through the provider, the gateway, and nothing
+  else.
+- **The provider** `agent-<name>-gateway` (profile `custos-gateway-<name>`)
+  holds the agent's gateway token. The agent sends
+  `Authorization: Bearer $AGENT_GATEWAY_TOKEN`, a placeholder; OpenShell's
+  proxy replaces it with the real token on the way out. With
+  `gateway.oauth`, OpenShell's gateway gets and renews the token itself
+  with the client credentials grant.
+- **mcp-gateway's HTTPS listener** at `host.openshell.internal` (the
+  host, seen from the sandbox) checks the token. The token's subject
+  `agent-<name>` is the principal, under the same mode, permissions and
+  approvals as an agent on the socket.
+- **The relay** `agent-openshell@<name>.service` owns the agent's socket
+  `/run/agents/<name>/api.sock` on the host. It starts the sandbox and a
+  port forward, passes callers on with a shared secret, and copies the
+  agent's journal records from the container's output into the host's
+  journal. Cockpit and `agent-admin` work the same as for any agent.
+
+The steps below are in order. Each names what it needs from the earlier
+ones.
+
+## Step 1: OpenShell on the host {#install-openshell}
+
+OpenShell 0.1.7 or later, with rootless Podman (OpenShell's RPM default)
+or Docker. With rootless Podman, OpenShell's gateway is a
+`systemctl --user` service of an ordinary user, here `osh`, whose Podman
+holds the sandboxes. As root:
+
+```bash
+zypper install podman
+# Rootless Podman sets the sandboxes' memory limits: delegate the controllers.
+mkdir -p /etc/systemd/system/user@.service.d
+printf '[Service]\nDelegate=cpu cpuset io memory pids\n' >/etc/systemd/system/user@.service.d/delegate.conf
+systemctl daemon-reload
+useradd -m osh
+usermod --add-subuids 200000-265535 --add-subgids 200000-265535 osh
+loginctl enable-linger osh
+systemctl restart user@$(id -u osh).service      # a user manager started before the drop-in lacks the delegation
+```
+
+Install OpenShell for `osh` as OpenShell's documentation says (its
+installer, or its package). Then register its gateway for root too:
+`agent-admin` and the relays run the `openshell` command as root:
+
+```bash
+mkdir -p /root/.config && cp -a /home/osh/.config/openshell /root/.config/
+openshell gateway list           # the gateway's name, by default "openshell"
+openshell status
+```
+
+Tell `agent-admin` which user's Podman holds the sandboxes. It writes
+that into each agent's `openshell.env` and gives the relay a drop-in that
+lets it read that user's containers:
+
+```bash
+export CUSTOS_OPENSHELL_USER=osh
+```
+
+With Docker, OpenShell's gateway runs as root's, and
+`CUSTOS_OPENSHELL_USER` stays unset.
+
+## Step 2: the agent image {#image}
+
+The package ships the image's build file. Build it with the installed
+launcher, with the runtime that holds the sandboxes (for rootless
+Podman, as `osh`):
+
+```bash
+d=$(mktemp -d) && mkdir -p $d/bin && cp /usr/libexec/custos/agent-launcher $d/bin/ && chown -R osh $d
+cd / && runuser -l osh -c "podman build -t localhost/custos-agent:latest -f /usr/share/custos/openshell/Containerfile $d"
+```
+
+`agent-admin` creates sandboxes from `localhost/custos-agent:latest`, or
+from the image `CUSTOS_OPENSHELL_IMAGE` names. Rebuild the image after
+updating `custos`, then recreate the sandboxes with `agent-admin edit`.
+
+## Step 3: mcp-gateway's HTTPS listener {#listener}
+
+The sandbox reaches the host as `host.openshell.internal`. Give the
+gateway a certificate for that name, a port and the listener. As root,
+with `gw.crt` and `gw.key` from your CA (subject alternative name
+`DNS:host.openshell.internal`):
+
+```bash
+install -d -m0750 -o root -g mcp-gateway /etc/mcp-gateway/tls
+install -m0640 -g mcp-gateway gw.crt /etc/mcp-gateway/tls/cert.pem
+install -m0640 -g mcp-gateway gw.key /etc/mcp-gateway/tls/key.pem
+restorecon -R /etc/mcp-gateway/tls
+semanage port -a -t mcp_port_t -p tcp 8443 2>/dev/null || semanage port -m -t mcp_port_t -p tcp 8443
+```
+
+```yaml
+# /etc/mcp-gateway/gateway.d/30-agents-https.yaml
+http:
+  listen: ":8443"
+  cert_file: /etc/mcp-gateway/tls/cert.pem
+  key_file: /etc/mcp-gateway/tls/key.pem
+  issuer: https://idp.example.com/realms/mcp           # your identity provider (step 5)
+  audience: https://host.openshell.internal:8443/mcp   # = the agents' gateway.url
+  scopes: [mcp-agents]                                 # optional: a scope every token must have
+```
+
+```bash
+mcp-gateway --check && systemctl restart mcp-gateway.service   # the listener starts with the gateway
+mcp-gateway-admin doctor                                       # TLS, identity provider, firewall
+```
+
+The gateway fetches the identity provider's keys from
+`<issuer>/.well-known/openid-configuration`. Its HTTPS chapter
+(mcp-gateway user guide, chapter 5, "Remote agents (HTTPS)") explains
+every key. With firewalld, allow the port from the network the sandboxes
+use.
+
+## Step 4: OpenShell trusts the gateway's certificate {#trust}
+
+OpenShell's proxy terminates the agent's TLS to swap the token in, then
+connects to the gateway itself. It checks the gateway's certificate in
+each sandbox's supervisor, not with the image's trust store. A CA that
+no public root signs goes into OpenShell's gateway configuration
+(`~osh/.config/openshell/gateway.toml`), which needs its format version:
+
+```toml
+[openshell]
+version = 2
+
+[openshell.supervisor.network]
+additional_ca_bundle = "/home/osh/.config/openshell/mcp-gateway-ca.pem"
+```
+
+```bash
+install -m0644 -o osh ca.pem /home/osh/.config/openshell/mcp-gateway-ca.pem
+runuser -u osh -- openshell-gateway config preflight
+systemctl --user --machine=osh@ restart openshell-gateway
+```
+
+Without it, the agent's calls fail with a certificate error in the
+sandbox ([chapter 12](12-troubleshooting.md#openshell)).
+
+## Step 5: the identity provider and the agent's OAuth client {#idp}
+
+Each OpenShell agent is an OAuth client of your identity provider, using
+the client credentials grant. Whatever the provider, its tokens for the
+agent must have:
+
+| Claim | Value |
+|---|---|
+| `iss` | the gateway's `http.issuer` |
+| `sub` | `agent-<name>`: the principal the gateway uses. The gateway takes the principal from `sub` only |
+| `aud` | the gateway's `http.audience`, e.g. `https://host.openshell.internal:8443/mcp` (the grant sends no audience: the provider must add it) |
+| `scope` | every scope of `http.scopes`, if the gateway requires any |
+| `exp` | a short lifetime (minutes): OpenShell renews the token before it expires |
+
+The token must not map the agent to a person's local account: the
+gateway maps a token to a local user only for persons' accounts and
+refuses system accounts, so an agent's subject stays `agent-<name>`.
+
+### Keycloak {#keycloak}
+
+In the realm the gateway's `http.issuer` names (mcp-gateway user guide,
+chapter 15, sets one up for people):
+
+1. **A client scope for the gateway's audience**, if the realm has none:
+   *Client scopes* → *Create client scope*, name `mcp-agents`, type
+   *Default*, *Include in token scope* on. In it, *Mappers* → *Audience*:
+   *Included Custom Audience* `https://host.openshell.internal:8443/mcp`,
+   *Add to access token* on.
+2. **One client per agent**: *Clients* → *Create client*, client ID
+   `agent-patch-pilot`; *Client authentication* on, *Service accounts
+   roles* on, *Standard flow* and *Direct access grants* off.
+3. Its *Client scopes*: add `mcp-agents` as *Default*.
+4. **The subject**: in `agent-patch-pilot-dedicated` → *Configure a new
+   mapper* → *Hardcoded claim*: *Token Claim Name* `sub`, *Claim value*
+   `agent-patch-pilot`, *Claim JSON Type* String, *Add to access token*
+   on. Without it, Keycloak's `sub` is the service account's id.
+5. *Credentials*: copy the **client secret** for step 8.
+6. *Advanced* → *Access Token Lifespan*: for example 5 minutes.
+
+Check a token before going on ([step 9](#check)): Keycloak's handling
+of a hardcoded `sub` depends on its version, and the gateway must see
+`sub: agent-patch-pilot`.
+
+### Other identity providers and a static token {#other-idp}
+
+Any OAuth 2.0 provider works whose client credentials tokens can carry
+those claims. Without one, give the agent a static token instead
+(`agent-admin set-credential NAME gateway-token`, and no `gateway.oauth`
+in its configuration). OpenShell does not renew a static token: replace
+it before it expires. `custos-tests` ships a test issuer
+(`/usr/libexec/custos/tests/testidp`) for test systems; it is not for
+production.
+
+### What is verified {#idp-status}
+
+CI runs this backend with real OpenShell, on Docker and on rootless
+Podman with SELinux enforcing. It uses mcp-gateway's HTTPS listener and
+the test issuer: tokens minted and renewed by OpenShell with the client
+credentials grant, calls under the agent's mode and approvals. A
+production identity provider such as Keycloak is not part of those
+tests (contract open item O10).
+
+## Step 6: the gateway trusts the issuer for agents {#issuers}
+
+The gateway accepts an `agent-*` subject over HTTPS only from an issuer
+listed for agents. Any other issuer's `agent-*` subject is denied
+everything, so a people's realm cannot mint agent identities by
+accident:
+
+```yaml
+# /etc/mcp-gateway/policy/agents/_http.yaml
+_http:
+  issuers: ["https://idp.example.com/realms/mcp"]
+```
+
+The file is the package's (`%config(noreplace)`, empty list by
+default). The gateway's policy engine reads it within seconds. Check:
+
+```bash
+curl -s --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http/issuers
+```
+
+Listing an issuer says that it gives `agent-*` subjects to agents only.
+In the identity provider, keep people from having such names.
+
+## Step 7: the agent's configuration {#configuration}
+
+```yaml
+version: 1
+name: patch-pilot
+description: Keeps the host patched, in a sandbox.
+model:
+  provider: openai
+  name: qwen3-32b
+  endpoint: http://host.openshell.internal:8000/v1   # the host's model server, seen from the sandbox
+instruction: You keep this host patched. Look before you change anything.
+gateway:
+  url: https://host.openshell.internal:8443/mcp      # = the gateway's http.audience
+  servers: [zypp, systemd]
+  oauth:
+    token_url: https://idp.example.com/realms/mcp/protocol/openid-connect/token
+    client_id: agent-patch-pilot
+    scopes: [mcp-agents]
+    refresh_before_seconds: 60
+sandbox: {kind: openshell, openshell_gateway: openshell}
+```
+
+- `gateway.url` must be `https://` (only the host's loopback may be
+  `http://`, for tests). `gateway.socket` and `gateway.url` exclude each
+  other.
+- `gateway.oauth` is only for OpenShell agents: OpenShell's gateway gets
+  the tokens. Without it, the agent uses a static token
+  ([above](#other-idp)).
+- `sandbox.openshell_gateway` names OpenShell's gateway as registered for
+  root (default `openshell`).
+- The sandbox's policy allows the model endpoint, for `agent-launcher`
+  only.
+
+## Step 8: creating the agent and its credential {#credential}
+
+```bash
+export CUSTOS_OPENSHELL_USER=osh                       # rootless Podman (step 1)
+agent-admin create patch-pilot --from patch-pilot.yaml
+agent-admin permissions patch-pilot < perms.yaml
+agent-admin set-credential patch-pilot gateway-client-secret < client-secret.txt
+```
+
+`create` writes the policy and the provider profile, imports the
+profile into OpenShell, and says what to set next. `set-credential …
+gateway-client-secret` then:
+
+1. creates the provider `agent-patch-pilot-gateway` with runtime
+   credentials;
+2. gives OpenShell's gateway the OAuth client (the secret through the
+   environment, never on a command line);
+3. gets the first token: a refused client fails here;
+4. creates the sandbox and enables the relay `agent-openshell@patch-pilot.socket`.
+
+With a static token: `agent-admin set-credential patch-pilot gateway-token < token.txt`.
+The secret is not kept by `agent-admin`: to recreate the provider later,
+set it again.
+
+## How the token is renewed {#oauth}
+
+OpenShell's gateway renews the token `refresh_before_seconds` before it
+expires (OpenShell's default if unset) and the sandbox's placeholder
+always resolves to the current one, so the agent needs no restart.
+While a renewal happens, OpenShell's proxy can answer a request with
+`500`; the agent retries for a few seconds and reconnects. Check the
+renewal:
+
+```bash
+openshell -g openshell provider refresh status agent-patch-pilot-gateway
+```
+
+## Step 9: checking the agent end to end {#check}
+
+```bash
+systemctl status agent-openshell@patch-pilot.service
+curl -s --unix-socket /run/agents/patch-pilot/api.sock http://agent/v1/status | jq '{lifecycle, gateway}'
+curl -s --unix-socket /run/agents/patch-pilot/api.sock http://agent/v1/activities \
+  -X POST -d '{"prompt": "List the pending updates.", "wait": true}' | jq '{state, summary}'
+journalctl -u mcp-gateway.service -o cat --since -10min | grep '"audit":true' | grep agent-patch-pilot
+```
+
+The gateway's records show `"sub":"agent-patch-pilot"` and the issuer.
+To see what the gateway makes of a token, fetch one with the client's
+secret and ask the gateway:
+
+```bash
+curl -s https://idp.example.com/realms/mcp/protocol/openid-connect/token \
+  -d grant_type=client_credentials -d client_id=agent-patch-pilot \
+  --data-urlencode client_secret@client-secret.txt -d scope=mcp-agents | jq -r .access_token >/root/agent.jwt
+mcp-gateway-admin setup http --token /root/agent.jwt      # the principal it sees, or why it refuses
+rm /root/agent.jwt
+```
+
+## Editing, stopping and deleting OpenShell agents {#edit}
+
+`agent-admin edit` applies the new configuration to the sandbox:
+
+| The edit changes | `edit` does |
+|---|---|
+| nothing the sandbox gets | restarts the relay (`try-restart agent-openshell@NAME.service`) |
+| the configuration, the model endpoint, `gateway.url` or the OAuth token URL, scopes or `refresh_before_seconds` | rewrites the policy and profile, and recreates the sandbox with its provider and image (up to 2 minutes). The state inside it (sessions) goes. It then starts what ran before |
+| `gateway.oauth` added or removed, or its `client_id` | stops the agent, deletes the sandbox and provider, and asks for `set-credential` again |
+| `sandbox.kind` or `sandbox.openshell_gateway` | refused: delete and create the agent |
+
+`systemctl stop agent-openshell@NAME.service` stops the relay and the
+sandbox. `agent-admin stop-all` stops every relay and sandbox, and the
+gateway denies them like any agent. `agent-admin delete NAME` removes the
+sandbox, the provider and its profile, the relay's drop-in and the
+agent's files.
