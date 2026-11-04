@@ -1,7 +1,7 @@
 # Custos — Contract
 
-Status: draft 1 (contract version `1`); §6a is a draft 2 design, not yet
-implemented. The project was named
+Status: draft 1 (contract version `1`); §6a is a draft 2 design, partly
+implemented (O11). The project was named
 cockpit-agentic until before its first release; the names and paths
 below are Custos's (`custos`, `/etc/custos`, …) and are the ones contract
 version 1 keeps.
@@ -246,7 +246,13 @@ local limits. A different host implementation changes none of this.
 
 ## 6a. Task categories and the promotion path (draft 2, O11)
 
-*Design, not yet implemented.* Part I defines the data, the measures and
+*Draft 2, partly implemented (O11).* Implemented: the catalog, the
+`category` field, the effective mode in the agents module, the
+envelope's `windows`, `promote` and `demote`, and their records. Not
+yet: readiness (so every promotion is made `--despite-readiness`, with a
+reason), the review of autonomous actions, the demotion evaluator and
+`rollback`, and `rate` (O12); an envelope with `rate` or `rollback` is
+refused until they are. Part I defines the data, the measures and
 the records. The commands named here are the reference implementation's
 (§17); another host or control plane provides the same actions. An
 agent's autonomy is promoted **per
@@ -289,13 +295,16 @@ field, §6):
 ```
 
 A permission's effective mode is its category's `mode` when the
-category has an entry, otherwise the agent's `mode`. Two exceptions:
-`advisory` on the agent caps every category, and a permission without
-a category (`uncategorized`) can never be promoted. §6's table applies
+category has an entry (`supervised` or `bounded`), otherwise
+`supervised`. A permission without a category (`uncategorized`) has the
+agent's `mode` and can never be promoted. `advisory` on the agent caps
+every category. A category entry with another mode denies the agent
+everything, as an unknown agent mode does (§6). §6's table applies
 unchanged to the effective mode, and so do `read_only` and pause, which
 need no category. Within a promoted category, the `autonomous: true` flag
 of §6 is not needed: every permission of a `bounded` category is
-autonomous inside its envelope. An agent-level `mode: bounded` keeps
+autonomous inside its envelope, and `agent-admin permissions` refuses
+`autonomous` together with `category`. An agent-level `mode: bounded` keeps
 its version-1 meaning, but only for permissions without a category, and
 is not part of the promotion path.
 
@@ -321,7 +330,7 @@ envelope:
 
 | Part | Enforced by | Outside it |
 |---|---|---|
-| `windows` | the gateway's policy (`time.now_ns()` in the agents module) | the call needs an approval, as supervised |
+| `windows` | the gateway's policy (`time.now_ns()` in the agents module); at least one is required. Each has `days` (`mon` … `sun`; every day if absent), `from` and `to` (`HH:MM`, `from` before `to`: a window across midnight is two windows) and `tz` (an IANA zone; `UTC` if absent) | the call needs an approval, as supervised |
 | `rate` | the gateway: a per-agent, per-category counter it keeps itself (mcp-gateway, O12) | the call needs an approval |
 | `rollback` | the demotion evaluator (below), outside the agent | the category is demoted |
 
@@ -367,7 +376,7 @@ action marked "should not have run" counts as an override.
 ### Promotion
 
 ```
-agent-admin promote NAME CATEGORY --envelope FILE [--reason TEXT]
+agent-admin promote NAME CATEGORY --envelope FILE [--despite-readiness --reason TEXT]
 ```
 
 The command checks the envelope against what the gateway can enforce,
@@ -376,6 +385,9 @@ met, unless it is given `--despite-readiness --reason TEXT`. It runs
 as root, through sudo or Cockpit's administrative access, so the person
 is authenticated, and it records the person (`SUDO_USER`). It writes
 the category's entry in the agent data and a promotion record (§10).
+It also refuses a category that is not in the catalog, an agent that is
+`advisory`, and an agent that has no permission in the category.
+Promoting a bounded category again replaces its envelope.
 
 ### Demotion
 
@@ -646,6 +658,8 @@ aggregation, policy distribution and approvals across hosts) is parked
 | `/usr/lib/systemd/system/agent@.{service,socket}`, `agent-schedule@.{service,timer}` | root 0644 | unit templates |
 | `/usr/share/mcp-gateway/policy/custos/agents.rego` | root 0644 | the autonomy modes (§6) |
 | `/usr/share/custos/gateway/servers.d/agents.yaml` | root 0644 | the `agents` server definition; copy to `/etc/mcp-gateway/servers.d/` to allow delegation |
+| `/usr/share/custos/categories.d/*.yaml` | root 0644 | the task categories' catalog (§6a) |
+| `/etc/custos/categories.d/*.yaml` | root 0644 | the administrator's categories: a file of a shipped name replaces it, an empty one disables it |
 | `/etc/custos/agents/<name>/agent.yaml` | root:agent-`<name>` 0640 | configuration (§14) |
 | `/etc/sysusers.d/agent-<name>.conf` | root 0644 | the agent's user |
 | `/etc/mcp-gateway/policy/agents/<name>.yaml` | root 0644 | mode, pause, permissions (§6). All agents' files, the emergency stop's `_control.yaml` and the agents' token issuers' `_http.yaml` (§6; both shipped by the package) are in this one directory: mcp-gateway's OPA (`--watch`) watches only directories it loaded a file from when it started |
@@ -789,8 +803,10 @@ standard error:
 | `delete NAME [--keep-state]` | disables and stops units; removes configuration, gateway data, credentials, drop-ins, timers and, unless kept, state. The user stays, since uids are not reused while files may still belong to them |
 | `trigger NAME_SCHEDULE` | starts the schedule's activity (run by `agent-schedule@.service`) |
 | `list` | the agents |
-| `show [NAME…]` | the gateway data (§6) of the named agents, or of all, and the emergency stop (§8), as JSON: `{"agents": {"<name>": {"mode", "paused", "paused_by"?, "permissions"}}, "control": {"stopped", "by"?, "at"?}}`. Needs no root: the files are readable by everyone |
-| `promote NAME CATEGORY --envelope FILE`, `demote NAME CATEGORY`, `readiness NAME [CATEGORY]` | *designed (§6a, O11)*: a category's promotion with its envelope, its demotion, and its readiness measures. `promote` and `demote` return once the gateway has loaded the change, as `mode` does |
+| `show [NAME…]` | the gateway data (§6) of the named agents, or of all, and the emergency stop (§8), as JSON: `{"agents": {"<name>": {"mode", "paused", "paused_by"?, "permissions", "categories"?}}, "control": {"stopped", "by"?, "at"?}}`, where `categories` is §6a's entries. Needs no root: the files are readable by everyone |
+| `categories` | the catalog (§6a), as JSON: `{"<category>": {"title", "description"?}}`. Needs no root |
+| `promote NAME CATEGORY --envelope FILE --despite-readiness --reason TEXT`, `demote NAME CATEGORY [--reason TEXT]` | a category's promotion with its envelope (`FILE` `-` is stdin), and its demotion (§6a). They write `categories.<category>` in the gateway data and a promotion record (§10), and return once the gateway has loaded the change, as `mode` does. Until readiness is measured, `promote` needs `--despite-readiness` with a reason |
+| `readiness NAME [CATEGORY]` | *designed (§6a, O11)*: a category's readiness measures |
 
 ## 18. SELinux (`custos` module)
 
@@ -855,10 +871,10 @@ the product and release process, tracked here so that nothing is lost.
 
 | Requirement | Contract | State in this repository |
 |---|---|---|
-| Supervised by default for every category; not configurable away at install | §6, §6a | done for agents (§6); categories designed (§6a, O11) |
-| Policy-bounded autonomy as a named destination, with an envelope (hosts, windows, rates, blast radius, rollback) | §6a | windows, rates and rollback designed (O11); rates need mcp-gateway (O12); hosts and blast radius across hosts parked with the fleet (O13) |
-| Observation period, override rate, explicit authenticated promotion, demotion path | §6a, §10 | designed (O11) |
-| Per-category, not whole-agent, promotion; audit per category | §6a, §10 | designed (O11) |
+| Supervised by default for every category; not configurable away at install | §6, §6a | done (§6, §6a) |
+| Policy-bounded autonomy as a named destination, with an envelope (hosts, windows, rates, blast radius, rollback) | §6a | `bounded` with `windows` done; rates and rollback designed (O11); rates need mcp-gateway (O12); hosts and blast radius across hosts parked with the fleet (O13) |
+| Observation period, override rate, explicit authenticated promotion, demotion path | §6a, §10 | promotion and demotion by hand done; observation, override rate and automatic demotion designed (O11) |
+| Per-category, not whole-agent, promotion; audit per category | §6a, §10 | done: `promote`, `demote`, promotion records (O11) |
 | Promotion-readiness view (override rate, incident rate, diversity, envelope size) | §6a | designed (O11) |
 | Hard capability limits, audit trail, emergency stop | §6, §8, §10, §15, §18 | done |
 | Prompt-injection defence | §6 (the gateway decides every call, never the model), §16a (egress fence) | the boundaries are done; detection and evaluation of injection attempts open (O14) |
@@ -952,10 +968,15 @@ the product and release process, tracked here so that nothing is lost.
   in a real Cockpit in the Leap 16 VM with SELinux enforcing (CI job
   `cockpit-vm`): logged in as a person, an approval decided in the page
   is the person's in the gateway's audit, not root's.
-- **O11 — task categories and promotion.** §6a: the catalog, the
-  `category` field, the effective mode in the agents module, `agent-admin
-  promote`, `demote`, `readiness`, the demotion evaluator, the readiness
-  view in Cockpit, and the after-the-fact review of autonomous actions.
+- **O11 — task categories and promotion.** §6a. Done: the catalog
+  (`categories.d`, `agent-admin categories`), the `category` field, the
+  effective mode and the envelope's `windows` in the agents module,
+  `agent-admin promote` and `demote`, the promotion records, and `show`
+  with the categories; tested with OPA against the gateway's policy and
+  in the functional tests. Open: `readiness` and the thresholds in
+  `/etc/custos/promotion.yaml`, the demotion evaluator and `rollback`,
+  the after-the-fact review of autonomous actions (`category.review`),
+  and the readiness view in Cockpit.
 - **O12 — envelope limits in the gateway.** A per-agent, per-category
   call counter in mcp-gateway, with the window and the limit from the
   agent data, so that `rate` is enforced where the approvals are.

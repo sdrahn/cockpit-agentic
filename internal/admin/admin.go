@@ -27,6 +27,7 @@ import (
 
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/delegate"
+	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/openshell"
 )
 
@@ -65,6 +66,9 @@ type Admin struct {
 	Sleep func(time.Duration)
 	// SandboxGone bounds the wait for a deleted sandbox to be gone.
 	SandboxGone time.Duration
+	// Journal gives the promotion records' logger for an agent (§10);
+	// nil: journald as custos-promotion.
+	Journal func(name string) journal.Logger
 }
 
 // New is agent-admin on a host. Its standard output is its own messages
@@ -631,6 +635,8 @@ type GatewayData struct {
 	Paused      bool             `yaml:"paused,omitempty" json:"paused"`
 	PausedBy    string           `yaml:"paused_by,omitempty" json:"paused_by,omitempty"`
 	Permissions []map[string]any `yaml:"permissions" json:"permissions"`
+	// Categories are the task categories promoted or demoted (§6a).
+	Categories map[string]*CategoryState `yaml:"categories,omitempty" json:"categories,omitempty"`
 }
 
 // gatewayFile is the agent's file in GatewayAgents: <name>.yaml, whose
@@ -670,7 +676,17 @@ func (a *Admin) writeGateway(name string, d *GatewayData) error {
 		m, _ := v.(map[string]any)
 		perms, _ := m["permissions"].([]any)
 		paused, _ := m["paused"].(bool)
-		return m != nil && m["mode"] == d.Mode && paused == d.Paused && len(perms) == len(d.Permissions)
+		if m == nil || m["mode"] != d.Mode || paused != d.Paused || len(perms) != len(d.Permissions) {
+			return false
+		}
+		cats, _ := m["categories"].(map[string]any)
+		for n, c := range d.Categories {
+			got, _ := cats[n].(map[string]any)
+			if got == nil || got["mode"] != c.Mode {
+				return false
+			}
+		}
+		return true
 	})
 }
 
@@ -713,6 +729,17 @@ func (a *Admin) SetPermissions(name string, from io.Reader) error {
 		for k := range p {
 			switch k {
 			case "server", "tool", "resource", "prompt", "args", "read_only", "autonomous", "approval_channel", "approval_scopes", "effect", "obligations":
+			case "category":
+				c, ok := p["category"].(string)
+				if !ok {
+					return fmt.Errorf("permissions[%d]: category is a name", i)
+				}
+				if err := a.checkCategory(c); err != nil {
+					return fmt.Errorf("permissions[%d]: %w", i, err)
+				}
+				if p["autonomous"] != nil {
+					return fmt.Errorf("permissions[%d]: autonomous is for permissions without a category; a category is promoted with agent-admin promote", i)
+				}
 			default:
 				return fmt.Errorf("permissions[%d]: unknown key %q", i, k)
 			}

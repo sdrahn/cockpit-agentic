@@ -1,7 +1,7 @@
 ---
 title: "6. Permissions and autonomy modes"
-description: What an agent may do at the gateway, how a permission is written (server, tool, args, read_only, autonomous), the three autonomy modes, changing them, and checking what the gateway would decide.
-tags: [permissions, autonomy, modes, supervised, bounded, advisory, policy]
+description: What an agent may do at the gateway, how a permission is written (server, tool, args, read_only, autonomous, category), the three autonomy modes, task categories and promoting one to act without approval within its time windows, and checking what the gateway would decide.
+tags: [permissions, autonomy, modes, supervised, bounded, advisory, policy, categories, promote, demote, envelope]
 ---
 
 # 6. Permissions and autonomy modes
@@ -114,16 +114,98 @@ In Cockpit:
   It does not check `args`. The gateway's own decision is the one that
   counts.
 
+## Task categories {#categories}
+
+A task category names a kind of work, such as `patch-errata`. An
+agent's autonomy is promoted one category at a time, never for the whole
+agent: promoting `patch-errata` changes nothing for `config-lifecycle`.
+The catalog ships three categories:
+
+| Category | For |
+|---|---|
+| `patch-errata` | installing patches and errata, refreshing repositories |
+| `security-response` | responding to a security finding: isolating a service, rotating a credential, blocking an address |
+| `config-lifecycle` | changing configuration files; starting, stopping or restarting services |
+
+`agent-admin categories` lists the catalog. To add a category, put a
+file in `/etc/custos/categories.d/`, for example `backups.yaml` with
+`backups: {title: Backups}`. A file with a shipped name
+(`patch-errata.yaml`) replaces that one, and an empty one disables it.
+
+A permission joins a category with `category:`:
+
+```yaml
+- {server: zypp, tool: 'list_*', read_only: true}
+- {server: zypp, tool: patch, category: patch-errata}
+- {server: systemd, tool: restart_unit, category: config-lifecycle, args: {unit: '^nginx\.service$'}}
+```
+
+A permission in a category is supervised until its category is
+promoted, whatever the agent's mode. `advisory` still caps everything.
+A permission without a category keeps the agent's mode and its
+`autonomous` flag, and `autonomous` cannot be combined with `category`.
+
+## Promoting a category {#promote}
+
+A promoted category acts without approval, but only within its
+**envelope**: the time windows in which that is allowed. Outside them
+its calls need an approval again. Write the envelope to a file:
+
+```yaml
+# window.yaml: Saturdays 02:00 to 04:00, Berlin time
+windows:
+  - {days: [sat], from: '02:00', to: '04:00', tz: Europe/Berlin}
+```
+
+Each window has `days` (`mon` to `sun`; every day if left out), `from`
+and `to` (`HH:MM`; `from` before `to`, so a window across midnight is
+two windows) and `tz` (an IANA zone; `UTC` if left out). Then promote:
+
+```bash
+agent-admin promote patch-pilot patch-errata --envelope window.yaml \
+    --despite-readiness --reason "patched by hand for a month without overrides"
+```
+
+`--despite-readiness` and a reason are required for now: Custos does
+not measure readiness (how often approvers overrode the category's
+proposals) yet, so the reason is the record of why you promoted.
+`promote` refuses:
+
+- a category that is not in the catalog, or in which the agent has no
+  permission;
+- an agent in `advisory` mode;
+- `rate` and `rollback` in the envelope (not enforced yet), and `hosts`
+  or `blast_radius` (they need a fleet). It refuses them rather than
+  ignore them.
+
+It returns once the gateway has the change, and writes a
+`category.promoted` record ([chapter 10](10-monitoring-and-audit.md#promotion-records)).
+Promoting a promoted category again replaces its envelope.
+`agent-admin show NAME` lists the agent's categories with their mode,
+envelope and who promoted them.
+
+## Demoting a category {#demote}
+
+```bash
+agent-admin demote patch-pilot patch-errata --reason "a patch broke nginx"
+```
+
+The category is supervised again, so its calls need an approval. Its
+envelope stays for a later promotion. The record is `category.demoted`.
+Pause and the emergency stop still stop everything, promoted or not.
+
 ## How the gateway applies modes {#how-enforced}
 
 The module `agents.rego` (`/usr/share/mcp-gateway/policy/custos/agents.rego`)
 turns each permission of an agent principal into a gateway permission.
 Read-only ones are kept as they are. Autonomous ones are kept as they are
-in `bounded` mode. Every other one gets `require_approval: true` with the
+in `bounded` mode, and so are the permissions of a promoted category
+within one of its windows. Every other one gets `require_approval: true` with the
 channel `oob` in `supervised` and `bounded` mode, and is left out in
 `advisory` mode. It denies an agent everything when:
 
-- the agent has no data, or its mode is none of the three;
+- the agent has no data, or its mode is none of the three, or a
+  category's mode is neither `supervised` nor `bounded`;
 - it is paused, or the emergency stop is on;
 - a gateway role is bound to its user;
 - it comes over HTTPS with a token from an issuer not listed for agents

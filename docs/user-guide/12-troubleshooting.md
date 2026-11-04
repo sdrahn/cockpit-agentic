@@ -137,6 +137,15 @@ anyway. Check in this order:
 | `Approving your own request needs your password: …` | the approval is the person's own, which only `self` allows | use mcp-gateway's page or its command line, which ask for the password |
 | an agent shows *unreachable* | its socket refused the person, or the agent failed | the row says why; see [above](#agent-start) |
 
+## A promoted category still asks for an approval {#promotion}
+
+| You see | Cause | Fix |
+|---|---|---|
+| the call waits for an approval although `show` says `bounded` | it is outside the envelope's windows: check `days`, `from`, `to`, and `tz` (without `tz` the window is UTC) | `agent-admin promote` again with the right window |
+| | the permission that matches the call has no `category`, or another one | `agent-admin show NAME`; give the permission the category |
+| every call of the agent is denied | a category's `mode` in its gateway data is neither `supervised` nor `bounded` (edited by hand) | `agent-admin demote`, or promote again |
+| `agent … is advisory, which caps every category` | advisory allows no change, promoted or not | `agent-admin mode NAME supervised`, then promote |
+
 ## OpenShell agents and tokens {#openshell}
 
 | You see | Cause | Fix |
@@ -179,6 +188,14 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | Message (as printed) | Section |
 |---|---|
 | any `version:`, `name:`, `model.`, `gateway.`, `schedules[…]`, `client_tools:`, `sandbox.kind:` message | [Configuration errors](#configuration-errors) |
+| `no task category "…" (the catalog has: …)` | the name is not in `agent-admin categories` ([chapter 6](06-permissions-and-modes.md#categories)) |
+| `readiness is not measured yet (CONTRACT.md O11): promote with --despite-readiness --reason TEXT` | add both ([chapter 6](06-permissions-and-modes.md#promote)) |
+| `agent … has no permission in category …` | give a permission `category:` first |
+| `agent … is advisory, which caps every category` | [A promoted category still asks](#promotion) |
+| `envelope: rate is not enforced by mcp-gateway yet`, `envelope: rollback needs the demotion evaluator`, `envelope: hosts needs the fleet`, `envelope: blast_radius needs the fleet` | leave the part out; only `windows` is enforced so far |
+| `envelope: no windows`, `envelope: windows[…]: …` | write at least one window: `days`, `from`, `to` (`HH:MM`, `from` before `to`), `tz` |
+| `permissions[…]: autonomous is for permissions without a category` | drop `autonomous`; promote the category instead |
+| `agent …: category … is not promoted` (demote) | it is supervised already |
 | `agent … exists` | the agent exists: `edit`, or `delete` first |
 | `"…" is not a valid agent name` | [Configuration errors](#configuration-errors) |
 | `no configuration on stdin` | `--from -` with nothing piped in |

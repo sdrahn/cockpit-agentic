@@ -55,7 +55,7 @@ Events: `agent.start`, `agent.stop`, `config.invalid`, `agent.paused`,
 `agent.resumed`, `invocation.start`, `invocation.end`,
 `activity.cancel`, `model.call`, `tool.call`, `tool.result`,
 `tool.denied.local`, `approval.pending`, `approval.resolved`,
-`limit.exceeded`. Each has its own `MESSAGE_ID` (`CONTRACT.md` §10), so
+`limit.exceeded`, and the promotion records below. Each has its own `MESSAGE_ID` (`CONTRACT.md` §10), so
 `journalctl MESSAGE_ID=…` finds one kind across agents.
 
 ```bash
@@ -67,6 +67,25 @@ journalctl -o json AGENT_NAME=patch-pilot AGENT_INVOCATION=e-0daa8a73-… | jq -
 Arguments never appear in the agents' records. The gateway shows them
 with a pending approval to those who may decide, and logs them as its
 policy says.
+
+## Promotion records {#promotion-records}
+
+`agent-admin promote` and `demote` write a record for each change of a
+task category's mode ([chapter 6](06-permissions-and-modes.md#promote)),
+with `SYSLOG_IDENTIFIER=custos-promotion`:
+
+| Field | Value |
+|---|---|
+| `AGENT_EVENT` | `category.promoted`, `category.demoted` |
+| `AGENT_NAME`, `AGENT_CATEGORY` | the agent, the category |
+| `AGENT_MODE_FROM`, `AGENT_MODE_TO` | `supervised`, `bounded` |
+| `AGENT_BY`, `AGENT_REASON` | who (the person behind `sudo`) and why |
+| `AGENT_PROMOTION` | the promotion's id (`p-…`), also in the agent's gateway data |
+| `AGENT_ENVELOPE_SHA256` | the envelope's digest |
+
+```bash
+journalctl -t custos-promotion -o json | jq -r '[.__REALTIME_TIMESTAMP, .AGENT_EVENT, .AGENT_NAME, .AGENT_CATEGORY, .AGENT_BY, .AGENT_REASON] | @tsv'
+```
 
 ## The gateway's audit records {#gateway-audit}
 

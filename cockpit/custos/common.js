@@ -273,7 +273,32 @@ const MODE_TEXT = {
 };
 
 function permKind(p) {
-    return p.read_only ? "read-only" : p.autonomous ? "changes · autonomous" : "changes the system";
+    return p.read_only ? "read-only" : p.category ? "changes · " + p.category : p.autonomous ? "changes · autonomous" : "changes the system";
+}
+
+/* A promoted category's envelope (§6a): its windows, as the agents
+ * module reads them (days mon…sun or all, from ≤ now < to, in tz or UTC). */
+const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+function inWindow(w, now) {
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: w.tz || "UTC", weekday: "short",
+                                                     hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+    const get = t => parts.find(x => x.type === t).value;
+    const minutes = s => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5));
+    const at = Number(get("hour")) * 60 + Number(get("minute"));
+    return (w.days || WEEKDAYS).includes(get("weekday").toLowerCase().slice(0, 3)) && minutes(w.from) <= at && at < minutes(w.to);
+}
+
+function inEnvelope(c, now) {
+    const windows = (c.envelope && c.envelope.windows) || [];
+    return windows.length === 0 || windows.some(w => inWindow(w, now));
+}
+
+/* categoryMode is the mode of a permission's task category: bounded
+ * once promoted, else supervised. */
+function categoryMode(p, data) {
+    const c = (data.categories || {})[p.category];
+    return c && c.mode ? c.mode : "supervised";
 }
 
 /* permEffect is [text, badge class] of a permission in force now. */
@@ -282,6 +307,11 @@ function permEffect(p, data, control) {
     if (data.paused) return ["denied (paused)", "badge-bad"];
     if (p.read_only) return ["allowed", "badge-ok"];
     if (data.mode === "advisory") return ["denied (advisory mode)", "badge-bad"];
+    if (p.category) {
+        if (categoryMode(p, data) !== "bounded") return ["needs approval", "badge-waiting"];
+        return inEnvelope(data.categories[p.category], new Date())
+            ? ["allowed, no approval (in its window)", "badge-ok"] : ["needs approval (outside its window)", "badge-waiting"];
+    }
     if (data.mode === "bounded" && p.autonomous) return ["allowed, no approval", "badge-ok"];
     return ["needs approval", "badge-waiting"];
 }
@@ -304,7 +334,8 @@ function decideTool(data, control, server, tool) {
     const [text, cls] = matching.map(p => permEffect(p, data, control)).sort((x, y) => rank[y[1]] - rank[x[1]])[0];
     const p = matching.find(p => permEffect(p, data, control)[1] === cls);
     const args = matching.some(p => p.args) ? "; its argument constraints are not checked here" : "";
-    return { text, cls, why: "by the permission " + p.server + "__" + (p.tool || "*") + " (" + permKind(p) + ") in " + data.mode + " mode" + args };
+    const where = p.category && data.mode !== "advisory" ? "category " + p.category + ", " + categoryMode(p, data) : data.mode + " mode";
+    return { text, cls, why: "by the permission " + p.server + "__" + (p.tool || "*") + " (" + permKind(p) + ") in " + where + args };
 }
 
 /* findActivity is an activity by agent and id, from the last refresh. */

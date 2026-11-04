@@ -7,6 +7,23 @@ removed.
 
 ## Unreleased
 
+### Added
+
+- Task categories (CONTRACT.md §6a): an agent's autonomy is promoted
+  per category, not for the whole agent. The catalog ships
+  `patch-errata`, `security-response` and `config-lifecycle`
+  (`/usr/share/custos/categories.d`, your own in
+  `/etc/custos/categories.d`; `agent-admin categories`). A permission
+  joins one with `category:`, and stays supervised until its category
+  is promoted.
+- `agent-admin promote NAME CATEGORY --envelope FILE` lets a category
+  act without approval within its envelope's time windows, which the
+  gateway's policy enforces; outside them its calls need an approval.
+  Until readiness is measured, it needs `--despite-readiness --reason
+  TEXT`. `agent-admin demote` takes it back. Both are recorded in the
+  journal (`custos-promotion`, `category.promoted`,
+  `category.demoted`), and `agent-admin show` lists the categories.
+
 ### Fixed
 
 - An OpenShell agent's unit could fail to start after a restart (a

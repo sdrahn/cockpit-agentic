@@ -132,3 +132,99 @@ test_http_agent_stopped_and_paused if {
 		with data.mcp.agents as a
 		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
 }
+
+# Task categories (CONTRACT.md §6a).
+cat_agent(mode, categories) := {"patch-pilot": {"mode": mode, "categories": categories, "permissions": [
+	{"server": "zypp", "tool": "list_*", "read_only": true},
+	{"server": "zypp", "tool": "install_patches", "category": "patch-errata"},
+	{"server": "systemd", "tool": "restart_unit", "category": "config-lifecycle"},
+	{"server": "systemd", "tool": "reload_unit", "autonomous": true},
+]}}
+
+# Saturday 2026-11-07 03:00 in Berlin (02:00 UTC), and Saturday 05:00.
+sat_0300_berlin := time.parse_rfc3339_ns("2026-11-07T02:00:00Z")
+
+sat_0500_berlin := time.parse_rfc3339_ns("2026-11-07T04:00:00Z")
+
+window := {"windows": [{"days": ["sat"], "from": "02:00", "to": "04:00", "tz": "Europe/Berlin"}]}
+
+promoted := {"patch-errata": {"mode": "bounded", "envelope": window}}
+
+cat_effect(mode, categories, server, tool, now) := e if {
+	e := authz.decision.effect with input as call(pp, server, tool, {})
+		with data.mcp.agents as cat_agent(mode, categories)
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+		with time.now_ns as now
+}
+
+test_category_supervised_by_default if {
+	# A category without an entry is supervised, even on a bounded agent.
+	cat_effect("bounded", {}, "zypp", "install_patches", sat_0300_berlin) == "ask"
+	cat_effect("supervised", {}, "zypp", "install_patches", sat_0300_berlin) == "ask"
+}
+
+test_promoted_category_in_its_window if {
+	cat_effect("supervised", promoted, "zypp", "install_patches", sat_0300_berlin) == "allow"
+}
+
+test_promoted_category_outside_its_window_asks if {
+	cat_effect("supervised", promoted, "zypp", "install_patches", sat_0500_berlin) == "ask"
+
+	# Another day at the same time.
+	fri := time.parse_rfc3339_ns("2026-11-06T02:00:00Z")
+	cat_effect("supervised", promoted, "zypp", "install_patches", fri) == "ask"
+}
+
+test_promotion_is_per_category if {
+	# Promoting patch-errata leaves config-lifecycle supervised.
+	cat_effect("supervised", promoted, "systemd", "restart_unit", sat_0300_berlin) == "ask"
+}
+
+test_uncategorized_keeps_the_agent_mode if {
+	# Version 1's autonomous flag still applies to a permission without a
+	# category, and only there.
+	cat_effect("bounded", promoted, "systemd", "reload_unit", sat_0500_berlin) == "allow"
+	cat_effect("supervised", promoted, "systemd", "reload_unit", sat_0300_berlin) == "ask"
+}
+
+test_advisory_caps_every_category if {
+	cat_effect("advisory", promoted, "zypp", "install_patches", sat_0300_berlin) == "deny"
+	cat_effect("advisory", promoted, "zypp", "list_updates", sat_0300_berlin) == "allow"
+}
+
+test_demoted_category_asks if {
+	demoted := {"patch-errata": {"mode": "supervised", "envelope": window}}
+	cat_effect("supervised", demoted, "zypp", "install_patches", sat_0300_berlin) == "ask"
+}
+
+test_envelope_without_windows_is_always if {
+	always := {"patch-errata": {"mode": "bounded", "envelope": {}}}
+	cat_effect("supervised", always, "zypp", "install_patches", sat_0500_berlin) == "allow"
+}
+
+test_window_without_days_or_tz if {
+	utc := {"patch-errata": {"mode": "bounded", "envelope": {"windows": [{"from": "01:30", "to": "02:30"}]}}}
+	cat_effect("supervised", utc, "zypp", "install_patches", sat_0300_berlin) == "allow"
+	cat_effect("supervised", utc, "zypp", "install_patches", sat_0500_berlin) == "ask"
+}
+
+test_window_ends_before_to if {
+	at_0400 := time.parse_rfc3339_ns("2026-11-07T03:00:00Z")
+	cat_effect("supervised", promoted, "zypp", "install_patches", at_0400) == "ask"
+}
+
+test_unknown_category_mode_denies_everything if {
+	bad := {"patch-errata": {"mode": "autonomous"}}
+	cat_effect("supervised", bad, "zypp", "list_updates", sat_0300_berlin) == "deny"
+}
+
+test_category_is_not_passed_to_the_gateway if {
+	ps := authz.perms with input as call(pp, "zypp", "install_patches", {})
+		with data.mcp.agents as cat_agent("supervised", promoted)
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+		with time.now_ns as sat_0300_berlin
+	count(ps) > 0
+	every q in ps {
+		not q.category
+	}
+}
