@@ -198,6 +198,11 @@ if [ -n "$relay_ok" ]; then
 		{
 			echo "    | the agent answered: $(jq -c '{state, summary, reason, calls: [.calls[]? | {tool, state, reason}]}' <<<"$a" 2>/dev/null || head -c 400 <<<"$a")"
 			journalctl --no-pager -o cat --since "@$t0" AGENT_NAME=sb 2>/dev/null | tail -n 15 | sed 's/^/    | agent: /'
+			# OpenShell's proxy verifies the gateway with the first CA bundle
+			# it finds (PR 862): which exist in the sandbox, and has ours?
+			ca_line=$(sed -n 2p "$work/tls/ca.pem")
+			timeout 30 openshell -g openshell sandbox exec -n agent-sb -- /bin/sh -c "for f in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/ca-bundle.pem /etc/ssl/cert.pem; do if [ -e \$f ]; then echo \"\$f: \$(grep -c 'BEGIN CERT' \$f) certs, ours: \$(grep -cF '$ca_line' \$f)\"; else echo \"\$f: none\"; fi; done" </dev/null 2>&1 | sed 's/^/    | sandbox: /'
+			timeout 5 /usr/libexec/cockpit-agentic/agent-openshell-logs agent-sb </dev/null 2>&1 | grep -iE '18443|ca bundle|certificate|tls' | tail -n 8 | sed 's/^/    | supervisor: /'
 		}
 	check "the gateway audited the call as agent-sb over HTTPS" eventually 10 gw_audit_has '.sub == "agent-sb" and .name == "probe" and .effect == "allow"' ||
 		journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
