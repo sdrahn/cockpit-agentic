@@ -7,6 +7,15 @@ removed.
 
 ## Unreleased
 
+### Fixed
+
+- An OpenShell agent's activity could fail right after OpenShell renewed
+  its gateway token: the proxy closed the connection without an answer
+  (`rejected by transport: … EOF`), and the agent did not try again. A
+  dropped request that is safe to repeat (listing tools, initialize,
+  ping) is now retried with the same backoff as the proxy's 500s; a
+  dropped `tools/call` is not, since it may have reached the gateway.
+
 ## v0.1.0 — 2026-11-04
 
 The first release: governed AI agents on SUSE Linux Enterprise Server 16
