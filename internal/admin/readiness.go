@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -68,26 +69,34 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 		cats = only
 	}
 	now := a.Now()
-	since := "@" + strconv.FormatInt(now.AddDate(0, 0, -th.WindowDays).Unix(), 10)
-	read := a.JournalJSON
-	if read == nil {
-		read = func(args ...string) ([]byte, error) {
-			return exec.Command("journalctl", append([]string{"-o", "json", "--no-pager", "--since", since}, args...)...).Output()
-		}
-	}
-	agentLog, err := read("AGENT_NAME="+name, "AGENT_CONTRACT=1")
+	recs, decisions, err := a.journalRecords(name, now.AddDate(0, 0, -th.WindowDays))
 	if err != nil {
-		return nil, fmt.Errorf("reading agent %s's journal: %w", name, err)
+		return nil, err
 	}
-	gwLog, err := read("-u", "mcp-gateway.service")
-	if err != nil {
-		return nil, fmt.Errorf("reading mcp-gateway's journal: %w", err)
-	}
-	recs := readiness.ParseRecords(agentLog)
-	decisions := readiness.ParseDecisions(gwLog, "agent-"+name)
 	r := &Report{Agent: name, Thresholds: th, Categories: map[string]readiness.Measures{}}
 	for _, c := range cats {
 		r.Categories[c] = readiness.Measure(c, d.Permissions, recs, decisions, th, now)
 	}
 	return r, nil
+}
+
+// journalRecords reads the agent's records and the gateway's decisions
+// for it since then.
+func (a *Admin) journalRecords(name string, since time.Time) ([]readiness.Record, map[string]readiness.Decision, error) {
+	at := "@" + strconv.FormatInt(since.Unix(), 10)
+	read := a.JournalJSON
+	if read == nil {
+		read = func(args ...string) ([]byte, error) {
+			return exec.Command("journalctl", append([]string{"-o", "json", "--no-pager", "--since", at}, args...)...).Output()
+		}
+	}
+	agentLog, err := read("AGENT_NAME="+name, "AGENT_CONTRACT=1")
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading agent %s's journal: %w", name, err)
+	}
+	gwLog, err := read("-u", "mcp-gateway.service")
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading mcp-gateway's journal: %w", err)
+	}
+	return readiness.ParseRecords(agentLog), readiness.ParseDecisions(gwLog, "agent-"+name), nil
 }

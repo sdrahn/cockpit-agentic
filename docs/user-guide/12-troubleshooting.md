@@ -194,7 +194,10 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | `reading agent …'s journal`, `reading mcp-gateway's journal` | `agent-admin readiness` needs root or the `systemd-journal` group |
 | `agent … has no permission in category …` | give a permission `category:` first |
 | `agent … is advisory, which caps every category` | [A promoted category still asks](#promotion) |
-| `envelope: rate is not enforced by mcp-gateway yet`, `envelope: rollback needs the demotion evaluator`, `envelope: hosts needs the fleet`, `envelope: blast_radius needs the fleet` | leave the part out; only `windows` is enforced so far |
+| `envelope: rate is not enforced by mcp-gateway yet`, `envelope: hosts needs the fleet`, `envelope: blast_radius needs the fleet` | leave the part out; `windows` and `rollback` are enforced so far |
+| `envelope: rollback: …` | `on` lists at least one of `tool_error`, `limit_exceeded`, `health_check_failed`; `health_check` (a command) is given exactly when `health_check_failed` is ([chapter 6](06-permissions-and-modes.md#auto-demote)) |
+| `agent … category … demoted: …` (from `agent-admin evaluate` or `custos-demote.service`) | the demotion evaluator demoted it, for the reason given; promote it again once that is resolved |
+| `agent-admin: custos-demote.timer could not be enabled …` | nothing demotes automatically: `systemctl enable --now custos-demote.timer` |
 | `envelope: no windows`, `envelope: windows[…]: …` | write at least one window: `days`, `from`, `to` (`HH:MM`, `from` before `to`), `tz` |
 | `permissions[…]: autonomous is for permissions without a category` | drop `autonomous`; promote the category instead |
 | `agent …: category … is not promoted` (demote) | it is supervised already |

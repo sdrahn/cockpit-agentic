@@ -20,7 +20,14 @@ import (
 // test root, and an agent with permissions in two of them.
 func withCategories(t *testing.T) (*Admin, *journal.Memory) {
 	t.Helper()
-	a, _ := newAdmin(t)
+	a, mem, _ := withCategoriesRec(t)
+	return a, mem
+}
+
+// withCategoriesRec is withCategories with the commands agent-admin ran.
+func withCategoriesRec(t *testing.T) (*Admin, *journal.Memory, *rec) {
+	t.Helper()
+	a, r := newAdmin(t)
 	m, err := filepath.Glob("../../packaging/categories/*.yaml")
 	if err != nil || len(m) == 0 {
 		t.Fatalf("no shipped categories: %v", err)
@@ -40,7 +47,7 @@ func withCategories(t *testing.T) (*Admin, *journal.Memory) {
 	if err := a.SetPermissions("patch-pilot", strings.NewReader(perms)); err != nil {
 		t.Fatal(err)
 	}
-	return a, mem
+	return a, mem, r
 }
 
 const sat = "windows:\n  - {days: [sat], from: '02:00', to: '04:00', tz: Europe/Berlin}\n"
@@ -171,7 +178,12 @@ func TestPromoteRefuses(t *testing.T) {
 		}, "needs --reason"},
 		{"no windows", func() error { return promote(a, "patch-errata", "windows: []\n") }, "no windows"},
 		{"rate", func() error { return promote(a, "patch-errata", sat+"rate: {calls: 20, per: 1h}\n") }, "not enforced by mcp-gateway yet (CONTRACT.md O12)"},
-		{"rollback", func() error { return promote(a, "patch-errata", sat+"rollback: {on: [tool_error]}\n") }, "demotion evaluator"},
+		{"rollback without conditions", func() error { return promote(a, "patch-errata", sat+"rollback: {on: []}\n") }, "rollback: no conditions"},
+		{"unknown rollback condition", func() error { return promote(a, "patch-errata", sat+"rollback: {on: [disk_full]}\n") }, `condition "disk_full"`},
+		{"health check without a command", func() error { return promote(a, "patch-errata", sat+"rollback: {on: [health_check_failed]}\n") }, "health_check_failed and health_check (a command) go together"},
+		{"a command without health_check_failed", func() error {
+			return promote(a, "patch-errata", sat+"rollback: {on: [tool_error], health_check: 'true'}\n")
+		}, "go together"},
 		{"hosts", func() error { return promote(a, "patch-errata", sat+"hosts: [web1]\n") }, "parked (CONTRACT.md O13)"},
 		{"blast radius", func() error { return promote(a, "patch-errata", sat+"blast_radius: {hosts: 2}\n") }, "parked (CONTRACT.md O13)"},
 		{"unknown key", func() error { return promote(a, "patch-errata", sat+"whenever: true\n") }, `unknown key "whenever"`},

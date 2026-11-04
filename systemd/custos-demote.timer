@@ -1,0 +1,13 @@
+# Runs the demotion evaluator every 5 minutes (CONTRACT.md §6a).
+# agent-admin promote enables it.
+[Unit]
+Description=Custos demotion evaluator, every 5 minutes
+Documentation=https://github.com/sdrahn/custos/blob/main/CONTRACT.md
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
