@@ -3,30 +3,30 @@
 # Copyright SUSE LLC
 # SPDX-License-Identifier: FSFAP
 #
-# Package: cockpit-agentic cockpit-agentic-tests mcp-gateway
-# Summary: Functional tests of cockpit-agentic (package cockpit-agentic-tests):
+# Package: custos custos-tests mcp-gateway
+# Summary: Functional tests of Custos (package custos-tests):
 #          agents under systemd governed by mcp-gateway, approvals,
 #          autonomy modes, intervention, schedules, AG-UI, delegation,
 #          journal records, sandbox, no SELinux denials. Each check
 #          becomes a result of its own (JUnit).
-# Maintainer: cockpit-agentic maintainers
+# Maintainer: Custos maintainers
 
 use Mojo::Base 'consoletest';
 use testapi;
 use serial_terminal 'select_serial_terminal';
 use utils qw(zypper_call);
 
-my $results = '/var/tmp/cockpit-agentic-tests';
+my $results = '/var/tmp/custos-tests';
 
 sub run {
     select_serial_terminal;
     # The tests check the SELinux domains when SELinux is enforcing, as the
     # product ships it, and skip those checks otherwise.
-    zypper_call('in cockpit-agentic-tests cockpit-agentic-selinux mcp-gateway-selinux');
+    zypper_call('in custos-tests custos-selinux mcp-gateway-selinux');
     assert_script_run("mkdir -p $results");
     # Exit status 0: all passed; 1: a check failed (the JUnit results say
     # which); 2: wrong usage.
-    my $rc = script_run("/usr/libexec/cockpit-agentic/tests/run-tests.sh --disposable --results $results "
+    my $rc = script_run("/usr/libexec/custos/tests/run-tests.sh --disposable --results $results "
           . "> $results/run.log 2>&1", timeout => 1800);
     upload_logs("$results/run.log");
     die "run-tests.sh did not run (exit status $rc)" if $rc == 2 || script_run("test -s $results/results.xml") != 0;

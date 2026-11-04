@@ -2,7 +2,7 @@
 # (agent-schedule@<agent>_<schedule>.timer.d/schedule.conf).
 [Unit]
 Description=Schedule %i
-Documentation=https://github.com/sdrahn/cockpit-agentic/blob/main/CONTRACT.md
+Documentation=https://github.com/sdrahn/custos/blob/main/CONTRACT.md
 
 [Timer]
 Persistent=yes

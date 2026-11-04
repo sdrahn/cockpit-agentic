@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/sdrahn/cockpit-agentic/internal/openai"
+	"github.com/sdrahn/custos/internal/openai"
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
 )
@@ -27,16 +27,16 @@ func req(text string, tools ...string) *request {
 }
 
 func TestScript(t *testing.T) {
-	m := &Model{Prefix: "agentic-test"}
+	m := &Model{Prefix: "custos-test"}
 	for _, tc := range []struct {
 		in, tool, text string
 		tools          []string
 	}{
-		{"please PROBE", "agentic-test__probe", "", []string{"agentic-test__probe"}},
-		{"CHANGE it", "agentic-test__change", "Writing the test marker; no other impact.", []string{"agentic-test__change"}},
-		{"CHANGE it", "", "not offered: agentic-test__change", nil},
+		{"please PROBE", "custos-test__probe", "", []string{"custos-test__probe"}},
+		{"CHANGE it", "custos-test__change", "Writing the test marker; no other impact.", []string{"custos-test__change"}},
+		{"CHANGE it", "", "not offered: custos-test__change", nil},
 		{"DELEGATE t1 PROBE now", "agents__delegate", "Handing this to t1.", []string{"agents__delegate"}},
-		{"hello", "", "ok", []string{"agentic-test__probe"}},
+		{"hello", "", "ok", []string{"custos-test__probe"}},
 	} {
 		got := m.Respond(req(tc.in, tc.tools...))
 		tool := ""
@@ -67,20 +67,20 @@ func TestScript(t *testing.T) {
 // The launcher's own model adapter understands it: the same path the
 // installed agents use.
 func TestWithLauncherAdapter(t *testing.T) {
-	srv := httptest.NewServer(&Model{Prefix: "agentic-test"})
+	srv := httptest.NewServer(&Model{Prefix: "custos-test"})
 	defer srv.Close()
 	llm := (&openai.Model{Endpoint: srv.URL + "/v1", Name: "fake"}).LLM()
 	lr := &model.LLMRequest{
 		Contents: []*genai.Content{genai.NewContentFromText("PROBE", genai.RoleUser)},
 		Config: &genai.GenerateContentConfig{Tools: []*genai.Tool{{FunctionDeclarations: []*genai.FunctionDeclaration{
-			{Name: "agentic-test__probe", ParametersJsonSchema: map[string]any{"type": "object"}},
+			{Name: "custos-test__probe", ParametersJsonSchema: map[string]any{"type": "object"}},
 		}}}},
 	}
 	for resp, err := range llm.GenerateContent(t.Context(), lr, false) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if fc := resp.Content.Parts[0].FunctionCall; fc == nil || fc.Name != "agentic-test__probe" {
+		if fc := resp.Content.Parts[0].FunctionCall; fc == nil || fc.Name != "custos-test__probe" {
 			t.Errorf("response %+v", resp.Content.Parts[0])
 		}
 	}

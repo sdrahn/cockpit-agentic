@@ -1,7 +1,7 @@
-# The socket of agent %i (cockpit-agentic CONTRACT.md §3, §5).
+# The socket of agent %i (Custos CONTRACT.md §3, §5).
 [Unit]
 Description=Agent %i (socket)
-Documentation=https://github.com/sdrahn/cockpit-agentic/blob/main/CONTRACT.md
+Documentation=https://github.com/sdrahn/custos/blob/main/CONTRACT.md
 
 [Socket]
 ListenStream=/run/agents/%i/api.sock

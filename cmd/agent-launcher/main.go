@@ -19,10 +19,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sdrahn/cockpit-agentic/internal/config"
-	"github.com/sdrahn/cockpit-agentic/internal/journal"
-	"github.com/sdrahn/cockpit-agentic/internal/launcher"
-	"github.com/sdrahn/cockpit-agentic/internal/peercred"
+	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/journal"
+	"github.com/sdrahn/custos/internal/launcher"
+	"github.com/sdrahn/custos/internal/peercred"
 )
 
 // SocketDir holds the agents' sockets (CONTRACT.md §3).
@@ -139,7 +139,7 @@ func serve(args []string) error {
 	return err
 }
 
-const relaySecretEnv = "AGENTIC_RELAY_SECRET"
+const relaySecretEnv = "CUSTOS_RELAY_SECRET"
 
 // configFromEnv writes the base64 agent.yaml in $name to a directory
 // named after the agent and returns it.

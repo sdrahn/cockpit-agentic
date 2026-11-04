@@ -54,7 +54,7 @@ jobs:
         run: make policy-test GATEWAY_POLICY=mcp-gateway/policy
 
   # The packages, built as OBS builds them, in openSUSE Leap 16: first
-  # mcp-gateway's (cockpit-agentic-selinux builds on mcp_gateway.if), then
+  # mcp-gateway's (custos-selinux builds on mcp_gateway.if), then
   # ours. Installing them loads the SELinux modules.
   opensuse:
     runs-on: ubuntu-24.04
@@ -100,42 +100,42 @@ jobs:
           rm -rf ~/rpmbuild/SOURCES/vendor.tar.gz
       - name: Install build dependencies (from the spec, as OBS does)
         run: |
-          rpmspec -q --buildrequires packaging/suse/cockpit-agentic.spec | grep -v '^golang(API)' >/tmp/br
+          rpmspec -q --buildrequires packaging/suse/custos.spec | grep -v '^golang(API)' >/tmp/br
           xargs -r -d '\n' zypper -n --gpg-auto-import-keys in --no-recommends </tmp/br
       - name: Prepare sources (tarball and vendor.tar.gz, as the OBS services do)
         run: |
-          version=$(rpmspec -q --srpm --qf '%{version}' packaging/suse/cockpit-agentic.spec)
-          git archive --prefix="cockpit-agentic-$version/" -o ~/rpmbuild/SOURCES/cockpit-agentic-$version.tar.gz HEAD
+          version=$(rpmspec -q --srpm --qf '%{version}' packaging/suse/custos.spec)
+          git archive --prefix="custos-$version/" -o ~/rpmbuild/SOURCES/custos-$version.tar.gz HEAD
           go mod vendor && tar czf ~/rpmbuild/SOURCES/vendor.tar.gz vendor && rm -rf vendor
-          cp packaging/suse/cockpit-agentic-rpmlintrc ~/rpmbuild/SOURCES/
+          cp packaging/suse/custos-rpmlintrc ~/rpmbuild/SOURCES/
       - name: rpmbuild (with %check)
-        run: rpmbuild -ba --define "_topdir $HOME/rpmbuild" packaging/suse/cockpit-agentic.spec
+        run: rpmbuild -ba --define "_topdir $HOME/rpmbuild" packaging/suse/custos.spec
       - name: rpmlint
         run: |
-          { cat packaging/suse/cockpit-agentic-rpmlintrc; echo 'addFilter("no-changelogname-tag")'; } >/tmp/rpmlintrc
-          rpmlint -r /tmp/rpmlintrc ~/rpmbuild/RPMS/*/cockpit-agentic*.rpm
+          { cat packaging/suse/custos-rpmlintrc; echo 'addFilter("no-changelogname-tag")'; } >/tmp/rpmlintrc
+          rpmlint -r /tmp/rpmlintrc ~/rpmbuild/RPMS/*/custos*.rpm
       - name: Install and smoke-test
         run: |
           rpm -ivh --nodeps ~/rpmbuild/RPMS/*/mcp-gateway-[0-9]*.rpm
-          zypper -n --gpg-auto-import-keys in --allow-unsigned-rpm ~/rpmbuild/RPMS/*/cockpit-agentic-*.rpm
-          semodule -l | grep -x cockpit_agentic
+          zypper -n --gpg-auto-import-keys in --allow-unsigned-rpm ~/rpmbuild/RPMS/*/custos-*.rpm
+          semodule -l | grep -x custos
           getent group agent-clients
-          agent-admin check /usr/share/cockpit-agentic/examples/patch-pilot/agent.yaml
-          /usr/libexec/cockpit-agentic/agent-launcher version
-          test -f /usr/share/mcp-gateway/policy/cockpit-agentic/agents.rego
-          test -x /usr/libexec/cockpit-agentic/tests/run-tests.sh
+          agent-admin check /usr/share/custos/examples/patch-pilot/agent.yaml
+          /usr/libexec/custos/agent-launcher version
+          test -f /usr/share/mcp-gateway/policy/custos/agents.rego
+          test -x /usr/libexec/custos/tests/run-tests.sh
           # The labels the module gives the programs.
-          matchpathcon /usr/libexec/cockpit-agentic/agent-launcher | grep -q agent_exec_t
-          matchpathcon /usr/libexec/cockpit-agentic/agent-delegate | grep -q mcpsrv_agents_exec_t
+          matchpathcon /usr/libexec/custos/agent-launcher | grep -q agent_exec_t
+          matchpathcon /usr/libexec/custos/agent-delegate | grep -q mcpsrv_agents_exec_t
       - name: Collect the packages for the VM test
-        run: cp ~/rpmbuild/RPMS/*/cockpit-agentic*.rpm rpms/ && ls rpms
+        run: cp ~/rpmbuild/RPMS/*/custos*.rpm rpms/ && ls rpms
       - uses: actions/upload-artifact@v4
         with:
           name: rpms-leap16
           path: rpms/
           retention-days: 7
 
-  # The functional tests (cockpit-agentic-tests) in an openSUSE Leap 16 VM
+  # The functional tests (custos-tests) in an openSUSE Leap 16 VM
   # with SELinux enforcing, as openQA runs them on a product system.
   vm:
     needs: [opensuse]

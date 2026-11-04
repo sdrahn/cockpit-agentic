@@ -21,7 +21,7 @@ const ContractVersion = 1
 
 // Default paths (CONTRACT.md §3, §6).
 const (
-	ConfigRoot    = "/etc/cockpit-agentic/agents"
+	ConfigRoot    = "/etc/custos/agents"
 	GatewaySocket = "/run/mcp-gateway/mcp.sock"
 )
 

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sdrahn/cockpit-agentic/internal/journal"
-	"github.com/sdrahn/cockpit-agentic/internal/peercred"
+	"github.com/sdrahn/custos/internal/journal"
+	"github.com/sdrahn/custos/internal/peercred"
 )
 
 // The relay and the agent's Relayed check together: the caller the host

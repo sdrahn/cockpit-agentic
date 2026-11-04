@@ -17,11 +17,11 @@ import (
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
 
-	"github.com/sdrahn/cockpit-agentic/internal/config"
-	"github.com/sdrahn/cockpit-agentic/internal/governance"
-	"github.com/sdrahn/cockpit-agentic/internal/journal"
-	"github.com/sdrahn/cockpit-agentic/internal/peercred"
-	"github.com/sdrahn/cockpit-agentic/internal/testutil"
+	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/governance"
+	"github.com/sdrahn/custos/internal/journal"
+	"github.com/sdrahn/custos/internal/peercred"
+	"github.com/sdrahn/custos/internal/testutil"
 )
 
 type env struct {
@@ -442,7 +442,7 @@ func TestGatewayClient(t *testing.T) {
 	if caps, _ := p["capabilities"].(map[string]any); caps["elicitation"] != nil {
 		t.Errorf("client declares elicitation: %v", caps)
 	}
-	if ci := p["clientInfo"].(map[string]any); ci["name"] != "cockpit-agentic/patch-pilot" {
+	if ci := p["clientInfo"].(map[string]any); ci["name"] != "custos/patch-pilot" {
 		t.Errorf("clientInfo %v", ci)
 	}
 }

@@ -1,6 +1,6 @@
 # Packaging for SLES 16 and openSUSE Leap 16 (OBS)
 
-`cockpit-agentic.spec`, `_service` and `cockpit-agentic-rpmlintrc` are
+`custos.spec`, `_service` and `custos-rpmlintrc` are
 meant for an Open Build Service project. They follow the packaging of
 [mcp-gateway](https://github.com/sdrahn/mcp-gateway/tree/main/packaging/suse),
 which this package requires.
@@ -27,8 +27,8 @@ mcp-gateway in the same project, or add a project that publishes it as
 a path for each repository:
 
 ```xml
-<!-- osc meta prj -e home:<you>:agentic -->
-<project name="home:<you>:agentic">
+<!-- osc meta prj -e home:<you>:custos -->
+<project name="home:<you>:custos">
   <title>Governed agents for SLES 16 and Leap 16</title>
   <description/>
   <person userid="<you>" role="maintainer"/>
@@ -62,9 +62,9 @@ the binaries are static apart from libc.
 ## The package
 
 ```bash
-osc mkpac cockpit-agentic
-cd cockpit-agentic
-cp <repo>/packaging/suse/{cockpit-agentic.spec,_service,cockpit-agentic-rpmlintrc} .
+osc mkpac custos
+cd custos
+cp <repo>/packaging/suse/{custos.spec,_service,custos-rpmlintrc} .
 osc service manualrun            # tarball from main, version, vendor.tar.gz
 osc vc -m "Initial package"
 osc add *
@@ -76,9 +76,9 @@ spec, `_service` and the rpmlintrc again whenever they change here.
 
 | Package | Contents |
 |---|---|
-| `cockpit-agentic` | `agent-launcher`, `agent-delegate`, `agent-admin`, the unit templates `agent@` and `agent-schedule@`, the group `agent-clients`, the autonomy-mode policy module for the gateway (`/usr/share/mcp-gateway/policy/cockpit-agentic/agents.rego`), the gateway's `agents` server definition (opt-in), an example agent |
-| `cockpit-agentic-selinux` | the `cockpit_agentic` module; pulled in where `selinux-policy-targeted` is installed |
-| `cockpit-agentic-tests` | the functional tests for openQA and other test systems (`/usr/libexec/cockpit-agentic/tests/run-tests.sh --disposable --results DIR`: TAP and JUnit), with a scripted model server and an MCP test server; they change the system for good, so only for test systems ([test/openqa](../../test/openqa/README.md)) |
+| `custos` | `agent-launcher`, `agent-delegate`, `agent-admin`, the unit templates `agent@` and `agent-schedule@`, the group `agent-clients`, the autonomy-mode policy module for the gateway (`/usr/share/mcp-gateway/policy/custos/agents.rego`), the gateway's `agents` server definition (opt-in), an example agent |
+| `custos-selinux` | the `custos` module; pulled in where `selinux-policy-targeted` is installed |
+| `custos-tests` | the functional tests for openQA and other test systems (`/usr/libexec/custos/tests/run-tests.sh --disposable --results DIR`: TAP and JUnit), with a scripted model server and an MCP test server; they change the system for good, so only for test systems ([test/openqa](../../test/openqa/README.md)) |
 
 There is no `-cockpit` subpackage yet. The Cockpit control plane is
 designed (CONTRACT.md Part I, the mockup in `docs/`) but not yet
@@ -88,8 +88,8 @@ implemented as a Cockpit page.
 
 ```bash
 usermod -aG agent-clients <admin>              # who may supervise agents
-agent-admin create patch-pilot --from /usr/share/cockpit-agentic/examples/patch-pilot/agent.yaml
-agent-admin permissions patch-pilot < /usr/share/cockpit-agentic/examples/patch-pilot/permissions.yaml
+agent-admin create patch-pilot --from /usr/share/custos/examples/patch-pilot/agent.yaml
+agent-admin permissions patch-pilot < /usr/share/custos/examples/patch-pilot/permissions.yaml
 agent-admin mode patch-pilot supervised        # the default
 ```
 
@@ -99,7 +99,7 @@ endpoint and the gateway's socket is needed.
 
 ## Before the first release
 
-- **SELinux:** `cockpit_agentic.te` has not yet been built or run against
+- **SELinux:** `custos.te` has not yet been built or run against
   SLES 16 / Leap 16 policy. Build it (`make selinux` with
   `mcp-gateway-selinux` installed), then run an agent in enforcing mode
   and resolve the AVC denials (`ausearch -m AVC -c agent-launcher`).
@@ -107,5 +107,5 @@ endpoint and the gateway's socket is needed.
   satisfies `>= 1.25` (ADK Go 1.9 needs it), or add the path above.
 - **Tests on the target:** `%check` runs the unit and end-to-end tests
   (scripted model, fake gateway). The functional tests
-  (`cockpit-agentic-tests`) have not run on SLES 16 / Leap 16 yet: run
+  (`custos-tests`) have not run on SLES 16 / Leap 16 yet: run
   them in openQA or a VM first (test/openqa/README.md).

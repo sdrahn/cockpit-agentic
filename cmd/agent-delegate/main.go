@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sdrahn/cockpit-agentic/internal/delegate"
-	"github.com/sdrahn/cockpit-agentic/internal/launcher"
+	"github.com/sdrahn/custos/internal/delegate"
+	"github.com/sdrahn/custos/internal/launcher"
 )
 
 func main() {

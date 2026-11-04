@@ -537,7 +537,7 @@ class Component extends DCLogic {
       actFilter: 'all', confirmStop: false, stopped: false, stoppedAt: '',
       wiAgent: 'patch-pilot', wiTool: 'zypp__install_patches', draft: '', chatStatus: 'connected',
       agents: [
-        { id: 'patch-pilot', title: 'patch-pilot', desc: 'Keeps the host patched within the maintenance window', state: 'running', mode: 'supervised', impl: 'cockpit-agentic/adk-go', model: 'qwen3-32b (local)',
+        { id: 'patch-pilot', title: 'patch-pilot', desc: 'Keeps the host patched within the maintenance window', state: 'running', mode: 'supervised', impl: 'custos/adk-go', model: 'qwen3-32b (local)',
           perms: [
             { tool: 'zypp__list_*', kind: 'read-only', args: '' },
             { tool: 'zypp__install_patches', kind: 'changes the system', args: '' },
@@ -545,14 +545,14 @@ class Component extends DCLogic {
             { tool: 'systemd__restart_unit', kind: 'changes · autonomous', args: 'unit ^nginx\\.service$' }
           ],
           schedules: [{ name: 'compliance', cal: 'Mon..Fri 06:00', prompt: 'List the pending security patches and report them. Do not install anything.', next: 'next: tomorrow 06:00', on: true }] },
-        { id: 'triage', title: 'triage', desc: 'Morning health check; delegates fixes to specialists', state: 'running', mode: 'advisory', impl: 'cockpit-agentic/adk-go', model: 'qwen3-32b (local)',
+        { id: 'triage', title: 'triage', desc: 'Morning health check; delegates fixes to specialists', state: 'running', mode: 'advisory', impl: 'custos/adk-go', model: 'qwen3-32b (local)',
           perms: [
             { tool: 'systemd__list_log', kind: 'read-only', args: '' },
             { tool: 'systemd__list_*', kind: 'read-only', args: '' },
             { tool: 'agents__delegate', kind: 'read-only', args: 'agent ^(patch-pilot|disk-watch)$' }
           ],
           schedules: [{ name: 'morning-check', cal: '*-*-* 06:00', prompt: 'Check the journal and services since yesterday; hand fixes to the right agent.', next: 'next: tomorrow 06:00', on: true }] },
-        { id: 'disk-watch', title: 'disk-watch', desc: 'Frees space when /var fills up', state: 'idle', mode: 'bounded', impl: 'cockpit-agentic/adk-go', model: 'qwen3-32b (local)',
+        { id: 'disk-watch', title: 'disk-watch', desc: 'Frees space when /var fills up', state: 'idle', mode: 'bounded', impl: 'custos/adk-go', model: 'qwen3-32b (local)',
           perms: [
             { tool: 'fs__du', kind: 'read-only', args: '' },
             { tool: 'zypp__clean_cache', kind: 'changes · autonomous', args: '' },

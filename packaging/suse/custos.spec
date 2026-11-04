@@ -1,5 +1,5 @@
 #
-# spec file for package cockpit-agentic
+# spec file for package custos
 #
 # Built on the Open Build Service for SUSE Linux Enterprise Server 16.0
 # and 16.1 and openSUSE Leap 16.0 and 16.1; see packaging/suse/README.md.
@@ -8,16 +8,16 @@
 #
 
 %define selinuxtype targeted
-%define modulename cockpit_agentic
+%define modulename custos
 
-Name:           cockpit-agentic
+Name:           custos
 Version:        0.1.0
 Release:        0
 Summary:        Governed agents on the host, supervised from Cockpit
-# MIT for cockpit-agentic; the others for the vendored Go modules linked in.
+# MIT for custos; the others for the vendored Go modules linked in.
 License:        MIT AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause
 Group:          System/Management
-URL:            https://github.com/sdrahn/cockpit-agentic
+URL:            https://github.com/sdrahn/custos
 Source0:        %{name}-%{version}.tar.gz
 Source1:        vendor.tar.gz
 Source99:       %{name}-rpmlintrc
@@ -36,7 +36,7 @@ Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
 %{?systemd_ordering}
 
 %description
-cockpit-agentic runs AI agents (Google ADK) on the host, each as its
+custos runs AI agents (Google ADK) on the host, each as its
 own systemd service and system user, governed by mcp-gateway: the
 agents' only tools are the gateway's, its OPA policy decides what each
 agent may do in its autonomy mode (advisory, supervised, bounded), and
@@ -45,7 +45,7 @@ people (chat, AG-UI), schedules or other agents (delegation through the
 gateway), and every activity is recorded in the journal.
 
 %package selinux
-Summary:        SELinux policy module for cockpit-agentic
+Summary:        SELinux policy module for custos
 Group:          System/Management
 BuildArch:      noarch
 # mcp_gateway.if, the interfaces the module uses.
@@ -58,12 +58,12 @@ Requires(post): selinux-policy-%{selinuxtype}
 %{?selinux_requires}
 
 %description selinux
-SELinux domain agent_t for cockpit-agentic's agents (they may reach the
+SELinux domain agent_t for custos's agents (they may reach the
 gateway's MCP socket, never its control socket nor another agent's
 socket), and mcpsrv_agents_t for the gateway's delegation server.
 
 %package tests
-Summary:        Functional tests of cockpit-agentic, for openQA
+Summary:        Functional tests of custos, for openQA
 Group:          Development/Tools/Other
 Requires:       %{name} = %{version}
 Requires:       mcp-gateway >= 1.12
@@ -79,13 +79,13 @@ Requires:       util-linux
 Recommends:     %{name}-selinux = %{version}
 
 %description tests
-Functional tests of cockpit-agentic on an installed system: agents
+Functional tests of custos on an installed system: agents
 created with agent-admin and run by systemd, governed by mcp-gateway
 (supervised by default, approvals, autonomy modes, pause, emergency
 stop), schedules, AG-UI, delegation, the journal records, the sandbox
 and SELinux. With a scripted model server and an MCP test server, so
 no model is needed. For openQA and other test systems:
-/usr/libexec/cockpit-agentic/tests/run-tests.sh --disposable --results DIR.
+/usr/libexec/custos/tests/run-tests.sh --disposable --results DIR.
 They change the system for good; install them on test systems only.
 
 %prep
@@ -95,7 +95,7 @@ They change the system for good; install them on test systems only.
 export GOFLAGS="-mod=vendor"
 %make_build build build-tests VERSION=%{version}
 make selinux
-%sysusers_generate_pre packaging/sysusers/cockpit-agentic.conf %{name} %{name}.conf
+%sysusers_generate_pre packaging/sysusers/custos.conf %{name} %{name}.conf
 
 %install
 %make_install install install-selinux install-tests \
@@ -140,7 +140,7 @@ fi
 # What was installed or made before the module was loaded (the programs,
 # the main package's tmpfiles, agents' state) gets the module's labels:
 # a launcher left bin_t would run outside agent_t.
-for d in %{_libexecdir}/cockpit-agentic /run/agents /var/lib/agents /etc/cockpit-agentic; do
+for d in %{_libexecdir}/custos /run/agents /var/lib/agents /etc/custos; do
     [ -e "$d" ] && restorecon -R "$d" || :
 done
 
@@ -148,12 +148,12 @@ done
 %license LICENSE
 %doc README.md CONTRACT.md
 %{_sbindir}/agent-admin
-%dir %{_libexecdir}/cockpit-agentic
-%{_libexecdir}/cockpit-agentic/agent-launcher
-%{_libexecdir}/cockpit-agentic/agent-delegate
-%{_libexecdir}/cockpit-agentic/agent-openshell-relay
-%{_libexecdir}/cockpit-agentic/agent-openshell-logs
-%{_libexecdir}/cockpit-agentic/agent-admin
+%dir %{_libexecdir}/custos
+%{_libexecdir}/custos/agent-launcher
+%{_libexecdir}/custos/agent-delegate
+%{_libexecdir}/custos/agent-openshell-relay
+%{_libexecdir}/custos/agent-openshell-logs
+%{_libexecdir}/custos/agent-admin
 %{_unitdir}/agent@.service
 %{_unitdir}/agent@.socket
 %{_unitdir}/agent-schedule@.service
@@ -162,26 +162,26 @@ done
 %{_unitdir}/agent-openshell@.socket
 %{_sysusersdir}/%{name}.conf
 %{_tmpfilesdir}/%{name}.conf
-%dir %{_sysconfdir}/cockpit-agentic
-%dir %{_sysconfdir}/cockpit-agentic/agents
+%dir %{_sysconfdir}/custos
+%dir %{_sysconfdir}/custos/agents
 %dir %{_datadir}/mcp-gateway
 %dir %{_datadir}/mcp-gateway/policy
-%{_datadir}/mcp-gateway/policy/cockpit-agentic
+%{_datadir}/mcp-gateway/policy/custos
 %dir %{_sysconfdir}/mcp-gateway
 %dir %{_sysconfdir}/mcp-gateway/policy
 %dir %{_sysconfdir}/mcp-gateway/policy/agents
 %config(noreplace) %{_sysconfdir}/mcp-gateway/policy/agents/_control.yaml
 %config(noreplace) %{_sysconfdir}/mcp-gateway/policy/agents/_http.yaml
-%{_datadir}/cockpit-agentic
+%{_datadir}/custos
 
 %files tests
-%dir %{_libexecdir}/cockpit-agentic
-%dir %{_libexecdir}/cockpit-agentic/tests
-%{_libexecdir}/cockpit-agentic/tests/run-tests.sh
-%{_libexecdir}/cockpit-agentic/tests/fakemodel
-%{_libexecdir}/cockpit-agentic/tests/testsrv
-%{_libexecdir}/cockpit-agentic/tests/fakegateway
-%{_libexecdir}/cockpit-agentic/tests/testidp
+%dir %{_libexecdir}/custos
+%dir %{_libexecdir}/custos/tests
+%{_libexecdir}/custos/tests/run-tests.sh
+%{_libexecdir}/custos/tests/fakemodel
+%{_libexecdir}/custos/tests/testsrv
+%{_libexecdir}/custos/tests/fakegateway
+%{_libexecdir}/custos/tests/testidp
 
 %files selinux
 %dir %{_datadir}/selinux/packages/%{selinuxtype}

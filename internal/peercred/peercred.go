@@ -142,8 +142,8 @@ func Guard(app string, next http.Handler) http.Handler {
 // passes the caller it saw by SO_PEERCRED, with the secret it shares
 // with the agent.
 const (
-	HeaderCaller = "X-Agentic-Caller" // "<uid>:<name>"
-	HeaderSecret = "X-Agentic-Relay-Secret"
+	HeaderCaller = "X-Custos-Caller" // "<uid>:<name>"
+	HeaderSecret = "X-Custos-Relay-Secret"
 )
 
 // Relayed identifies callers by the relay headers, for an agent that

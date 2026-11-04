@@ -9,8 +9,8 @@ import (
 
 func TestConfigFromEnv(t *testing.T) {
 	y := "version: 1\nname: pp\nmodel: {provider: vertex, name: m}\ngateway: {url: \"https://gw/mcp\", servers: [zypp]}\n"
-	t.Setenv("AGENTIC_CONFIG", base64.StdEncoding.EncodeToString([]byte(y)))
-	d, err := configFromEnv("AGENTIC_CONFIG")
+	t.Setenv("CUSTOS_CONFIG", base64.StdEncoding.EncodeToString([]byte(y)))
+	d, err := configFromEnv("CUSTOS_CONFIG")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,8 +21,8 @@ func TestConfigFromEnv(t *testing.T) {
 	if string(b) != y {
 		t.Errorf("agent.yaml %q", b)
 	}
-	t.Setenv("AGENTIC_CONFIG", "not base64!")
-	if _, err := configFromEnv("AGENTIC_CONFIG"); err == nil {
+	t.Setenv("CUSTOS_CONFIG", "not base64!")
+	if _, err := configFromEnv("CUSTOS_CONFIG"); err == nil {
 		t.Error("bad value accepted")
 	}
 }
