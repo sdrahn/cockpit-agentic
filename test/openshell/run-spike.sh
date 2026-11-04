@@ -10,6 +10,14 @@
 # whose local OpenShell gateway it is (OPENSHELL_GATEWAY_USER).
 #
 # Usage: MCPGW_SRC=DIR OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --disposable [--results DIR]
+#        OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --system --disposable [--results DIR]
+#
+# --system: on a system with the packages installed (custos, custos-selinux,
+# custos-tests, mcp-gateway), e.g. the Leap 16 VM with SELinux enforcing
+# (test/vm/run-vm.sh with SUITE=openshell): the installed programs, the
+# system's OPA (mcp-opa.service) and the installed mcp-gateway, no build.
+# The container runtime is Docker if it runs, else OPENSHELL_GATEWAY_USER's
+# rootless Podman (OpenShell's RPM default).
 #
 # mcp-gateway runs in its development mode (no systemd, no SELinux; the
 # exec supervisor) with its own policy, custos's agents module
@@ -20,12 +28,13 @@
 # credentials grant and renews them while the agent runs.
 set -u
 here=$(cd "$(dirname "$0")/../.." && pwd)
-disposable= results=
+disposable= results= system=
 while [ $# -gt 0 ]; do
 	case $1 in
 	--disposable) disposable=1 ;;
 	--results) results=${2:?}; shift ;;
-	*) echo "usage: $0 --disposable [--results DIR]" >&2; exit 2 ;;
+	--system) system=1 ;;
+	*) echo "usage: $0 [--system] --disposable [--results DIR]" >&2; exit 2 ;;
 	esac
 	shift
 done
@@ -46,9 +55,9 @@ not() { ! "$@"; }
 json_ok() { jq -e "$2" >/dev/null 2>&1 <<<"$1"; }
 api() { local p=$1; shift; curl -sS --max-time 180 --unix-socket /run/agents/sb/api.sock "http://agent$p" "$@"; }
 # gw <path> [curl args...]: the gateway's control API.
-gw() { local p=$1; shift; curl -sS --max-time 30 --unix-socket "$work/gw/control.sock" "http://localhost$p" "$@"; }
+gw() { local p=$1; shift; curl -sS --max-time 30 --unix-socket "$gw_ctl" "http://localhost$p" "$@"; }
 # gw_audit_has <jq condition>: the gateway's audit records since the start.
-gw_audit_has() { journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | grep '"audit":true' | jq -e "select($1)" >/dev/null 2>&1; }
+gw_audit_has() { journalctl -u "$gw_unit" -o cat --no-pager --since "@$t0" | grep '"audit":true' | jq -e "select($1)" >/dev/null 2>&1; }
 activity() { api "/v1/activities/$1"; }
 run_activity() { api /v1/activities -X POST -d "$(jq -nc --arg p "$1" '{prompt: $p, wait: true}')"; }
 summary_has() { grep -qF -- "$2" <<<"$(jq -r .summary <<<"$1")"; }
@@ -58,19 +67,52 @@ osh() { openshell -g openshell "$@"; }
 section Preconditions
 check "openshell is installed" command -v openshell
 check "the local OpenShell gateway answers" eventually 60 osh status
-check "docker runs" bash -c "docker info >/dev/null"
-mcpgw=${MCPGW_SRC:-}
-check "an mcp-gateway checkout is built (MCPGW_SRC)" test -x "$mcpgw/bin/mcp-gateway" -a -d "$mcpgw/policy/mcp"
-check "opa is installed" command -v opa
+osh_user=${OPENSHELL_GATEWAY_USER:-}
+osh_home=$(getent passwd "$osh_user" | cut -d: -f6)
+osh_uid=$(id -u "$osh_user" 2>/dev/null)
+export osh_user osh_home osh_uid
+# The container runtime OpenShell's driver uses: Docker, or the gateway
+# user's rootless Podman.
+if docker info >/dev/null 2>&1; then
+	runtime=docker
+	ctr() { docker "$@"; }
+else
+	runtime=podman
+	# A clean environment: root's XDG_CONFIG_HOME would point podman at
+	# root's configuration.
+	ctr() { (cd / && setpriv --reuid="$osh_uid" --regid="$(id -g "$osh_user")" --init-groups -- \
+		env -i HOME="$osh_home" USER="$osh_user" LOGNAME="$osh_user" PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+		XDG_RUNTIME_DIR="/run/user/$osh_uid" podman "$@"); }
+fi
+ctr_ok() { ctr "$@" >"$work/ctr.out" 2>&1 || { tail -n 8 "$work/ctr.out" | sed 's/^/    | /'; return 1; }; }
+check "the container runtime runs ($runtime)" ctr_ok info
+gw_ctl=$work/gw/control.sock gw_unit=osh-mcp-gateway.service
+if [ -n "$system" ]; then
+	# The system's mcp-gateway (confined, systemd supervisor) gets the
+	# HTTPS listener (a gateway.d drop-in); its control socket is the system's.
+	gw_ctl=/run/mcp-gateway/control.sock gw_unit=mcp-gateway.service
+	gw_bin=/usr/bin/mcp-gateway
+	gw_policy=/usr/share/mcp-gateway/policy
+	check "the packages are installed" rpm -q custos custos-tests mcp-gateway
+	# As the functional tests do; mcp-gateway.service brings mcp-opa.service.
+	check "the system's mcp-gateway and OPA run" systemctl enable --now mcp-opa.service mcp-gateway.service
+	check "SELinux is enforcing" bash -c '[ "$(getenforce)" = Enforcing ]'
+else
+	gw_bin=${MCPGW_SRC:-}/bin/mcp-gateway
+	gw_policy=${MCPGW_SRC:-}/policy
+	check "an mcp-gateway checkout is built (MCPGW_SRC)" test -x "$gw_bin" -a -d "$gw_policy/mcp"
+	check "opa is installed" command -v opa
+fi
 
 section Install
-# What the package installs (packaging/suse), into this system.
-make -s -C "$here" install install-tests DESTDIR= PREFIX=/usr SYSCONFDIR=/etc UNITDIR=/etc/systemd/system \
-	SYSUSERSDIR=/usr/lib/sysusers.d TMPFILESDIR=/usr/lib/tmpfiles.d SBINDIR=/usr/sbin >/dev/null
-getent group mcp-users >/dev/null || groupadd -r mcp-users
-systemd-sysusers /usr/lib/sysusers.d/custos.conf
-systemd-tmpfiles --create /usr/lib/tmpfiles.d/custos.conf
-systemctl daemon-reload
+if [ -z "$system" ]; then
+	# What the package installs (packaging/suse), into this system.
+	make -s -C "$here" install install-tests DESTDIR= PREFIX=/usr SYSCONFDIR=/etc UNITDIR=/etc/systemd/system \
+		SYSUSERSDIR=/usr/lib/sysusers.d TMPFILESDIR=/usr/lib/tmpfiles.d SBINDIR=/usr/sbin >/dev/null
+	getent group mcp-users >/dev/null || groupadd -r mcp-users
+	systemd-tmpfiles --create /usr/lib/tmpfiles.d/custos.conf
+	systemctl daemon-reload
+fi
 check "agent-admin is installed" command -v agent-admin
 check "the relay is installed" test -x /usr/libexec/custos/agent-openshell-relay
 check "its log source is installed" test -x /usr/libexec/custos/agent-openshell-logs
@@ -103,27 +145,62 @@ check "the token issuer answers" eventually 20 curl -sf -o /dev/null "$issuer/.w
 # Its subjects agent-<name> are agents (agents/_http.yaml, CONTRACT.md §16a).
 printf '_http:\n  issuers: ["%s"]\n' "$issuer" >/etc/mcp-gateway/policy/agents/_http.yaml
 
-# OPA as mcp-opa.service runs it: the gateway's policy, the agents module,
-# the agents' data (agent-admin) and the gateway's default role data.
-cp "$mcpgw/policy/mcp/rbac/data.yaml" "$work/gw/rbac/data.yaml"
-systemd-run --unit=osh-opa opa run --server --addr unix:///run/mcp-gateway/opa.sock --watch --log-format json \
-	--ignore rbac --ignore '*.json' "$mcpgw/policy" /usr/share/mcp-gateway/policy/custos \
-	mcp:/etc/mcp-gateway/policy "mcp.rbac:$work/gw/rbac" >/dev/null
-check "OPA has the agents' issuer" eventually 30 bash -c "curl -s --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http/issuers | grep -qF '$issuer'"
+if [ -n "$system" ]; then
+	# The system's OPA (mcp-opa.service) has the gateway's policy, the
+	# agents module and /etc/mcp-gateway/policy/agents already.
+	check "OPA has the agents' issuer" eventually 30 bash -c "curl -s --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http/issuers | grep -qF '$issuer'" || {
+		echo "    | OPA says: $(curl -sS -w ' (HTTP %{http_code})' --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http 2>&1 | head -c 400)"
+		echo "    | the socket: $(ls -lZ /run/mcp-gateway/ 2>&1 | tr '\n' ' ')"
+		echo "    | the file: $(ls -lZ /etc/mcp-gateway/policy/agents/ 2>&1 | tr '\n' ' ')"
+		journalctl -u mcp-opa.service -o cat --no-pager --since "@$t0" | tail -n 10 | sed 's/^/    | mcp-opa: /'
+	}
+else
+	# OPA as mcp-opa.service runs it: the gateway's policy, the agents module,
+	# the agents' data (agent-admin) and the gateway's default role data.
+	cp "$gw_policy/mcp/rbac/data.yaml" "$work/gw/rbac/data.yaml"
+	systemd-run --unit=osh-opa opa run --server --addr unix:///run/mcp-gateway/opa.sock --watch --log-format json \
+		--ignore rbac --ignore '*.json' "$gw_policy" /usr/share/mcp-gateway/policy/custos \
+		mcp:/etc/mcp-gateway/policy "mcp.rbac:$work/gw/rbac" >/dev/null
+	check "OPA has the agents' issuer" eventually 30 bash -c "curl -s --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http/issuers | grep -qF '$issuer'"
+fi
 
-printf '%s\n' 'version: 1' 'name: custos-test' 'command: ["/usr/libexec/custos/tests/testsrv"]' 'run_as: gateway' \
-	>"$work/gw/servers.d/custos-test.yaml"
-printf '%s\n' "socket: $work/gw/mcp.sock" "servers_dir: $work/gw/servers.d" "state_dir: $work/gw/state" \
-	"approvals:" "  control_socket: $work/gw/control.sock" \
-	"policy:" "  opa_socket: /run/mcp-gateway/opa.sock" \
-	"supervisor:" "  mode: exec" \
-	"http:" '  listen: ":18443"' "  cert_file: $work/tls/cert.pem" "  key_file: $work/tls/key.pem" \
-	"  issuer: $issuer" "  audience: $aud" >"$work/gw/gateway.yaml"
-systemd-run --unit=osh-mcp-gateway "$mcpgw/bin/mcp-gateway" --config "$work/gw/gateway.yaml" >/dev/null
+if [ -n "$system" ]; then
+	# As an administrator would: the certificate for the gateway's group,
+	# the listener's port mcp_port_t, the issuer's port one the gateway may
+	# reach (http_port_t), the test server, then a restart (http.listen is
+	# read at start).
+	install -d -m 0750 -o root -g mcp-gateway /etc/mcp-gateway/tls
+	install -m 0640 -o root -g mcp-gateway "$work/tls/cert.pem" /etc/mcp-gateway/tls/custos-osh-cert.pem
+	install -m 0640 -o root -g mcp-gateway "$work/tls/key.pem" /etc/mcp-gateway/tls/custos-osh-key.pem
+	restorecon -R /etc/mcp-gateway/tls
+	semanage port -a -t mcp_port_t -p tcp 18443 2>/dev/null || semanage port -m -t mcp_port_t -p tcp 18443
+	semanage port -a -t http_port_t -p tcp 18445 2>/dev/null || semanage port -m -t http_port_t -p tcp 18445
+	mkdir -p /etc/mcp-gateway/gateway.d /etc/mcp-gateway/servers.d
+	printf '%s\n' "# custos OpenShell tests (test/openshell/run-spike.sh --system)" \
+		"http:" '  listen: ":18443"' "  cert_file: /etc/mcp-gateway/tls/custos-osh-cert.pem" \
+		"  key_file: /etc/mcp-gateway/tls/custos-osh-key.pem" "  issuer: $issuer" "  audience: $aud" \
+		>/etc/mcp-gateway/gateway.d/60-custos-openshell.yaml
+	printf '%s\n' 'version: 1' 'name: custos-test' 'command: ["/usr/libexec/custos/tests/testsrv"]' 'run_as: principal' \
+		>/etc/mcp-gateway/servers.d/custos-test.yaml
+	check "the system's mcp-gateway restarts with the HTTPS listener" systemctl restart mcp-gateway.service ||
+		journalctl -u mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
+else
+	printf '%s\n' 'version: 1' 'name: custos-test' 'command: ["/usr/libexec/custos/tests/testsrv"]' 'run_as: gateway' \
+		>"$work/gw/servers.d/custos-test.yaml"
+	printf '%s\n' "socket: $work/gw/mcp.sock" "servers_dir: $work/gw/servers.d" "state_dir: $work/gw/state" \
+		"approvals:" "  control_socket: $work/gw/control.sock" \
+		"policy:" "  opa_socket: /run/mcp-gateway/opa.sock" \
+		"supervisor:" "  mode: exec" \
+		"http:" '  listen: ":18443"' "  cert_file: $work/tls/cert.pem" "  key_file: $work/tls/key.pem" \
+		"  issuer: $issuer" "  audience: $aud" >"$work/gw/gateway.yaml"
+	# A gateway of its own, in development mode (exec supervisor), with the
+	# HTTPS listener.
+	systemd-run --unit=osh-mcp-gateway "$gw_bin" --config "$work/gw/gateway.yaml" >/dev/null
+fi
 check "the gateway's HTTPS listener refuses a request without a token (401)" eventually 30 bash -c \
 	"curl -s -o /dev/null -w '%{http_code}' --cacert '$work/tls/ca.pem' --resolve host.openshell.internal:18443:127.0.0.1 -X POST $aud | grep -qx 401" ||
-	journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
-check "the gateway takes the test server" eventually 30 bash -c "curl -s --unix-socket '$work/gw/control.sock' http://localhost/v1/servers | grep -q custos-test"
+	journalctl -u "$gw_unit" -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
+check "the gateway takes the test server" eventually 30 bash -c "curl -s --unix-socket '$gw_ctl' http://localhost/v1/servers | grep -q custos-test"
 check "the issuer gives agent-sb's client a token" bash -c \
 	"curl -sf -X POST -d grant_type=client_credentials -d client_id=agent-sb --data-urlencode client_secret=\$(cat '$work/client-secret') '$issuer/token' | jq -e '.access_token != null' >/dev/null"
 minted() { curl -s "$issuer/minted" | jq -r '."agent-sb" // 0'; }
@@ -133,9 +210,14 @@ section "OpenShell trusts the gateway's CA"
 # not with the image's trust store: the CA goes into the OpenShell
 # gateway's configuration (CONTRACT.md §16a), here the local gateway of
 # OPENSHELL_GATEWAY_USER (systemctl --user, ~/.config/openshell).
-osh_user=${OPENSHELL_GATEWAY_USER:-}
-osh_home=$(getent passwd "$osh_user" | cut -d: -f6)
 osh_toml=$osh_home/.config/openshell/gateway.toml
+# systemctl --user of the OpenShell user: through systemd-machined where
+# it runs, else as the user with its runtime directory.
+osh_systemctl() {
+	systemctl --user --machine="$osh_user@" "$@" 2>/dev/null ||
+		setpriv --reuid="$osh_uid" --regid="$(id -g "$osh_user")" --init-groups -- \
+			env HOME="$osh_home" XDG_RUNTIME_DIR="/run/user/$osh_uid" systemctl --user "$@"
+}
 check "the OpenShell gateway's user is known (OPENSHELL_GATEWAY_USER)" test -n "$osh_user" -a -d "$osh_home/.config/openshell"
 install -m 0644 -o "$osh_user" "$work/tls/ca.pem" "$osh_home/.config/openshell/mcp-gateway-ca.pem"
 # A gateway.toml must say its format (OpenShell 0.1.7: version 2); the
@@ -151,13 +233,21 @@ check "OpenShell's configuration check takes it" runuser -u "$osh_user" -- env H
 		runuser -u "$osh_user" -- env HOME="$osh_home" XDG_CONFIG_HOME="$osh_home/.config" openshell-gateway config preflight 2>&1 | tail -n 15 | sed 's/^/    | preflight: /'
 		sed 's/^/    | gateway.toml: /' "$osh_toml"
 	}
-check "the OpenShell gateway restarts with the CA" systemctl --user --machine="$osh_user@" restart openshell-gateway ||
-	systemctl --user --machine="$osh_user@" status --no-pager openshell-gateway 2>&1 | tail -n 15 | sed 's/^/    | /'
+check "the OpenShell gateway restarts with the CA" osh_systemctl restart openshell-gateway ||
+	osh_systemctl status --no-pager openshell-gateway 2>&1 | tail -n 15 | sed 's/^/    | /'
 check "the OpenShell gateway answers again" eventually 90 osh status
 
 section "Agent image"
 img=localhost/custos-agent:ci
-check "the agent image builds" docker build -q -t "$img" -f "$here/packaging/openshell/Containerfile" "$here"
+if [ -n "$system" ]; then
+	# The installed launcher and Containerfile (custos package).
+	mkdir -p "$work/image/bin" && cp /usr/libexec/custos/agent-launcher "$work/image/bin/"
+	chown -R "$osh_user" "$work/image"
+	chmod 0755 "$work"
+	check "the agent image builds ($runtime)" ctr_ok build -q -t "$img" -f /usr/share/custos/openshell/Containerfile "$work/image"
+else
+	check "the agent image builds ($runtime)" ctr build -q -t "$img" -f "$here/packaging/openshell/Containerfile" "$here"
+fi
 
 section "Creating the agent"
 cat >"$work/sb.yaml" <<EOF
@@ -176,6 +266,8 @@ sandbox: {kind: openshell, openshell_gateway: openshell}
 EOF
 agent-admin delete sb >/dev/null 2>&1
 export CUSTOS_OPENSHELL_IMAGE=$img
+# Rootless Podman: the relay's log source reads the user's containers.
+[ "$runtime" = podman ] && export CUSTOS_OPENSHELL_USER=$osh_user
 check "agent-admin create sb (openshell)" agent-admin create sb --from "$work/sb.yaml"
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' >"$work/perms.yaml"
 check "agent-admin permissions sb (supervised: change needs an approval)" agent-admin permissions sb <"$work/perms.yaml"
@@ -213,7 +305,7 @@ diagnose() {
 		step "openshell sandbox get agent-sb" openshell -g openshell sandbox get agent-sb
 		step "openshell forward list" openshell -g openshell forward list
 		step "openshell logs agent-sb" openshell -g openshell logs agent-sb
-		step "containers (the relay's log source)" bash -c "docker ps --no-trunc --format '{{.ID}} {{.Names}} {{.Image}}'"
+		step "containers (the relay's log source)" bash -c "$(declare -f ctr); ctr ps --no-trunc --format '{{.ID}} {{.Names}} {{.Image}}'"
 		step "agent-openshell-logs agent-sb" timeout 5 /usr/libexec/custos/agent-openshell-logs agent-sb
 		step "listening on the host" bash -c "ss -ltnp | grep -E ':47[0-9]{3}\\b'"
 	} >"$d/all" 2>&1
@@ -244,9 +336,9 @@ if [ -n "$relay_ok" ]; then
 			timeout 5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | grep -iE '18443|certificate|tls|trust' | tail -n 6 | sed 's/^/    | supervisor: /'
 		}
 	check "the gateway audited the call as agent-sb over HTTPS" eventually 10 gw_audit_has '.sub == "agent-sb" and .name == "probe" and .effect == "allow"' ||
-		journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
+		journalctl -u "$gw_unit" -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
 	check "and refused no request of the agent's (placeholder or no token)" not bash -c \
-		"journalctl -u osh-mcp-gateway.service -o cat --no-pager --since @$t0 | grep -iE 'invalid_token|missing bearer|no subject'"
+		"journalctl -u "$gw_unit" -o cat --no-pager --since @$t0 | grep -iE 'invalid_token|missing bearer|no subject'"
 	check "the sandbox's environment has no client secret" bash -c "! openshell -g openshell sandbox exec -n agent-sb -- env 2>/dev/null | grep -qF \"\$(cat $work/client-secret)\""
 
 	section "Token renewal"
@@ -262,14 +354,14 @@ if [ -n "$relay_ok" ]; then
 	check "a call after the first token expired runs (renewed token)" summary_has "$a" "probe ok" || {
 		echo "    | the agent answered: $(jq -c '{state, summary, reason}' <<<"$a" 2>/dev/null || head -c 300 <<<"$a")"
 		# Who answered 500: mcp-gateway, or OpenShell's proxy?
-		journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "-120s" | grep -v '"audit":true' | tail -n 12 | sed 's/^/    | gateway: /'
+		journalctl -u "$gw_unit" -o cat --no-pager --since "-120s" | grep -v '"audit":true' | tail -n 12 | sed 's/^/    | gateway: /'
 		timeout 5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | grep -iE '18443|credential|placeholder|refresh|resolve|500' | tail -n 12 | sed 's/^/    | supervisor: /'
 		timeout 20 openshell -g openshell provider refresh status agent-sb-gateway </dev/null 2>&1 | tail -n 12 | sed 's/^/    | refresh: /'
 		journalctl --user --machine="$osh_user@" -u openshell-gateway --no-pager -o cat --since "-300s" 2>/dev/null | grep -iE 'refresh|mint|credential|error|warn' | tail -n 10 | sed 's/^/    | openshell-gateway: /'
 	}
 	check "the agent was not restarted for it (no new agent.start)" test "$(starts)" -eq "$s1"
 	check "and the gateway refused none of its requests" not bash -c \
-		"journalctl -u osh-mcp-gateway.service -o cat --no-pager --since @$t0 | grep -iE 'invalid_token|token is expired|token_expired'"
+		"journalctl -u "$gw_unit" -o cat --no-pager --since @$t0 | grep -iE 'invalid_token|token is expired|token_expired'"
 
 	section "Approval"
 	id=$(api /v1/activities -X POST -d '{"prompt":"CHANGE"}' | jq -r .id)
@@ -283,8 +375,18 @@ if [ -n "$relay_ok" ]; then
 	check "journal (from the sandbox's output): approval.pending" eventually 60 journal_has approval.pending ".AGENT_APPROVAL_ID == \"$aid\"" || {
 		# Where the relay's bridge reads the agent's records from.
 		echo "    | relay: $(journalctl --no-pager -o cat --since "@$t0" -u agent-openshell@sb.service 2>&1 | grep -v 'proxy error' | tail -n 8 | tr '\n' '|')"
-		echo "    | containers: $(timeout 10 docker ps --format '{{.Names}} ({{.Image}})' </dev/null 2>&1 | tr '\n' ' ')"
-		echo "    | helper: $(timeout 5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | tail -n 5 | tr '\n' '|')"
+		echo "    | containers: $(ctr ps --format '{{.Names}} ({{.Image}})' </dev/null 2>&1 | tr '\n' ' ')"
+		# The helper with the agent's openshell.env, then also with the relay
+		# unit's sandboxing and SELinux domain (what differs from a shell).
+		echo "    | helper: $(set -a; . /etc/custos/agents/sb/openshell.env; timeout 5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | tail -n 5 | tr '\n' '|')"
+		echo "    | helper as the unit: $(timeout 20 systemd-run --wait --pipe --quiet -p EnvironmentFile=/etc/custos/agents/sb/openshell.env \
+			-p NoNewPrivileges=yes -p ProtectHome=read-only -p PrivateTmp=yes \
+			-p "ReadWritePaths=-$osh_home/.local/share/containers -/run/user/$osh_uid" \
+			-p RuntimeMaxSec=5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | tail -n 5 | tr '\n' '|')"
+		echo "    | helper as the unit without NoNewPrivileges: $(timeout 20 systemd-run --wait --pipe --quiet -p EnvironmentFile=/etc/custos/agents/sb/openshell.env \
+			-p ProtectHome=read-only -p PrivateTmp=yes -p "ReadWritePaths=-$osh_home/.local/share/containers -/run/user/$osh_uid" \
+			-p RuntimeMaxSec=5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | tail -n 5 | tr '\n' '|')"
+		echo "    | the relay's drop-ins: $(systemctl show -p DropInPaths --value agent-openshell@sb.service)"
 		echo "    | journal AGENT_NAME=sb: $(journalctl --no-pager -o cat --since "@$t0" AGENT_NAME=sb 2>&1 | wc -l) records"
 	}
 	check "journal: approval.resolved approved" eventually 60 journal_has approval.resolved '.AGENT_OUTCOME == "approved"'
@@ -308,6 +410,20 @@ check "the relay is back" systemctl is-active -q agent-openshell@sb.socket
 section Removing
 check "agent-admin delete sb" agent-admin delete sb
 check "the sandbox is gone" eventually 60 not osh sandbox get agent-sb
+if [ -n "$system" ]; then
+	section SELinux
+	# Denials since the start for the domains this repository ships
+	# (agent_t, agent_relay_t, mcpsrv_agents_t) and for what they reach.
+	# Since boot (the VM's whole run): a start time in the locale's format
+	# that ausearch does not take would make the check blind.
+	avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts boot 2>/dev/null)
+	[ -n "$avc" ] || avc=$(journalctl -k --no-pager -o cat --since "@$t0" 2>/dev/null | grep -E 'avc: +denied')
+	[ -n "$results" ] && mkdir -p "$results" && printf '%s\n' "$avc" >"$results/avc.txt"
+	check "no SELinux denial for custos's domains" not grep -qE 'scontext=[^ ]*:(agent_t|agent_relay_t|mcpsrv_agents_t):' <<<"$avc" ||
+		grep -E 'scontext=[^ ]*:(agent_t|agent_relay_t|mcpsrv_agents_t):' <<<"$avc" | sed -E 's/^.*(avc: +denied)/\1/' | sort -u | head -n 20 | sed 's/^/    | /'
+	echo "    | all denials since the start: $(grep -c 'denied' <<<"$avc")"
+	grep 'denied' <<<"$avc" | sed -E 's/^.*(avc: +denied)/\1/; s/ pid=[0-9]+//; s/ ino=[0-9]+//' | sort -u | head -n 15 | sed 's/^/    | /'
+fi
 systemctl stop osh-fakemodel osh-mcp-gateway osh-opa osh-testidp >/dev/null 2>&1
 
 if [ -n "$results" ]; then

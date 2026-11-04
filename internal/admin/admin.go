@@ -16,7 +16,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -44,6 +46,10 @@ type Admin struct {
 	RunEnv func(env []string, name string, args ...string) error
 	// Image is the OpenShell sandbox image (CUSTOS_OPENSHELL_IMAGE).
 	Image string
+	// OpenShellUser runs the local OpenShell gateway, whose rootless
+	// Podman holds the sandboxes' containers (CUSTOS_OPENSHELL_USER; empty:
+	// root's or Docker's), for the relay's log source.
+	OpenShellUser string
 	// Secret makes the relay secrets.
 	Secret func() string
 	// OPAData reads a document of the gateway's OPA (GET /v1/data/<path>);
@@ -68,7 +74,8 @@ func New() *Admin {
 			c.Stdout, c.Stderr = os.Stdout, os.Stderr
 			return c.Run()
 		},
-		Image: envOr("CUSTOS_OPENSHELL_IMAGE", "localhost/custos-agent:latest"),
+		Image:         envOr("CUSTOS_OPENSHELL_IMAGE", "localhost/custos-agent:latest"),
+		OpenShellUser: os.Getenv("CUSTOS_OPENSHELL_USER"),
 		Secret: func() string {
 			b := make([]byte, 32)
 			rand.Read(b)
@@ -181,6 +188,32 @@ func (a *Admin) Create(name, from string) error {
 	return a.Run(nil, "systemctl", "enable", "--now", "agent@"+name+".socket")
 }
 
+var userRE = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+
+// LookupUser resolves the OpenShell user's uid and home (a variable for
+// tests).
+var LookupUser = func(name string) (uid, home string, err error) {
+	u, err := user.Lookup(name)
+	if err != nil {
+		return "", "", err
+	}
+	return u.Uid, u.HomeDir, nil
+}
+
+// writeRelayUserDropIn lets the relay's log source use the OpenShell
+// user's rootless Podman, which keeps its locks in the user's storage and
+// runtime directory; the relay's unit otherwise sees homes and /run/user
+// read-only (ProtectHome=read-only). Only those two directories.
+func (a *Admin) writeRelayUserDropIn(name string) error {
+	uid, home, err := LookupUser(a.OpenShellUser)
+	if err != nil {
+		return fmt.Errorf("CUSTOS_OPENSHELL_USER: %w", err)
+	}
+	conf := fmt.Sprintf("# agent-admin: the relay's log source reads %s's rootless Podman (CONTRACT.md §16a).\n[Service]\nReadWritePaths=-%s/.local/share/containers -/run/user/%s\n",
+		a.OpenShellUser, home, uid)
+	return writeFile(a.p(filepath.Join(UnitDir, "agent-openshell@"+name+".service.d", "openshell-user.conf")), []byte(conf), 0o644)
+}
+
 // createOpenShell prepares an OpenShell agent (CONTRACT.md §16a): the
 // policy, the gateway provider profile, the relay's secret and port. The
 // sandbox itself is created once the gateway token is set
@@ -197,6 +230,15 @@ func (a *Admin) createOpenShell(cfg *config.Config) error {
 	}
 	env := fmt.Sprintf("# agent-admin: agent %s in OpenShell\nOPENSHELL_GATEWAY=%s\nFORWARD_PORT=%d\nAGENT_IMAGE=%s\n",
 		cfg.Name, cfg.Sandbox.OpenShellGateway, openshell.Port(cfg.Name), a.Image)
+	if a.OpenShellUser != "" {
+		if !userRE.MatchString(a.OpenShellUser) {
+			return fmt.Errorf("CUSTOS_OPENSHELL_USER: %q is not a user name", a.OpenShellUser)
+		}
+		env += "OPENSHELL_USER=" + a.OpenShellUser + "\n"
+		if err := a.writeRelayUserDropIn(cfg.Name); err != nil {
+			return err
+		}
+	}
 	for f, c := range map[string]struct {
 		b    []byte
 		mode os.FileMode
@@ -331,7 +373,8 @@ func (a *Admin) Delete(name string, keepState bool) error {
 		}
 	}
 	a.Run(nil, "systemctl", append([]string{"disable", "--now"}, units...)...)
-	rm := []string{a.agentDir(name), a.gatewayFile(name), a.p(filepath.Join(UnitDir, "agent@"+name+".service.d"))}
+	rm := []string{a.agentDir(name), a.gatewayFile(name), a.p(filepath.Join(UnitDir, "agent@"+name+".service.d")),
+		a.p(filepath.Join(UnitDir, "agent-openshell@"+name+".service.d"))}
 	matches, _ := filepath.Glob(a.p(filepath.Join(CredstoreDir, "agent-"+name+".*")))
 	rm = append(rm, matches...)
 	timers, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "agent-schedule@"+name+"_*")))

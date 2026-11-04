@@ -88,6 +88,8 @@ func bridge(ctx context.Context, name, command string) {
 	for ctx.Err() == nil {
 		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 		cmd.Env = append(os.Environ(), "AGENT_LOGS_SINCE="+since.UTC().Format(time.RFC3339Nano))
+		// Its complaints (no container, a runtime error) go to the unit's journal.
+		cmd.Stderr = os.Stderr
 		out, err := cmd.StdoutPipe()
 		if err == nil && cmd.Start() == nil {
 			relay.Bridge(bufio.NewReader(out), name, log)
