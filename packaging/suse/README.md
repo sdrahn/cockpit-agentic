@@ -79,10 +79,10 @@ spec, `_service` and the rpmlintrc again whenever they change here.
 | `custos` | `agent-launcher`, `agent-delegate`, `agent-admin`, the unit templates `agent@` and `agent-schedule@`, the group `agent-clients`, the autonomy-mode policy module for the gateway (`/usr/share/mcp-gateway/policy/custos/agents.rego`), the gateway's `agents` server definition (opt-in), an example agent |
 | `custos-selinux` | the `custos` module; pulled in where `selinux-policy-targeted` is installed |
 | `custos-tests` | the functional tests for openQA and other test systems (`/usr/libexec/custos/tests/run-tests.sh --disposable --results DIR`: TAP and JUnit), with a scripted model server and an MCP test server; they change the system for good, so only for test systems ([test/openqa](../../test/openqa/README.md)) |
+| `custos-cockpit` | the Cockpit page: the agents' activities, approvals (decided as the logged-in person), agents and their posture, audit, chat and the emergency stop; requires `cockpit-bridge` |
 
-There is no `-cockpit` subpackage yet. The Cockpit control plane is
-designed (CONTRACT.md Part I, the mockup in `docs/`) but not yet
-implemented as a Cockpit page.
+`custos-cockpit` is the Cockpit page (`/usr/share/cockpit/custos`), the
+control plane built on CONTRACT.md Part I; see `docs/screenshots`.
 
 ## After installation
 

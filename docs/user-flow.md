@@ -1,12 +1,9 @@
 # User flow
 
 How people use Custos from Cockpit: who logs in, what each person
-can see and do, and what happens behind each action. The Cockpit page
-(`custos-cockpit`) has the Activity, Approvals, Agents, Policy and Audit tabs, chat, and creating and
-deleting agents so far; the rest is
-designed ([mockup](mockup/Main.dc.html)). Everything behind it (the agents'
-control API, mcp-gateway's approvals, `agent-admin`) exists, so each step
-names the interface the page uses.
+can see and do, and what happens behind each action, in the Cockpit page
+(`custos-cockpit`; [screenshots](screenshots/README.md)). Each step names
+the interface the page uses.
 [CONTRACT.md](../CONTRACT.md) is the reference for every interface named
 here.
 
