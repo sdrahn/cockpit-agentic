@@ -125,6 +125,10 @@ func Profile(cfg *config.Config) ([]byte, error) {
 	}
 	if r := Refresh(cfg); r != nil {
 		cred["refresh"] = r
+		// One placeholder for the agent's whole life: the agent read it
+		// once, at start, and every renewal must resolve through it (the
+		// proxy answered 500 to requests after the first renewal).
+		cred["stable_placeholder"] = true
 	}
 	return yaml.Marshal(map[string]any{
 		"id":           ProfileID(cfg.Name),
