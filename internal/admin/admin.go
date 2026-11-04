@@ -682,7 +682,10 @@ func (a *Admin) writeGateway(name string, d *GatewayData) error {
 		cats, _ := m["categories"].(map[string]any)
 		for n, c := range d.Categories {
 			got, _ := cats[n].(map[string]any)
-			if got == nil || got["mode"] != c.Mode {
+			// The promotion's id too: a promotion again keeps the mode
+			// (bounded) and changes the envelope, which the gateway must
+			// have before agent-admin returns.
+			if got == nil || got["mode"] != c.Mode || (c.Promotion != "" && got["promotion"] != c.Promotion) {
 				return false
 			}
 		}
