@@ -112,7 +112,21 @@ type Notice struct {
 	Server, Tool, ApprovalID string
 	// Where is the place named by the gateway: a URL or a description.
 	Where string
+	// ProgressToken is the progress token of the call the notice is for,
+	// as the gateway names it in the notice's _meta (MetaApproval); empty
+	// from a gateway that names only the tool.
+	ProgressToken string
 }
+
+// MetaApproval is the _meta key of mcp-gateway's approval notice: the
+// approval id ("id") and the call it is for ("requestId",
+// "progressToken"; CONTRACT.md §7).
+const MetaApproval = "io.github.sdrahn.mcp-gateway/approval"
+
+// CallToken is the progress token the agent's tools/call carries for
+// ADK's call callID of invocation (NewClient), by which the gateway's
+// approval notice names the call.
+func CallToken(invocation, callID string) string { return "custos:" + invocation + "/" + callID }
 
 // ToolName is the tool's name on the aggregated endpoint.
 func (n Notice) ToolName() string { return n.Server + "__" + n.Tool }
@@ -138,7 +152,12 @@ func ParseNotice(p *mcp.LoggingMessageParams) (Notice, bool) {
 	if u, ok := cutPrefix(where, "at "); ok {
 		where = u
 	}
-	return Notice{Server: m[1], Tool: m[2], Where: where, ApprovalID: m[4]}, true
+	n := Notice{Server: m[1], Tool: m[2], Where: where, ApprovalID: m[4]}
+	// The call, if the gateway names it, for the same approval as the text.
+	if a, ok := p.Meta[MetaApproval].(map[string]any); ok && a["id"] == n.ApprovalID {
+		n.ProgressToken, _ = a["progressToken"].(string)
+	}
+	return n, true
 }
 
 func cutPrefix(s, p string) (string, bool) {
@@ -151,12 +170,44 @@ func cutPrefix(s, p string) (string, bool) {
 // NewClient returns the agent's MCP client. It declares no elicitation
 // capability (no ElicitationHandler), so the gateway never asks the
 // agent to approve its own call (§6). Logging messages go to onLog.
+//
+// Every tools/call made from an ADK tool carries the call's progress
+// token (CallToken), so that the gateway's approval notice names the
+// call it is for, not only the tool.
 func NewClient(agentName, version string, onLog func(context.Context, *mcp.LoggingMessageParams)) *mcp.Client {
-	return mcp.NewClient(&mcp.Implementation{Name: "custos/" + agentName, Version: version}, &mcp.ClientOptions{
+	c := mcp.NewClient(&mcp.Implementation{Name: "custos/" + agentName, Version: version}, &mcp.ClientOptions{
 		LoggingMessageHandler: func(ctx context.Context, r *mcp.LoggingMessageRequest) {
 			if onLog != nil {
 				onLog(ctx, r.Params)
 			}
 		},
 	})
+	c.AddSendingMiddleware(tagCalls)
+	return c
+}
+
+// adkCall is what ADK's tool context (tool.Context, the context ADK's MCP
+// toolset calls with) tells about the call.
+type adkCall interface {
+	InvocationID() string
+	FunctionCallID() string
+}
+
+// tagCalls sets a tools/call's progress token to its ADK call's
+// CallToken, unless it has one.
+func tagCalls(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		if method == "tools/call" {
+			if ids, ok := ctx.(adkCall); ok && ids.FunctionCallID() != "" {
+				if p, ok := req.GetParams().(*mcp.CallToolParams); ok && p.GetProgressToken() == nil {
+					// go-sdk's SetProgressToken drops a _meta it creates.
+					if p.Meta == nil {
+						p.Meta = mcp.Meta{}
+					}
+					p.SetProgressToken(CallToken(ids.InvocationID(), ids.FunctionCallID()))
+				}
+			}
+		}
+		return next(ctx, method, req)
+	}
 }

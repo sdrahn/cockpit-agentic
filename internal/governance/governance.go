@@ -630,8 +630,9 @@ func (g *Governor) afterTool(tctx agent.ToolContext, t tool.Tool, args, result m
 }
 
 // OnGatewayLog handles the gateway's logging messages: an approval
-// notice is assigned to the oldest call of its tool in flight without
-// one (CONTRACT.md §7, open item O2).
+// notice is assigned to the call it names (its progress token,
+// gateway.CallToken); from a gateway that names only the tool, to the
+// oldest call of its tool in flight without one (CONTRACT.md §7).
 func (g *Governor) OnGatewayLog(_ context.Context, p *mcp.LoggingMessageParams) {
 	n, ok := gateway.ParseNotice(p)
 	if !ok {
@@ -640,7 +641,13 @@ func (g *Governor) OnGatewayLog(_ context.Context, p *mcp.LoggingMessageParams) 
 	g.mu.Lock()
 	var call *Call
 	for _, c := range g.inflight {
-		if c.Tool == n.ToolName() && c.ApprovalID == "" {
+		if n.ProgressToken != "" {
+			// Named: that call or, if it is not in flight, none.
+			if gateway.CallToken(c.Invocation, c.CallID) == n.ProgressToken && c.Tool == n.ToolName() {
+				call = c
+				break
+			}
+		} else if c.Tool == n.ToolName() && c.ApprovalID == "" {
 			call = c
 			break
 		}

@@ -193,6 +193,11 @@ func TestApprovalFlow(t *testing.T) {
 			if got := types(seen); got[0] != "RUN_STARTED" || got[1] != "STATE_SNAPSHOT" {
 				t.Errorf("stream starts %v", got)
 			}
+			// The call carried its ADK call's token, by which the notice
+			// named it (CONTRACT.md §7).
+			if toks := e.gw.CallTokens(); len(toks) != 2 || !strings.HasPrefix(toks[1], "custos:") || !strings.HasSuffix(toks[1], "/c2") {
+				t.Errorf("calls' progress tokens %q", toks)
+			}
 			// Nothing state-changing ran before the decision.
 			if ran := e.gw.Ran(); len(ran) != 1 || ran[0] != "zypp__list_updates" {
 				t.Fatalf("executed before approval: %v", ran)
