@@ -248,17 +248,25 @@ local limits. A different host implementation changes none of this.
 Approvals are the gateway's (mcp-gateway architecture §5.6.1). Neither
 the agent nor its host can grant or forge one.
 
-1. The agent calls a tool. Policy says `ask` (channel `oob`). The
-   gateway creates a pending approval and the call waits (gateway
+1. The agent calls a tool, with a progress token in the call's
+   `_meta.progressToken` that is unique among its calls in flight
+   (MCP's own field for naming a request). Policy says `ask` (channel
+   `oob`). The gateway creates a pending approval and the call waits (gateway
    `approval_timeout`, 120 s by default; the approval itself stays
    pending after the call goes away, and the agent's next identical
    call takes it over).
 2. The gateway sends the agent `notifications/message` (`logger:
    "mcp-gateway"`, `level: "notice"`) with the text `Waiting for approval
-   of <server>/<tool> <where> (id <approval-id>).` The host assigns the
-   approval id to the oldest call of that tool in flight without one. The
-   activity's state becomes `waiting_approval`, the host writes
-   `approval.pending`, and it emits AG-UI `agent.approval.pending` (§11).
+   of <server>/<tool> <where> (id <approval-id>).` Its `_meta` names the
+   call: `"io.github.sdrahn.mcp-gateway/approval": {"id": <approval-id>,
+   "requestId": <the call's JSON-RPC id>, "progressToken": <the call's>}`
+   (sdrahn/mcp-gateway#333). The host assigns the approval id to the call
+   with that progress token, and to no call if none in flight has it.
+   From a gateway whose notice names no call, it assigns the approval id
+   to the oldest call of that tool in flight without one, which can pair
+   two calls of one tool crosswise. The activity's state becomes
+   `waiting_approval`, the host writes `approval.pending`, and it emits
+   AG-UI `agent.approval.pending` (§11).
 3. A person decides through the gateway: its control API (`POST
    /v1/approvals/{id}`) or its Cockpit page. **Who may decide** is the
    gateway's approver rules. Agent users have no password, so `self`
@@ -636,10 +644,10 @@ is installed). There is no Cockpit page package yet.
 - **O1 — owner as approver.** Gateway approver rules are per server. A
   rule "the owner of agent X approves its calls" needs a group per
   owner, or a gateway rule such as `owner-of:<principal>`.
-- **O2 — notice to call matching.** The gateway's approval notice names
-  the tool, not the request. With two calls of one tool in flight at
-  once, approval ids can be assigned crosswise. The gateway could put
-  the JSON-RPC request id into the notice's data.
+- **O2 — notice to call matching.** Settled: the gateway's approval
+  notice names the call by its progress token (§7,
+  sdrahn/mcp-gateway#333). Only against a gateway without it can two
+  calls of one tool in flight be assigned crosswise.
 - **O3 — AG-UI versions.** Unknown `RunAgentInput` fields are ignored.
   Newer event types are emitted only once this contract adds them.
 - **O4 — remote frontends.** AG-UI from other hosts needs

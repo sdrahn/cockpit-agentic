@@ -23,12 +23,17 @@ type Gateway struct {
 	Tools []string
 	// Block names tools whose calls never return (for cancel tests).
 	Block map[string]bool
+	// Legacy: approval notices name only the tool (mcp-gateway before
+	// sdrahn/mcp-gateway#333), no call in _meta.
+	Legacy bool
 
 	mu        sync.Mutex
 	decisions map[string]chan bool
 	Executed  []string // tools actually run, in order
 	Initializ []map[string]any
 	tokens    []string
+	// callTokens are the calls' progress tokens, in order.
+	callTokens []string
 }
 
 // StartGateway listens on dir/mcp.sock.
@@ -124,16 +129,24 @@ func (g *Gateway) serve(c net.Conn) {
 			var p struct {
 				Name      string         `json:"name"`
 				Arguments map[string]any `json:"arguments"`
+				Meta      struct {
+					ProgressToken any `json:"progressToken"`
+				} `json:"_meta"`
 			}
 			json.Unmarshal(m.Params, &p)
-			go g.call(m.ID, p.Name, p.Arguments, write)
+			go g.call(m.ID, p.Name, p.Arguments, p.Meta.ProgressToken, write)
 		default:
 			write(map[string]any{"jsonrpc": "2.0", "id": m.ID, "error": map[string]any{"code": -32601, "message": "method not found"}})
 		}
 	}
 }
 
-func (g *Gateway) call(id json.RawMessage, name string, args map[string]any, write func(any)) {
+func (g *Gateway) call(id json.RawMessage, name string, args map[string]any, token any, write func(any)) {
+	g.mu.Lock()
+	if tok, ok := token.(string); ok {
+		g.callTokens = append(g.callTokens, tok)
+	}
+	g.mu.Unlock()
 	text := func(s string, isErr bool) {
 		write(rpc{JSONRPC: "2.0", ID: id, Result: map[string]any{"content": []any{map[string]any{"type": "text", "text": s}}, "isError": isErr}})
 	}
@@ -142,10 +155,20 @@ func (g *Gateway) call(id json.RawMessage, name string, args map[string]any, wri
 	}
 	if aid, ok := g.Ask[name]; ok {
 		srv, tool := splitTool(name)
-		write(map[string]any{"jsonrpc": "2.0", "method": "notifications/message", "params": map[string]any{
+		// As mcp-gateway does since sdrahn/mcp-gateway#333: the call it is
+		// for in _meta, unless Legacy.
+		params := map[string]any{
 			"level": "notice", "logger": "mcp-gateway",
 			"data": "Waiting for approval of " + srv + "/" + tool + " on the mcp-gateway approvals page (id " + aid + ").",
-		}})
+		}
+		if !g.Legacy {
+			a := map[string]any{"id": aid, "requestId": id}
+			if token != nil {
+				a["progressToken"] = token
+			}
+			params["_meta"] = map[string]any{"io.github.sdrahn.mcp-gateway/approval": a}
+		}
+		write(map[string]any{"jsonrpc": "2.0", "method": "notifications/message", "params": params})
 		if !<-g.decision(aid) {
 			text("Forbidden: declined by an approver", true)
 			return
@@ -189,6 +212,13 @@ func (g *Gateway) Pending(id string) bool {
 	defer g.mu.Unlock()
 	_, ok := g.decisions[id]
 	return ok
+}
+
+// CallTokens returns the progress tokens of the tools/calls, in order.
+func (g *Gateway) CallTokens() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]string(nil), g.callTokens...)
 }
 
 // Tokens returns the bearer tokens the HTTP gateway saw.
@@ -249,6 +279,9 @@ func (g *Gateway) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		var p struct {
 			Name      string         `json:"name"`
 			Arguments map[string]any `json:"arguments"`
+			Meta      struct {
+				ProgressToken any `json:"progressToken"`
+			} `json:"_meta"`
 		}
 		json.Unmarshal(m.Params, &p)
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -264,7 +297,7 @@ func (g *Gateway) serveHTTP(w http.ResponseWriter, r *http.Request) {
 				fl.Flush()
 			}
 		}
-		g.call(m.ID, p.Name, p.Arguments, write)
+		g.call(m.ID, p.Name, p.Arguments, p.Meta.ProgressToken, write)
 	default:
 		reply(map[string]any{"jsonrpc": "2.0", "id": m.ID, "error": map[string]any{"code": -32601, "message": "method not found"}})
 	}

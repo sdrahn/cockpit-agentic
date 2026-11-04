@@ -7,6 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/gateway"
 	"github.com/sdrahn/custos/internal/journal"
 )
 
@@ -85,5 +86,37 @@ func TestPauseResumeCancel(t *testing.T) {
 	}
 	if len(log.Events(journal.AgentPaused)) != 2 || len(log.Events(journal.AgentResumed)) != 1 {
 		t.Error("pause/resume not journaled")
+	}
+}
+
+// O2: with two calls of one tool in flight, a notice that names its call
+// (the progress token in _meta) goes to that call, whatever the order; a
+// notice that names only the tool goes to the oldest call without one; a
+// named call that is not in flight gets nothing.
+func TestNoticeNamesCall(t *testing.T) {
+	g, log := newGov()
+	c1 := &Call{Session: "s1", Invocation: "e-1", CallID: "c1", Tool: "zypp__install", State: StateRunning}
+	c2 := &Call{Session: "s1", Invocation: "e-1", CallID: "c2", Tool: "zypp__install", State: StateRunning}
+	c3 := &Call{Session: "s1", Invocation: "e-1", CallID: "c3", Tool: "zypp__install", State: StateRunning}
+	g.inflight = append(g.inflight, c1, c2, c3)
+	notice := func(id, token string) {
+		p := &mcp.LoggingMessageParams{Logger: "mcp-gateway", Level: "notice",
+			Data: "Waiting for approval of zypp/install on the mcp-gateway approvals page (id " + id + ")."}
+		if token != "" {
+			p.Meta = mcp.Meta{gateway.MetaApproval: map[string]any{"id": id, "progressToken": token}}
+		}
+		g.OnGatewayLog(context.Background(), p)
+	}
+	notice("a-2", gateway.CallToken("e-1", "c2"))
+	notice("a-9", gateway.CallToken("e-1", "gone"))
+	notice("a-1", "")
+	if c1.ApprovalID != "a-1" || c2.ApprovalID != "a-2" || c3.ApprovalID != "" {
+		t.Errorf("assigned: c1 %q, c2 %q, c3 %q", c1.ApprovalID, c2.ApprovalID, c3.ApprovalID)
+	}
+	want := map[string]string{"a-2": "c2", "a-9": "", "a-1": "c1"}
+	for _, r := range log.Events(journal.ApprovalPending) {
+		if id := r.Fields["APPROVAL_ID"]; r.Fields["CALL_ID"] != want[id] {
+			t.Errorf("journal: %s for call %q, want %q", id, r.Fields["CALL_ID"], want[id])
+		}
 	}
 }
