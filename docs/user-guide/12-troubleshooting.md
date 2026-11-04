@@ -150,6 +150,7 @@ anyway. Check in this order:
 | the agent's records missing from the host's journal | the relay cannot read the sandbox's container: `CUSTOS_OPENSHELL_USER` not set at `create` for rootless Podman | `journalctl -u agent-openshell@NAME.service` names it (`agent-openshell-logs: …`); recreate the agent with the variable set |
 | sandboxes fail to start with rootless Podman (`memory.swap.max`) | cgroup controllers not delegated to the user | the `user@.service` drop-in, then restart the user's manager ([chapter 11](11-openshell.md#install-openshell)) |
 | brief `500` errors around a token renewal | OpenShell's proxy while it renews | none: the agent retries and reconnects |
+| `agent-openshell-start: sandbox agent-NAME is not Ready after 120s: …` in `journalctl -u agent-openshell@NAME.service`; the agent's socket does not answer | OpenShell did not get the sandbox *Ready* within 2 minutes. The text after the colon says why: `sandbox agent-NAME is Stopping` (a stop that does not finish), OpenShell's refusal of the start (`previous driver operation is still pending`, `sandbox must be Stopped…`), or `openshell does not know sandbox agent-NAME` | the unit tries again after 5 seconds (`Restart=on-failure`). If it keeps failing: `openshell sandbox get agent-NAME` and `openshell logs agent-NAME`. A sandbox OpenShell no longer knows is made again by `agent-admin set-credential` |
 | `sandbox … is still there … after its deletion` (edit) | OpenShell did not delete the old sandbox in 2 minutes | `openshell sandbox list`; delete it by hand, then `agent-admin edit` again |
 
 ## agent-admin says the gateway's policy did not load the change {#policy-not-loaded}
@@ -193,4 +194,5 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | `importing the provider profile`, `creating the provider`, `minting the first token`, `creating the sandbox` | [OpenShell agents and tokens](#openshell) |
 | `model.credential "…": no credentials directory` | [An agent does not start](#agent-start) |
 | `401 invalid token`, `403 insufficient scope` | [OpenShell agents and tokens](#openshell) |
+| `agent-openshell-start: sandbox … is not Ready after 120s` | [OpenShell agents and tokens](#openshell) |
 | Cockpit: `no access to its socket`, `This needs administrative access`, `Reading the journal needs access`, `You may not decide approval` | [Cockpit problems](#cockpit) |
