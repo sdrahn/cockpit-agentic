@@ -83,6 +83,7 @@ open items.
 | `gateway/servers.d` | the `agents` server definition |
 | `systemd/` | `agent@.service`, `agent@.socket`, `agent-schedule@.service`, `agent-schedule@.timer` |
 | `selinux/` | the `custos` module |
+| `cockpit/` | the Cockpit page (`custos/`, packaged as `custos-cockpit`) and its smoke test against a stub of Cockpit (`test/`, `make cockpit-test`) |
 | `packaging/` | OBS packaging for SLES 16.0/16.1 and Leap 16.0/16.1 (`suse/`), sysusers.d, tmpfiles.d |
 | `examples/patch-pilot` | an example agent and its gateway permissions |
 | `test/vm` | the functional tests on an installed system (`run-tests.sh`) and their helpers (`fakemodel`, `testsrv`), packaged as `custos-tests` |
@@ -125,6 +126,6 @@ curl --unix-socket /tmp/pp.sock http://agent/v1/status
 | SELinux module | written, not yet built or run on SLES 16 / Leap 16 |
 | OBS packaging | spec and services written, with the `-tests` subpackage; first OBS build to do |
 | Functional tests (`custos-tests`, openQA) | written; not yet run on SLES 16 / Leap 16 |
-| Cockpit page (`cockpit-custos`) | designed (mockup); to do |
+| Cockpit page (`custos-cockpit`) | Activity and Approvals tabs implemented, smoke-tested against a stub of Cockpit; Agents, Policy, Audit and the emergency stop to do |
 
 See [packaging/suse/README.md](packaging/suse/README.md) for building on OBS.

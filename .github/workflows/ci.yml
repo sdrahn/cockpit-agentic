@@ -38,6 +38,20 @@ jobs:
           rm "$d/agent-schedule@.timer"
           systemd-analyze verify "$d"/*.service "$d"/*.socket "$d"/*.timer 2>&1 | grep -v 'is not executable' | (! grep .)
 
+  # The Cockpit page (cockpit/custos) in a headless browser, against a
+  # stub of cockpit.js with fixtures.
+  cockpit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-save --no-package-lock playwright-core@1
+      - run: make cockpit-test
+        env:
+          CHROME: /usr/bin/google-chrome
+
   policy:
     runs-on: ubuntu-24.04
     steps:
@@ -124,6 +138,7 @@ jobs:
           /usr/libexec/custos/agent-launcher version
           test -f /usr/share/mcp-gateway/policy/custos/agents.rego
           test -x /usr/libexec/custos/tests/run-tests.sh
+          test -f /usr/share/cockpit/custos/manifest.json
           # The labels the module gives the programs.
           matchpathcon /usr/libexec/custos/agent-launcher | grep -q agent_exec_t
           matchpathcon /usr/libexec/custos/agent-delegate | grep -q mcpsrv_agents_exec_t
