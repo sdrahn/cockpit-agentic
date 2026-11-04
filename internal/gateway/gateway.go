@@ -5,6 +5,8 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,6 +14,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -63,12 +66,16 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 	// little while after it renewed the token (until the sandbox's
 	// supervisor has the new one). mcp-gateway answers 500 only to an
 	// initialize it cannot serve. So a 500 is retried with backoff, while
-	// the request can be sent again and the caller still waits.
-	for wait := retryFirst; err == nil && res.StatusCode == http.StatusInternalServerError && wait <= retryLast; wait *= 2 {
-		if r.Body != nil && r.GetBody == nil {
-			break
+	// the request can be sent again and the caller still waits. Around a
+	// renewal the sandbox may also refuse the connection for a moment
+	// (connect: permission denied): nothing was sent, so any request is
+	// retried. And the proxy may close the connection without an answer
+	// (EOF): that is retried only for a request that may run twice
+	// (never a tools/call, which may have reached the gateway).
+	for wait := retryFirst; retryable(r, res, err) && wait <= retryLast; wait *= 2 {
+		if err == nil {
+			drain(res)
 		}
-		drain(res)
 		select {
 		case <-r.Context().Done():
 			return nil, r.Context().Err()
@@ -93,6 +100,58 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 		}
 	}
 	return res, err
+}
+
+// retryable: a 500, a connection that could not be made, or one dropped
+// without an answer to a request that is safe to send again; and the
+// request can be sent again.
+func retryable(r *http.Request, res *http.Response, err error) bool {
+	if r.Body != nil && r.GetBody == nil {
+		return false
+	}
+	if err == nil {
+		return res.StatusCode == http.StatusInternalServerError
+	}
+	return notConnected(err) || (dropped(err) && idempotent(r))
+}
+
+// notConnected: the connection could not be made, so nothing was sent.
+func notConnected(err error) bool {
+	var op *net.OpError
+	return errors.As(err, &op) && op.Op == "dial"
+}
+
+// dropped: the connection ended without an answer.
+func dropped(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.ECONNRESET)
+}
+
+// idempotent: a request whose repetition changes nothing: the session's
+// stream (GET), and the JSON-RPC methods that only read or set up a
+// session. A tools/call, a batch or anything unknown is not.
+func idempotent(r *http.Request) bool {
+	if r.Method == http.MethodGet {
+		return true
+	}
+	if r.Method != http.MethodPost || r.GetBody == nil {
+		return false
+	}
+	body, err := r.GetBody()
+	if err != nil {
+		return false
+	}
+	defer body.Close()
+	var msg struct {
+		Method string `json:"method"`
+	}
+	if json.NewDecoder(io.LimitReader(body, 1<<20)).Decode(&msg) != nil {
+		return false
+	}
+	switch msg.Method {
+	case "initialize", "notifications/initialized", "ping", "tools/list", "prompts/list", "resources/list", "resources/templates/list":
+		return true
+	}
+	return false
 }
 
 // The backoff of retried 500s: 0.5 s doubling to 8 s, about 15 s in all
