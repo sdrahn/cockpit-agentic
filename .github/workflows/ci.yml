@@ -237,7 +237,7 @@ jobs:
           sudo openshell gateway list
           sudo openshell status
       - name: Run the OpenShell tests
-        run: sudo -E env "PATH=$PATH" MCPGW_SRC="$GITHUB_WORKSPACE/mcp-gateway" test/openshell/run-spike.sh --disposable --results "$RUNNER_TEMP/osh"
+        run: sudo -E env "PATH=$PATH" MCPGW_SRC="$GITHUB_WORKSPACE/mcp-gateway" OPENSHELL_GATEWAY_USER="$USER" test/openshell/run-spike.sh --disposable --results "$RUNNER_TEMP/osh"
       - if: always()
         uses: actions/upload-artifact@v4
         with:

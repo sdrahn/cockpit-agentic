@@ -2,7 +2,6 @@ package openshell
 
 import (
 	"encoding/base64"
-	"slices"
 	"strings"
 	"testing"
 
@@ -31,12 +30,9 @@ func TestPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	var p struct {
-		Version    int
-		Process    map[string]string
-		Landlock   map[string]string
-		Filesystem struct {
-			ReadOnly []string `yaml:"read_only"`
-		} `yaml:"filesystem_policy"`
+		Version          int
+		Process          map[string]string
+		Landlock         map[string]string
 		Network_policies map[string]struct {
 			Endpoints []map[string]any
 			Binaries  []map[string]string
@@ -47,16 +43,6 @@ func TestPolicy(t *testing.T) {
 	}
 	if p.Version != 1 || p.Process["run_as_user"] != "sandbox" || p.Landlock["compatibility"] != "hard_requirement" {
 		t.Errorf("policy %s", b)
-	}
-	// The trust store OpenShell's proxy verifies the gateway with (on
-	// openSUSE /etc/ssl/ca-bundle.pem points into it).
-	if !slices.Contains(p.Filesystem.ReadOnly, "/var/lib/ca-certificates") {
-		t.Errorf("the CA store is not readable: %v", p.Filesystem.ReadOnly)
-	}
-	for _, d := range p.Filesystem.ReadOnly {
-		if d == "/var" || d == "/var/lib" || d == "/" {
-			t.Errorf("read-only %s opens more than the trust store", d)
-		}
 	}
 	if _, ok := p.Network_policies["mcp_gateway"]; ok {
 		t.Error("the gateway's rule belongs to the provider profile; OpenShell refuses it twice")

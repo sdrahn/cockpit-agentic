@@ -6,9 +6,10 @@
 # through its relayed socket. CI runs it on a GitHub runner with Docker
 # (job openshell); it needs root, systemd, Docker, the openshell CLI with
 # a local gateway, opa, the binaries from `make build build-tests`, and an
-# mcp-gateway checkout built with `make build` (MCPGW_SRC).
+# mcp-gateway checkout built with `make build` (MCPGW_SRC), and the user
+# whose local OpenShell gateway it is (OPENSHELL_GATEWAY_USER).
 #
-# Usage: MCPGW_SRC=DIR test/openshell/run-spike.sh --disposable [--results DIR]
+# Usage: MCPGW_SRC=DIR OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --disposable [--results DIR]
 #
 # mcp-gateway runs in its development mode (no systemd, no SELinux; the
 # exec supervisor) with its own policy, cockpit-agentic's agents module
@@ -121,12 +122,29 @@ check "the gateway takes the test server" eventually 30 bash -c "curl -s --unix-
 curl -sf "$issuer/token?sub=agent-sb&aud=$aud&exp=7200" >"$work/token"
 check "the issuer gives agent-sb a token" test -s "$work/token"
 
+section "OpenShell trusts the gateway's CA"
+# OpenShell's proxy verifies the gateway in each sandbox's supervisor,
+# not with the image's trust store: the CA goes into the OpenShell
+# gateway's configuration (CONTRACT.md §16a), here the local gateway of
+# OPENSHELL_GATEWAY_USER (systemctl --user, ~/.config/openshell).
+osh_user=${OPENSHELL_GATEWAY_USER:-}
+osh_home=$(getent passwd "$osh_user" | cut -d: -f6)
+osh_toml=$osh_home/.config/openshell/gateway.toml
+check "the OpenShell gateway's user is known (OPENSHELL_GATEWAY_USER)" test -n "$osh_user" -a -d "$osh_home/.config/openshell"
+install -m 0644 -o "$osh_user" "$work/tls/ca.pem" "$osh_home/.config/openshell/mcp-gateway-ca.pem"
+[ -e "$osh_toml" ] || install -m 0644 -o "$osh_user" /dev/null "$osh_toml"
+if grep -q '^\[openshell\.supervisor\.network\]' "$osh_toml"; then
+	sed -i "/^\[openshell\.supervisor\.network\]/a additional_ca_bundle = \"$osh_home/.config/openshell/mcp-gateway-ca.pem\"" "$osh_toml"
+else
+	printf '\n[openshell.supervisor.network]\nadditional_ca_bundle = "%s"\n' "$osh_home/.config/openshell/mcp-gateway-ca.pem" >>"$osh_toml"
+fi
+check "the OpenShell gateway restarts with the CA" systemctl --user --machine="$osh_user@" restart openshell-gateway ||
+	systemctl --user --machine="$osh_user@" status --no-pager openshell-gateway 2>&1 | tail -n 15 | sed 's/^/    | /'
+check "the OpenShell gateway answers again" eventually 90 osh status
+
 section "Agent image"
 img=localhost/cockpit-agentic-agent:ci
-# With the gateway's CA: OpenShell's proxy verifies the gateway with the
-# image's trust store.
-check "the agent image builds (with the gateway's CA)" docker build -q -t "$img" -f "$here/packaging/openshell/Containerfile" \
-	--build-arg GATEWAY_CA="$(cat "$work/tls/ca.pem")" "$here"
+check "the agent image builds" docker build -q -t "$img" -f "$here/packaging/openshell/Containerfile" "$here"
 
 section "Creating the agent"
 cat >"$work/sb.yaml" <<EOF
@@ -198,11 +216,10 @@ if [ -n "$relay_ok" ]; then
 		{
 			echo "    | the agent answered: $(jq -c '{state, summary, reason, calls: [.calls[]? | {tool, state, reason}]}' <<<"$a" 2>/dev/null || head -c 400 <<<"$a")"
 			journalctl --no-pager -o cat --since "@$t0" AGENT_NAME=sb 2>/dev/null | tail -n 15 | sed 's/^/    | agent: /'
-			# OpenShell's proxy verifies the gateway with the first CA bundle
-			# it finds (PR 862): which exist in the sandbox, and has ours?
-			ca_line=$(sed -n 2p "$work/tls/ca.pem")
-			timeout 30 openshell -g openshell sandbox exec -n agent-sb -- /bin/sh -c "for f in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/ca-bundle.pem /etc/ssl/cert.pem; do if [ -e \$f ]; then echo \"\$f: \$(grep -c 'BEGIN CERT' \$f) certs, ours: \$(grep -cF '$ca_line' \$f)\"; else echo \"\$f: none\"; fi; done" </dev/null 2>&1 | sed 's/^/    | sandbox: /'
-			timeout 5 /usr/libexec/cockpit-agentic/agent-openshell-logs agent-sb </dev/null 2>&1 | grep -iE '18443|ca bundle|certificate|tls' | tail -n 8 | sed 's/^/    | supervisor: /'
+			# Where OpenShell's proxy takes the gateway's CA from.
+			echo "    | OpenShell's gateway.toml: $(grep -A2 '^\[openshell\.supervisor\.network\]' "$osh_toml" 2>&1 | tr '\n' ' ')"
+			journalctl --user --machine="$osh_user@" -u openshell-gateway --no-pager -o cat --since "@$t0" 2>/dev/null | grep -iE 'additional|ca bundle|trust' | tail -n 5 | sed 's/^/    | openshell-gateway: /'
+			timeout 5 /usr/libexec/cockpit-agentic/agent-openshell-logs agent-sb </dev/null 2>&1 | grep -iE '18443|certificate|tls|trust' | tail -n 6 | sed 's/^/    | supervisor: /'
 		}
 	check "the gateway audited the call as agent-sb over HTTPS" eventually 10 gw_audit_has '.sub == "agent-sb" and .name == "probe" and .effect == "allow"' ||
 		journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
