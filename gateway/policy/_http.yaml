@@ -1,0 +1,7 @@
+# The token issuers whose subjects agent-<name> are cockpit-agentic agents
+# on mcp-gateway's HTTPS listener (agents in an OpenShell sandbox,
+# CONTRACT.md §16a). Such an issuer must issue those subjects to agents
+# only. None by default: agents are reached on the gateway's socket only.
+# Installed as /etc/mcp-gateway/policy/agents/_http.yaml.
+_http:
+  issuers: []

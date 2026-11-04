@@ -171,6 +171,7 @@ done
 %dir %{_sysconfdir}/mcp-gateway/policy
 %dir %{_sysconfdir}/mcp-gateway/policy/agents
 %config(noreplace) %{_sysconfdir}/mcp-gateway/policy/agents/_control.yaml
+%config(noreplace) %{_sysconfdir}/mcp-gateway/policy/agents/_http.yaml
 %{_datadir}/cockpit-agentic
 
 %files tests
@@ -180,6 +181,7 @@ done
 %{_libexecdir}/cockpit-agentic/tests/fakemodel
 %{_libexecdir}/cockpit-agentic/tests/testsrv
 %{_libexecdir}/cockpit-agentic/tests/fakegateway
+%{_libexecdir}/cockpit-agentic/tests/testidp
 
 %files selinux
 %dir %{_datadir}/selinux/packages/%{selinuxtype}

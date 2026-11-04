@@ -18,7 +18,7 @@ GATEWAY_POLICY ?= $(DATADIR)/mcp-gateway/policy
 LDFLAGS := -X github.com/sdrahn/cockpit-agentic/internal/launcher.Version=$(VERSION)
 BINS := agent-launcher agent-admin agent-delegate agent-openshell-relay
 # The functional tests' helpers (package cockpit-agentic-tests).
-TESTBINS := fakemodel testsrv fakegateway
+TESTBINS := fakemodel testsrv fakegateway testidp
 
 .PHONY: all build build-tests test check fmt-check vet policy-test selinux install install-selinux install-tests clean
 
@@ -75,6 +75,7 @@ install: build
 	install -D -m 0644 packaging/tmpfiles/cockpit-agentic.conf $(DESTDIR)$(TMPFILESDIR)/cockpit-agentic.conf
 	install -D -m 0644 gateway/policy/agents.rego $(DESTDIR)$(DATADIR)/mcp-gateway/policy/cockpit-agentic/agents.rego
 	install -D -m 0644 gateway/policy/_control.yaml $(DESTDIR)$(SYSCONFDIR)/mcp-gateway/policy/agents/_control.yaml
+	install -D -m 0644 gateway/policy/_http.yaml $(DESTDIR)$(SYSCONFDIR)/mcp-gateway/policy/agents/_http.yaml
 	install -D -m 0644 gateway/servers.d/agents.yaml $(DESTDIR)$(DATADIR)/cockpit-agentic/gateway/servers.d/agents.yaml
 	install -D -m 0644 examples/patch-pilot/agent.yaml $(DESTDIR)$(DATADIR)/cockpit-agentic/examples/patch-pilot/agent.yaml
 	install -D -m 0644 examples/patch-pilot/permissions.yaml $(DESTDIR)$(DATADIR)/cockpit-agentic/examples/patch-pilot/permissions.yaml
@@ -86,6 +87,7 @@ install-tests: build-tests
 	install -Dm0755 bin/tests/fakemodel $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/tests/fakemodel
 	install -Dm0755 bin/tests/testsrv $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/tests/testsrv
 	install -Dm0755 bin/tests/fakegateway $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/tests/fakegateway
+	install -Dm0755 bin/tests/testidp $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/tests/testidp
 
 install-selinux: selinux
 	install -d $(DESTDIR)$(SELINUXDIR)

@@ -1,18 +1,21 @@
 #!/bin/bash
 # The OpenShell backend (CONTRACT.md §3a, §16a) with a real NVIDIA
 # OpenShell: an agent created with agent-admin runs in an OpenShell
-# sandbox, reaches a gateway on the host over HTTP with a token that only
-# OpenShell's supervisor holds, and is supervised through its relayed
-# socket. CI runs it on a GitHub runner with Docker (job openshell); it
-# needs root, systemd, Docker, the openshell CLI with a local gateway, and
-# the binaries from `make build build-tests`.
+# sandbox, reaches mcp-gateway's HTTPS listener on the host with an OAuth
+# access token that only OpenShell's supervisor holds, and is supervised
+# through its relayed socket. CI runs it on a GitHub runner with Docker
+# (job openshell); it needs root, systemd, Docker, the openshell CLI with
+# a local gateway, opa, the binaries from `make build build-tests`, and an
+# mcp-gateway checkout built with `make build` (MCPGW_SRC), and the user
+# whose local OpenShell gateway it is (OPENSHELL_GATEWAY_USER).
 #
-# Usage: test/openshell/run-spike.sh --disposable [--results DIR]
+# Usage: MCPGW_SRC=DIR OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --disposable [--results DIR]
 #
-# The gateway is test/vm/fakegateway: it serves the tools, holds the
-# approval of agentic-test__change, and refuses requests without the real
-# token. mcp-gateway's own HTTPS listener with OAuth is the next step
-# (open item O10).
+# mcp-gateway runs in its development mode (no systemd, no SELinux; the
+# exec supervisor) with its own policy, cockpit-agentic's agents module
+# and the agents' data from agent-admin, as installed. Its HTTPS listener
+# trusts test/vm/testidp, which issues agent-sb's token (subject agent-sb,
+# no local-user claim); agents/_http.yaml lists that issuer for agents.
 set -u
 here=$(cd "$(dirname "$0")/../.." && pwd)
 disposable= results=
@@ -40,7 +43,11 @@ eventually() { local deadline=$((SECONDS + $1)); shift; until "$@"; do [ "$SECON
 not() { ! "$@"; }
 json_ok() { jq -e "$2" >/dev/null 2>&1 <<<"$1"; }
 api() { local p=$1; shift; curl -sS --max-time 180 --unix-socket /run/agents/sb/api.sock "http://agent$p" "$@"; }
-admin() { curl -sS --max-time 10 "http://127.0.0.1:18444$1" "${@:2}"; }
+# gw <path> [curl args...]: the gateway's control API.
+gw() { local p=$1; shift; curl -sS --max-time 30 --unix-socket "$work/gw/control.sock" "http://localhost$p" "$@"; }
+# gw_audit_has <jq condition>: the gateway's audit records since the start.
+gw_audit_has() { journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | grep '"audit":true' | jq -e "select($1)" >/dev/null 2>&1; }
+activity() { api "/v1/activities/$1"; }
 run_activity() { api /v1/activities -X POST -d "$(jq -nc --arg p "$1" '{prompt: $p, wait: true}')"; }
 summary_has() { grep -qF -- "$2" <<<"$(jq -r .summary <<<"$1")"; }
 journal_has() { journalctl -o json --no-pager --since "@$t0" AGENT_NAME=sb "AGENT_EVENT=$1" 2>/dev/null | jq -e "select($2)" >/dev/null 2>&1; }
@@ -50,6 +57,9 @@ section Preconditions
 check "openshell is installed" command -v openshell
 check "the local OpenShell gateway answers" eventually 60 osh status
 check "docker runs" bash -c "docker info >/dev/null"
+mcpgw=${MCPGW_SRC:-}
+check "an mcp-gateway checkout is built (MCPGW_SRC)" test -x "$mcpgw/bin/mcp-gateway" -a -d "$mcpgw/policy/mcp"
+check "opa is installed" command -v opa
 
 section Install
 # What the package installs (packaging/suse), into this system.
@@ -63,16 +73,85 @@ check "agent-admin is installed" command -v agent-admin
 check "the relay is installed" test -x /usr/libexec/cockpit-agentic/agent-openshell-relay
 check "its log source is installed" test -x /usr/libexec/cockpit-agentic/agent-openshell-logs
 
+section "Model on the host"
+systemd-run --unit=osh-fakemodel /usr/libexec/cockpit-agentic/tests/fakemodel --listen 0.0.0.0:8008 >/dev/null
+
+section "mcp-gateway on the host (HTTPS)"
+# The agent reaches the host as host.openshell.internal (OpenShell's
+# Docker driver: the host's loopback), so that is the certificate's name
+# and the gateway's audience.
+aud=https://host.openshell.internal:18443/mcp
+issuer=http://127.0.0.1:18445
+mkdir -p "$work/gw/servers.d" "$work/gw/rbac" "$work/tls" /run/mcp-gateway
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 -subj /CN=cockpit-agentic-test-ca \
+	-addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign \
+	-keyout "$work/tls/ca.key" -out "$work/tls/ca.pem" 2>/dev/null
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj /CN=host.openshell.internal \
+	-keyout "$work/tls/key.pem" -out "$work/tls/req.pem" 2>/dev/null
+printf 'subjectAltName=DNS:host.openshell.internal,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' >"$work/tls/ext.cnf"
+openssl x509 -req -in "$work/tls/req.pem" -CA "$work/tls/ca.pem" -CAkey "$work/tls/ca.key" -CAcreateserial -days 2 \
+	-extfile "$work/tls/ext.cnf" -out "$work/tls/cert.pem" 2>/dev/null
+check "the gateway's certificate names host.openshell.internal" bash -c "openssl x509 -in '$work/tls/cert.pem' -noout -ext subjectAltName | grep -q DNS:host.openshell.internal"
+
+systemd-run --unit=osh-testidp /usr/libexec/cockpit-agentic/tests/testidp --listen 127.0.0.1:18445 >/dev/null
+check "the token issuer answers" eventually 20 curl -sf -o /dev/null "$issuer/.well-known/openid-configuration"
+# Its subjects agent-<name> are agents (agents/_http.yaml, CONTRACT.md §16a).
+printf '_http:\n  issuers: ["%s"]\n' "$issuer" >/etc/mcp-gateway/policy/agents/_http.yaml
+
+# OPA as mcp-opa.service runs it: the gateway's policy, the agents module,
+# the agents' data (agent-admin) and the gateway's default role data.
+cp "$mcpgw/policy/mcp/rbac/data.yaml" "$work/gw/rbac/data.yaml"
+systemd-run --unit=osh-opa opa run --server --addr unix:///run/mcp-gateway/opa.sock --watch --log-format json \
+	--ignore rbac --ignore '*.json' "$mcpgw/policy" /usr/share/mcp-gateway/policy/cockpit-agentic \
+	mcp:/etc/mcp-gateway/policy "mcp.rbac:$work/gw/rbac" >/dev/null
+check "OPA has the agents' issuer" eventually 30 bash -c "curl -s --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http/issuers | grep -qF '$issuer'"
+
+printf '%s\n' 'version: 1' 'name: agentic-test' 'command: ["/usr/libexec/cockpit-agentic/tests/testsrv"]' 'run_as: gateway' \
+	>"$work/gw/servers.d/agentic-test.yaml"
+printf '%s\n' "socket: $work/gw/mcp.sock" "servers_dir: $work/gw/servers.d" "state_dir: $work/gw/state" \
+	"approvals:" "  control_socket: $work/gw/control.sock" \
+	"policy:" "  opa_socket: /run/mcp-gateway/opa.sock" \
+	"supervisor:" "  mode: exec" \
+	"http:" '  listen: ":18443"' "  cert_file: $work/tls/cert.pem" "  key_file: $work/tls/key.pem" \
+	"  issuer: $issuer" "  audience: $aud" >"$work/gw/gateway.yaml"
+systemd-run --unit=osh-mcp-gateway "$mcpgw/bin/mcp-gateway" --config "$work/gw/gateway.yaml" >/dev/null
+check "the gateway's HTTPS listener refuses a request without a token (401)" eventually 30 bash -c \
+	"curl -s -o /dev/null -w '%{http_code}' --cacert '$work/tls/ca.pem' --resolve host.openshell.internal:18443:127.0.0.1 -X POST $aud | grep -qx 401" ||
+	journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
+check "the gateway takes the test server" eventually 30 bash -c "curl -s --unix-socket '$work/gw/control.sock' http://localhost/v1/servers | grep -q agentic-test"
+curl -sf "$issuer/token?sub=agent-sb&aud=$aud&exp=7200" >"$work/token"
+check "the issuer gives agent-sb a token" test -s "$work/token"
+
+section "OpenShell trusts the gateway's CA"
+# OpenShell's proxy verifies the gateway in each sandbox's supervisor,
+# not with the image's trust store: the CA goes into the OpenShell
+# gateway's configuration (CONTRACT.md §16a), here the local gateway of
+# OPENSHELL_GATEWAY_USER (systemctl --user, ~/.config/openshell).
+osh_user=${OPENSHELL_GATEWAY_USER:-}
+osh_home=$(getent passwd "$osh_user" | cut -d: -f6)
+osh_toml=$osh_home/.config/openshell/gateway.toml
+check "the OpenShell gateway's user is known (OPENSHELL_GATEWAY_USER)" test -n "$osh_user" -a -d "$osh_home/.config/openshell"
+install -m 0644 -o "$osh_user" "$work/tls/ca.pem" "$osh_home/.config/openshell/mcp-gateway-ca.pem"
+# A gateway.toml must say its format (OpenShell 0.1.7: version 2); the
+# package does not ship one for a local gateway.
+[ -s "$osh_toml" ] || { printf '[openshell]\nversion = 2\n' >"$osh_toml" && chown "$osh_user" "$osh_toml"; }
+if grep -q '^\[openshell\.supervisor\.network\]' "$osh_toml"; then
+	sed -i "/^\[openshell\.supervisor\.network\]/a additional_ca_bundle = \"$osh_home/.config/openshell/mcp-gateway-ca.pem\"" "$osh_toml"
+else
+	printf '\n[openshell.supervisor.network]\nadditional_ca_bundle = "%s"\n' "$osh_home/.config/openshell/mcp-gateway-ca.pem" >>"$osh_toml"
+fi
+check "OpenShell's configuration check takes it" runuser -u "$osh_user" -- env HOME="$osh_home" XDG_CONFIG_HOME="$osh_home/.config" openshell-gateway config preflight ||
+	{
+		runuser -u "$osh_user" -- env HOME="$osh_home" XDG_CONFIG_HOME="$osh_home/.config" openshell-gateway config preflight 2>&1 | tail -n 15 | sed 's/^/    | preflight: /'
+		sed 's/^/    | gateway.toml: /' "$osh_toml"
+	}
+check "the OpenShell gateway restarts with the CA" systemctl --user --machine="$osh_user@" restart openshell-gateway ||
+	systemctl --user --machine="$osh_user@" status --no-pager openshell-gateway 2>&1 | tail -n 15 | sed 's/^/    | /'
+check "the OpenShell gateway answers again" eventually 90 osh status
+
 section "Agent image"
 img=localhost/cockpit-agentic-agent:ci
 check "the agent image builds" docker build -q -t "$img" -f "$here/packaging/openshell/Containerfile" "$here"
-
-section "Model and gateway on the host"
-head -c 24 /dev/urandom | base64 >"$work/token"
-systemd-run --unit=osh-fakemodel /usr/libexec/cockpit-agentic/tests/fakemodel --listen 0.0.0.0:8008 >/dev/null
-systemd-run --unit=osh-fakegateway /usr/libexec/cockpit-agentic/tests/fakegateway --listen 0.0.0.0:18443 --admin 127.0.0.1:18444 --token-file "$work/token" >/dev/null
-check "the fake gateway answers" eventually 20 bash -c 'curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:18443/mcp | grep -q 401'
-admin /tokens/reset -X POST >/dev/null
 
 section "Creating the agent"
 cat >"$work/sb.yaml" <<EOF
@@ -81,7 +160,7 @@ name: sb
 description: OpenShell spike agent
 model: {provider: openai, name: fake, endpoint: "http://127.0.0.1:8008/v1"}
 instruction: You are a test agent.
-gateway: {url: "http://127.0.0.1:18443/mcp", servers: [agentic-test]}
+gateway: {url: "$aud", servers: [agentic-test]}
 limits: {max_invocation_seconds: 300}
 interaction: {agui: true, client_tools: deny}
 sandbox: {kind: openshell, openshell_gateway: openshell}
@@ -89,6 +168,8 @@ EOF
 agent-admin delete sb >/dev/null 2>&1
 export AGENTIC_OPENSHELL_IMAGE=$img
 check "agent-admin create sb (openshell)" agent-admin create sb --from "$work/sb.yaml"
+printf '%s\n' '- {server: agentic-test, tool: probe, read_only: true}' '- {server: agentic-test, tool: change}' >"$work/perms.yaml"
+check "agent-admin permissions sb (supervised: change needs an approval)" agent-admin permissions sb <"$work/perms.yaml"
 check "the sandbox policy is written" test -s /etc/cockpit-agentic/agents/sb/openshell-policy.yaml
 check "the provider profile is imported" eventually 10 bash -c 'openshell -g openshell profile list -o json 2>/dev/null | grep -q cockpit-agentic-gateway-sb'
 check "agent-admin set-credential sb gateway-token (creates the sandbox)" agent-admin set-credential sb gateway-token <"$work/token"
@@ -138,24 +219,31 @@ if [ -n "$relay_ok" ]; then
 	check "status through the relay says lifecycle openshell" json_ok "$st" '.lifecycle.kind == "openshell" and .lifecycle.sandbox == "agent-sb"'
 	check "the relay passed root on (status is for supervisors)" json_ok "$st" '.contract == 1'
 	a=$(run_activity PROBE)
-	check "a read-only call runs" summary_has "$a" "agentic-test__probe done" ||
+	check "a read-only call runs" summary_has "$a" "probe ok" ||
 		{
 			echo "    | the agent answered: $(jq -c '{state, summary, reason, calls: [.calls[]? | {tool, state, reason}]}' <<<"$a" 2>/dev/null || head -c 400 <<<"$a")"
 			journalctl --no-pager -o cat --since "@$t0" AGENT_NAME=sb 2>/dev/null | tail -n 15 | sed 's/^/    | agent: /'
+			# Where OpenShell's proxy takes the gateway's CA from.
+			echo "    | OpenShell's gateway.toml: $(grep -A2 '^\[openshell\.supervisor\.network\]' "$osh_toml" 2>&1 | tr '\n' ' ')"
+			journalctl --user --machine="$osh_user@" -u openshell-gateway --no-pager -o cat --since "@$t0" 2>/dev/null | grep -iE 'additional|ca bundle|trust' | tail -n 5 | sed 's/^/    | openshell-gateway: /'
+			timeout 5 /usr/libexec/cockpit-agentic/agent-openshell-logs agent-sb </dev/null 2>&1 | grep -iE '18443|certificate|tls|trust' | tail -n 6 | sed 's/^/    | supervisor: /'
 		}
-	tok=$(admin /tokens)
-	check "the gateway saw the real token" json_ok "$tok" '.Right > 0'
-	check "and never the placeholder or no token" json_ok "$tok" '.Wrong == 0' ||
-		echo "    | the gateway saw: $(jq -c '{Right, Wrong, Wrongs: .Wrongs[:8]}' <<<"$tok" 2>/dev/null || head -c 400 <<<"$tok")"
+	check "the gateway audited the call as agent-sb over HTTPS" eventually 10 gw_audit_has '.sub == "agent-sb" and .name == "probe" and .effect == "allow"' ||
+		journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
+	check "and refused no request of the agent's (placeholder or no token)" not bash -c \
+		"journalctl -u osh-mcp-gateway.service -o cat --no-pager --since @$t0 | grep -iE 'invalid_token|missing bearer|no subject'"
 	check "the sandbox's environment has no real token" bash -c "! openshell -g openshell sandbox exec -n agent-sb -- env 2>/dev/null | grep -qF \"\$(cat $work/token)\""
 
 	section "Approval"
 	id=$(api /v1/activities -X POST -d '{"prompt":"CHANGE"}' | jq -r .id)
 	check "the change waits for an approval" eventually 60 bash -c "curl -s --unix-socket /run/agents/sb/api.sock http://agent/v1/activities/$id | jq -e '.state == \"waiting_approval\"' >/dev/null"
-	check "nothing ran before the decision" json_ok "$(admin /executed)" 'index("agentic-test__change") == null'
-	admin /approve/a-osh-1 -X POST >/dev/null
-	check "the activity finishes after the approval" eventually 60 bash -c "curl -s --unix-socket /run/agents/sb/api.sock http://agent/v1/activities/$id | jq -e '.state == \"finished\" and (.summary | contains(\"agentic-test__change done\"))' >/dev/null"
-	check "journal (from the sandbox's output): approval.pending" eventually 60 journal_has approval.pending '.AGENT_APPROVAL_ID == "a-osh-1"' || {
+	aid=$(activity "$id" | jq -r '[.calls[]? | select(.approval_id != null and .approval_id != "")][0].approval_id // empty')
+	check "its call carries the gateway's approval id" test -n "$aid"
+	check "the gateway lists the approval for agent-sb" json_ok "$(gw /v1/approvals)" ".[] | select(.id == \"$aid\" and .principal.sub == \"agent-sb\")"
+	check "nothing ran before the decision" not gw_audit_has '.sub == "agent-sb" and .name == "change" and .effect == "allow"'
+	gw "/v1/approvals/$aid" -X POST -d '{"decision":"approve","scope":"once"}' >/dev/null
+	check "the activity finishes after the approval" eventually 60 bash -c "curl -s --unix-socket /run/agents/sb/api.sock http://agent/v1/activities/$id | jq -e '.state == \"finished\" and (.summary | contains(\"changed test\"))' >/dev/null"
+	check "journal (from the sandbox's output): approval.pending" eventually 60 journal_has approval.pending ".AGENT_APPROVAL_ID == \"$aid\"" || {
 		# Where the relay's bridge reads the agent's records from.
 		echo "    | relay: $(journalctl --no-pager -o cat --since "@$t0" -u agent-openshell@sb.service 2>&1 | grep -v 'proxy error' | tail -n 8 | tr '\n' '|')"
 		echo "    | containers: $(timeout 10 docker ps --format '{{.Names}} ({{.Image}})' </dev/null 2>&1 | tr '\n' ' ')"
@@ -183,7 +271,7 @@ check "the relay is back" systemctl is-active -q agent-openshell@sb.socket
 section Removing
 check "agent-admin delete sb" agent-admin delete sb
 check "the sandbox is gone" eventually 60 not osh sandbox get agent-sb
-systemctl stop osh-fakemodel osh-fakegateway >/dev/null 2>&1
+systemctl stop osh-fakemodel osh-mcp-gateway osh-opa osh-testidp >/dev/null 2>&1
 
 if [ -n "$results" ]; then
 	mkdir -p "$results"

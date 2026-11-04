@@ -24,6 +24,12 @@
 #               others need an approval
 #
 # Tool annotations (readOnlyHint) are untrusted and never used here.
+#
+# Over the gateway's HTTPS listener (agents in an OpenShell sandbox,
+# CONTRACT.md §16a) an agent is a token with subject agent-<name> from an
+# issuer listed in data.mcp.agents._http.issuers (agents/_http.yaml,
+# none by default): that issuer issues agent-<name> subjects to agents
+# only. Such a subject from any other issuer is denied everything.
 # data.mcp.agents._control.stopped (agents/_control.yaml, agent-admin
 # stop-all) denies every agent everything: the emergency stop. Agent
 # names start with a letter, so _control is no agent's.
@@ -35,6 +41,14 @@ agent_principal if {
 	input.principal.transport == "unix"
 	startswith(input.principal.sub, "agent-")
 }
+
+agent_principal if {
+	input.principal.transport == "http"
+	startswith(input.principal.sub, "agent-")
+	agent_issuer
+}
+
+agent_issuer if input.principal.iss in object.get(object.get(data.mcp.agents, "_http", {}), "issuers", [])
 
 agent_name := substring(input.principal.sub, 6, -1) if agent_principal
 
@@ -64,6 +78,14 @@ denied if {
 	agent_principal
 	some r in roles
 	r != ""
+}
+
+# An agent's subject from an issuer not trusted for agents: not an agent,
+# and nothing else either.
+denied if {
+	input.principal.transport == "http"
+	startswith(input.principal.sub, "agent-")
+	not agent_issuer
 }
 
 # An agent without agent data gets nothing.
