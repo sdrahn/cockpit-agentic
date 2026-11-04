@@ -55,9 +55,9 @@ not() { ! "$@"; }
 json_ok() { jq -e "$2" >/dev/null 2>&1 <<<"$1"; }
 api() { local p=$1; shift; curl -sS --max-time 180 --unix-socket /run/agents/sb/api.sock "http://agent$p" "$@"; }
 # gw <path> [curl args...]: the gateway's control API.
-gw() { local p=$1; shift; curl -sS --max-time 30 --unix-socket "$work/gw/control.sock" "http://localhost$p" "$@"; }
+gw() { local p=$1; shift; curl -sS --max-time 30 --unix-socket "$gw_ctl" "http://localhost$p" "$@"; }
 # gw_audit_has <jq condition>: the gateway's audit records since the start.
-gw_audit_has() { journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | grep '"audit":true' | jq -e "select($1)" >/dev/null 2>&1; }
+gw_audit_has() { journalctl -u "$gw_unit" -o cat --no-pager --since "@$t0" | grep '"audit":true' | jq -e "select($1)" >/dev/null 2>&1; }
 activity() { api "/v1/activities/$1"; }
 run_activity() { api /v1/activities -X POST -d "$(jq -nc --arg p "$1" '{prompt: $p, wait: true}')"; }
 summary_has() { grep -qF -- "$2" <<<"$(jq -r .summary <<<"$1")"; }
@@ -78,12 +78,16 @@ if docker info >/dev/null 2>&1; then
 	ctr() { docker "$@"; }
 else
 	runtime=podman
-	ctr() { setpriv --reuid="$osh_uid" --regid="$(id -g "$osh_user")" --init-groups -- \
-		env HOME="$osh_home" XDG_RUNTIME_DIR="/run/user/$osh_uid" podman "$@"; }
+	ctr() { (cd / && setpriv --reuid="$osh_uid" --regid="$(id -g "$osh_user")" --init-groups -- \
+		env HOME="$osh_home" XDG_RUNTIME_DIR="/run/user/$osh_uid" podman "$@"); }
 fi
-ctr_ok() { ctr "$@" >/dev/null 2>&1; }
+ctr_ok() { ctr "$@" >"$work/ctr.out" 2>&1 || { tail -n 8 "$work/ctr.out" | sed 's/^/    | /'; return 1; }; }
 check "the container runtime runs ($runtime)" ctr_ok info
+gw_ctl=$work/gw/control.sock gw_unit=osh-mcp-gateway.service
 if [ -n "$system" ]; then
+	# The system's mcp-gateway (confined, systemd supervisor) gets the
+	# HTTPS listener (a gateway.d drop-in); its control socket is the system's.
+	gw_ctl=/run/mcp-gateway/control.sock gw_unit=mcp-gateway.service
 	gw_bin=/usr/bin/mcp-gateway
 	gw_policy=/usr/share/mcp-gateway/policy
 	check "the packages are installed" rpm -q custos custos-tests mcp-gateway
@@ -139,7 +143,11 @@ printf '_http:\n  issuers: ["%s"]\n' "$issuer" >/etc/mcp-gateway/policy/agents/_
 if [ -n "$system" ]; then
 	# The system's OPA (mcp-opa.service) has the gateway's policy, the
 	# agents module and /etc/mcp-gateway/policy/agents already.
-	check "OPA has the agents' issuer" eventually 30 bash -c "curl -s --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http/issuers | grep -qF '$issuer'"
+	check "OPA has the agents' issuer" eventually 30 bash -c "curl -s --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http/issuers | grep -qF '$issuer'" || {
+		echo "    | OPA says: $(curl -s --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http 2>&1 | head -c 300)"
+		echo "    | the file: $(ls -lZ /etc/mcp-gateway/policy/agents/ 2>&1 | tr '\n' ' ')"
+		journalctl -u mcp-opa.service -o cat --no-pager --since "@$t0" | tail -n 10 | sed 's/^/    | mcp-opa: /'
+	}
 else
 	# OPA as mcp-opa.service runs it: the gateway's policy, the agents module,
 	# the agents' data (agent-admin) and the gateway's default role data.
@@ -150,24 +158,43 @@ else
 	check "OPA has the agents' issuer" eventually 30 bash -c "curl -s --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http/issuers | grep -qF '$issuer'"
 fi
 
-printf '%s\n' 'version: 1' 'name: custos-test' 'command: ["/usr/libexec/custos/tests/testsrv"]' 'run_as: gateway' \
-	>"$work/gw/servers.d/custos-test.yaml"
-printf '%s\n' "socket: $work/gw/mcp.sock" "servers_dir: $work/gw/servers.d" "state_dir: $work/gw/state" \
-	"approvals:" "  control_socket: $work/gw/control.sock" \
-	"policy:" "  opa_socket: /run/mcp-gateway/opa.sock" \
-	"supervisor:" "  mode: exec" \
-	"http:" '  listen: ":18443"' "  cert_file: $work/tls/cert.pem" "  key_file: $work/tls/key.pem" \
-	"  issuer: $issuer" "  audience: $aud" >"$work/gw/gateway.yaml"
-# A second gateway next to the system's, in development mode (exec
-# supervisor) with the HTTPS listener; as root on a system that has the
-# mcp-gateway account only with --allow-root.
-gw_args=(--config "$work/gw/gateway.yaml")
-[ -n "$system" ] && gw_args+=(--allow-root)
-systemd-run --unit=osh-mcp-gateway "$gw_bin" "${gw_args[@]}" >/dev/null
+if [ -n "$system" ]; then
+	# As an administrator would: the certificate for the gateway's group,
+	# the listener's port mcp_port_t, the issuer's port one the gateway may
+	# reach (http_port_t), the test server, then a restart (http.listen is
+	# read at start).
+	install -d -m 0750 -o root -g mcp-gateway /etc/mcp-gateway/tls
+	install -m 0640 -o root -g mcp-gateway "$work/tls/cert.pem" /etc/mcp-gateway/tls/custos-osh-cert.pem
+	install -m 0640 -o root -g mcp-gateway "$work/tls/key.pem" /etc/mcp-gateway/tls/custos-osh-key.pem
+	restorecon -R /etc/mcp-gateway/tls
+	semanage port -a -t mcp_port_t -p tcp 18443 2>/dev/null || semanage port -m -t mcp_port_t -p tcp 18443
+	semanage port -a -t http_port_t -p tcp 18445 2>/dev/null || semanage port -m -t http_port_t -p tcp 18445
+	mkdir -p /etc/mcp-gateway/gateway.d /etc/mcp-gateway/servers.d
+	printf '%s\n' "# custos OpenShell tests (test/openshell/run-spike.sh --system)" \
+		"http:" '  listen: ":18443"' "  cert_file: /etc/mcp-gateway/tls/custos-osh-cert.pem" \
+		"  key_file: /etc/mcp-gateway/tls/custos-osh-key.pem" "  issuer: $issuer" "  audience: $aud" \
+		>/etc/mcp-gateway/gateway.d/60-custos-openshell.yaml
+	printf '%s\n' 'version: 1' 'name: custos-test' 'command: ["/usr/libexec/custos/tests/testsrv"]' 'run_as: principal' \
+		>/etc/mcp-gateway/servers.d/custos-test.yaml
+	check "the system's mcp-gateway restarts with the HTTPS listener" systemctl restart mcp-gateway.service ||
+		journalctl -u mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
+else
+	printf '%s\n' 'version: 1' 'name: custos-test' 'command: ["/usr/libexec/custos/tests/testsrv"]' 'run_as: gateway' \
+		>"$work/gw/servers.d/custos-test.yaml"
+	printf '%s\n' "socket: $work/gw/mcp.sock" "servers_dir: $work/gw/servers.d" "state_dir: $work/gw/state" \
+		"approvals:" "  control_socket: $work/gw/control.sock" \
+		"policy:" "  opa_socket: /run/mcp-gateway/opa.sock" \
+		"supervisor:" "  mode: exec" \
+		"http:" '  listen: ":18443"' "  cert_file: $work/tls/cert.pem" "  key_file: $work/tls/key.pem" \
+		"  issuer: $issuer" "  audience: $aud" >"$work/gw/gateway.yaml"
+	# A gateway of its own, in development mode (exec supervisor), with the
+	# HTTPS listener.
+	systemd-run --unit=osh-mcp-gateway "$gw_bin" --config "$work/gw/gateway.yaml" >/dev/null
+fi
 check "the gateway's HTTPS listener refuses a request without a token (401)" eventually 30 bash -c \
 	"curl -s -o /dev/null -w '%{http_code}' --cacert '$work/tls/ca.pem' --resolve host.openshell.internal:18443:127.0.0.1 -X POST $aud | grep -qx 401" ||
-	journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
-check "the gateway takes the test server" eventually 30 bash -c "curl -s --unix-socket '$work/gw/control.sock' http://localhost/v1/servers | grep -q custos-test"
+	journalctl -u "$gw_unit" -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
+check "the gateway takes the test server" eventually 30 bash -c "curl -s --unix-socket '$gw_ctl' http://localhost/v1/servers | grep -q custos-test"
 check "the issuer gives agent-sb's client a token" bash -c \
 	"curl -sf -X POST -d grant_type=client_credentials -d client_id=agent-sb --data-urlencode client_secret=\$(cat '$work/client-secret') '$issuer/token' | jq -e '.access_token != null' >/dev/null"
 minted() { curl -s "$issuer/minted" | jq -r '."agent-sb" // 0'; }
@@ -211,7 +238,7 @@ if [ -n "$system" ]; then
 	mkdir -p "$work/image/bin" && cp /usr/libexec/custos/agent-launcher "$work/image/bin/"
 	chown -R "$osh_user" "$work/image"
 	chmod 0755 "$work"
-	check "the agent image builds ($runtime)" ctr build -q -t "$img" -f /usr/share/custos/openshell/Containerfile "$work/image"
+	check "the agent image builds ($runtime)" ctr_ok build -q -t "$img" -f /usr/share/custos/openshell/Containerfile "$work/image"
 else
 	check "the agent image builds ($runtime)" ctr build -q -t "$img" -f "$here/packaging/openshell/Containerfile" "$here"
 fi
@@ -303,9 +330,9 @@ if [ -n "$relay_ok" ]; then
 			timeout 5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | grep -iE '18443|certificate|tls|trust' | tail -n 6 | sed 's/^/    | supervisor: /'
 		}
 	check "the gateway audited the call as agent-sb over HTTPS" eventually 10 gw_audit_has '.sub == "agent-sb" and .name == "probe" and .effect == "allow"' ||
-		journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
+		journalctl -u "$gw_unit" -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
 	check "and refused no request of the agent's (placeholder or no token)" not bash -c \
-		"journalctl -u osh-mcp-gateway.service -o cat --no-pager --since @$t0 | grep -iE 'invalid_token|missing bearer|no subject'"
+		"journalctl -u "$gw_unit" -o cat --no-pager --since @$t0 | grep -iE 'invalid_token|missing bearer|no subject'"
 	check "the sandbox's environment has no client secret" bash -c "! openshell -g openshell sandbox exec -n agent-sb -- env 2>/dev/null | grep -qF \"\$(cat $work/client-secret)\""
 
 	section "Token renewal"
@@ -321,14 +348,14 @@ if [ -n "$relay_ok" ]; then
 	check "a call after the first token expired runs (renewed token)" summary_has "$a" "probe ok" || {
 		echo "    | the agent answered: $(jq -c '{state, summary, reason}' <<<"$a" 2>/dev/null || head -c 300 <<<"$a")"
 		# Who answered 500: mcp-gateway, or OpenShell's proxy?
-		journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "-120s" | grep -v '"audit":true' | tail -n 12 | sed 's/^/    | gateway: /'
+		journalctl -u "$gw_unit" -o cat --no-pager --since "-120s" | grep -v '"audit":true' | tail -n 12 | sed 's/^/    | gateway: /'
 		timeout 5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | grep -iE '18443|credential|placeholder|refresh|resolve|500' | tail -n 12 | sed 's/^/    | supervisor: /'
 		timeout 20 openshell -g openshell provider refresh status agent-sb-gateway </dev/null 2>&1 | tail -n 12 | sed 's/^/    | refresh: /'
 		journalctl --user --machine="$osh_user@" -u openshell-gateway --no-pager -o cat --since "-300s" 2>/dev/null | grep -iE 'refresh|mint|credential|error|warn' | tail -n 10 | sed 's/^/    | openshell-gateway: /'
 	}
 	check "the agent was not restarted for it (no new agent.start)" test "$(starts)" -eq "$s1"
 	check "and the gateway refused none of its requests" not bash -c \
-		"journalctl -u osh-mcp-gateway.service -o cat --no-pager --since @$t0 | grep -iE 'invalid_token|token is expired|token_expired'"
+		"journalctl -u "$gw_unit" -o cat --no-pager --since @$t0 | grep -iE 'invalid_token|token is expired|token_expired'"
 
 	section "Approval"
 	id=$(api /v1/activities -X POST -d '{"prompt":"CHANGE"}' | jq -r .id)
