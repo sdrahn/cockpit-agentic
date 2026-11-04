@@ -98,6 +98,73 @@ function site() {
     check(cancels.length === 2 && cancels[0][4] === "" && cancels[1][4] === "try",
           "cancel tries as the person, then through the root bridge");
 
+    // Agents tab: the list, one agent's posture, and its controls (root bridge).
+    const spawned = async (cmd) => (await calls()).filter(c => c[0] === "spawn" && c[1] === cmd);
+    await page.goto(url + "?agents#/agents/patch-pilot");
+    await page.waitForSelector("#boundaries");
+    const rows = await page.$$eval("#agents tbody tr", es => es.map(e => e.id));
+    check(rows.join(",") === "agent-row-disk-watch,agent-row-old-agent,agent-row-patch-pilot,agent-row-triage",
+          "the agents: on /run/agents, and those with gateway data only");
+    check((await page.textContent("#agent-row-old-agent")).includes("stopped"), "an agent without a socket is stopped");
+    const effect = async tool => page.$eval("#boundaries", (t, tool) =>
+        [...t.querySelectorAll("tbody tr")].find(r => r.cells[0].textContent === tool).cells[3].textContent, tool);
+    check(await effect("zypp__list_*") === "allowed" && await effect("zypp__install_patches") === "needs approval" &&
+          await effect("systemd__restart_unit") === "needs approval", "supervised: read-only runs, changes need approval");
+    check((await page.textContent("#boundaries")).includes("unit ~ ^nginx\\.service$"), "argument constraints are shown");
+    if (shots) await page.screenshot({ path: path.join(shots, "agents.png"), fullPage: true });
+    await page.click("button.mode[data-mode=bounded]");
+    await page.waitForFunction(() => document.querySelector("button.mode[data-mode=bounded]").getAttribute("aria-checked") === "true");
+    const mode = await spawned("agent-admin mode patch-pilot bounded");
+    check(mode.length === 1 && mode[0][4] === "require" && mode[0][2] === "SUDO_USER=carol",
+          "the mode is set with agent-admin through the root bridge, naming the person");
+    await page.waitForFunction(() => document.querySelector("#boundaries").textContent.includes("allowed, no approval"));
+    check(await effect("systemd__restart_unit") === "allowed, no approval", "bounded: autonomous changes run without approval");
+    await page.click("#agent-detail button:has-text('Pause')");
+    await page.waitForFunction(() => document.querySelector("#boundaries").textContent.includes("denied (paused)"));
+    check((await spawned("agent-admin pause patch-pilot")).length === 1, "pause runs agent-admin pause");
+    check(await effect("zypp__list_*") === "denied (paused)", "paused: the gateway denies everything");
+    await page.click("#agent-detail summary");
+    await page.fill("#permissions-yaml", '- {"server":"zypp","tool":"list_*","read_only":true}\n');
+    await page.click("#agent-detail button:has-text('Save permissions')");
+    await page.waitForFunction(() => document.querySelectorAll("#boundaries tbody tr").length === 1);
+    const perms = (await calls()).find(c => c[1] === "agent-admin permissions patch-pilot");
+    check(perms && perms[4] === "require", "permissions are saved with agent-admin through the root bridge");
+
+    await page.click("#agent-row-triage button");
+    await page.waitForSelector("#agent-detail button:has-text('Disable')");
+    check((await page.textContent("#agent-detail")).includes("morning-check") &&
+          (await page.textContent("#agent-detail")).includes("*-*-* 06:00"), "the schedules with their calendar");
+    await page.click("#agent-detail button:has-text('Disable')");
+    await page.waitForSelector("#agent-detail button:has-text('Enable')");
+    const dis = await spawned("systemctl disable --now agent-schedule@triage_morning-check.timer");
+    check(dis.length === 1 && dis[0][4] === "require", "a schedule is disabled with systemctl through the root bridge");
+
+    await page.click("#agent-row-old-agent button");
+    await page.waitForSelector("#agent-detail button:has-text('Start')");
+    await page.click("#agent-detail button:has-text('Start')");
+    await page.waitForTimeout(300);
+    check((await spawned("systemctl start agent@old-agent.socket")).length === 1, "a stopped agent is started by its socket");
+
+    // Policy tab: the posture and the what-if, on fresh data.
+    await page.goto(url + "?policy#/policy");
+    await page.waitForSelector("#posture-patch-pilot");
+    const pp = await page.$eval("#posture-patch-pilot", r => [...r.cells].map(c => c.textContent));
+    check(pp[1] === "supervised" && pp[2] === "1" && pp[3] === "2" && pp[4] === "–",
+          "posture: patch-pilot has 1 read-only and 2 approval-needing permissions");
+    check(pp[5].includes("role:admin") && pp[5].includes("group:agent-clients"), "posture: the approvers from the gateway's rules");
+    await page.selectOption("#whatif select", "patch-pilot");
+    await page.fill("#whatif input", "zypp__list_updates");
+    check((await page.textContent("#whatif-result")).startsWith("allowed"), "what-if: a read-only tool is allowed");
+    await page.fill("#whatif input", "zypp__install_patches");
+    check((await page.textContent("#whatif-result")).startsWith("needs approval"), "what-if: a change needs approval");
+    await page.fill("#whatif input", "fs__write_file");
+    check((await page.textContent("#whatif-result")).includes("no permission lists it"), "what-if: an unlisted tool is denied");
+    await page.selectOption("#whatif select", "triage");
+    await page.fill("#whatif input", "zypp__install_patches");
+    check((await page.textContent("#whatif-result")).startsWith("denied (advisory mode)"), "what-if: advisory denies a listed change");
+    check(!pp[5].includes("self"), "posture: self is not an agent's approver");
+    if (shots) await page.screenshot({ path: path.join(shots, "policy.png"), fullPage: true });
+
     check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join("; ") : ""));
     await browser.close();
 })().catch(e => { console.error(e); process.exit(1); });

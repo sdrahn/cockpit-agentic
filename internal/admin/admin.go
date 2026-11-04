@@ -699,6 +699,64 @@ func (a *Admin) Trigger(instance string) error {
 	return fmt.Errorf("agent %s has no schedule %q", name, sched)
 }
 
+// Posture is what the gateway enforces for the agents (§6, §8), as
+// agent-admin show prints it: each agent's data and the emergency stop.
+type Posture struct {
+	Agents  map[string]*GatewayData `json:"agents"`
+	Control Control                 `json:"control"`
+}
+
+// Control is the emergency stop's state (_control.yaml, §8).
+type Control struct {
+	Stopped bool   `yaml:"stopped" json:"stopped"`
+	By      string `yaml:"by,omitempty" json:"by,omitempty"`
+	At      string `yaml:"at,omitempty" json:"at,omitempty"`
+}
+
+// Show reads the gateway data of names, or of every agent that has some,
+// and the emergency stop. The files are readable by everyone, so a
+// control plane can show the posture without root.
+func (a *Admin) Show(names ...string) (*Posture, error) {
+	if len(names) == 0 {
+		m, err := filepath.Glob(a.p(filepath.Join(GatewayAgents, "*.yaml")))
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range m {
+			if n := strings.TrimSuffix(filepath.Base(f), ".yaml"); config.ValidName(n) {
+				names = append(names, n)
+			}
+		}
+		sort.Strings(names)
+	}
+	p := &Posture{Agents: map[string]*GatewayData{}}
+	for _, n := range names {
+		if err := checkName(n); err != nil {
+			return nil, err
+		}
+		d, err := a.readGateway(n)
+		if err != nil {
+			return nil, err
+		}
+		if d.Permissions == nil {
+			d.Permissions = []map[string]any{}
+		}
+		p.Agents[n] = d
+	}
+	b, err := os.ReadFile(a.p(GatewayStop))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	var doc struct {
+		Control Control `yaml:"_control"`
+	}
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		return nil, fmt.Errorf("%s: %w", a.p(GatewayStop), err)
+	}
+	p.Control = doc.Control
+	return p, nil
+}
+
 // List returns the agents' names (§11: an agent exists when its agent.yaml does).
 func (a *Admin) List() ([]string, error) {
 	m, err := filepath.Glob(a.p(filepath.Join(config.ConfigRoot, "*", "agent.yaml")))

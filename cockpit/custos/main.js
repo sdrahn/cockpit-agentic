@@ -48,6 +48,7 @@ function init() {
     const user = cockpit.user ? cockpit.user() : null;
     if (user) {
         Promise.resolve(user).then(u => {
+            state.user = u.name; // for agent-admin's record of who acted
             document.getElementById("whoami").textContent = "Signed in as " + u.name;
         }).catch(() => {});
     }

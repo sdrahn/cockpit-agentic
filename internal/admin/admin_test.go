@@ -101,6 +101,18 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if err := a.StopAll("alice"); err != nil {
 		t.Fatal(err)
 	}
+	// show: every agent's data and the emergency stop, as the page reads them.
+	p, err := a.Show()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := p.Agents["patch-pilot"]; len(p.Agents) != 1 || d == nil || d.Mode != "bounded" || !d.Paused || len(d.Permissions) != 2 ||
+		!p.Control.Stopped || p.Control.By != "alice" {
+		t.Errorf("show %+v %+v", p, p.Agents["patch-pilot"])
+	}
+	if _, err := a.Show("nobody"); err == nil {
+		t.Error("show of an agent without data")
+	}
 	if s := read(GatewayStop); !strings.Contains(s, "_control:\n  stopped: true") {
 		t.Errorf("stop file %q", s)
 	}

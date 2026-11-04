@@ -41,7 +41,10 @@
               calls: [{ call_id: "c1", tool: "zypp__list_updates", state: "ok" }] },
         ],
     };
-    const status = name => ({ contract: 1, implementation: "custos/adk-go", name, version: "test",
+    const status = name => ({ contract: 1, implementation: "custos/adk-go", name, version: "test", model: "qwen3-32b (local)",
+        paused: posture.agents[name] ? posture.agents[name].paused : false,
+        running: (activities[name] || []).filter(a => a.state === "running" || a.state === "waiting_approval").length,
+        schedules: name === "triage" ? [{ name: "morning-check", on_calendar: "*-*-* 06:00", prompt: "Check the host and patch what is due." }] : [],
         lifecycle: { kind: "systemd", service: "agent@" + name + ".service", socket: "agent@" + name + ".socket" } });
     let pending = [
         { id: "a-42", channel: "oob", action: "tools.call", server: "zypp", name: "install_patches",
@@ -50,6 +53,23 @@
           prompt: "supervised mode: changes the system, needs approval (out of band)",
           scopes: ["once", "1h"], expires: new Date(Date.now() + 30000).toISOString(), waiting: true },
     ];
+
+    // The gateway data (agent-admin show): old-agent has data but no
+    // socket (stopped).
+    let posture = {
+        agents: {
+            "patch-pilot": { mode: "supervised", paused: false, permissions: [
+                { server: "zypp", tool: "list_*", read_only: true },
+                { server: "zypp", tool: "install_patches" },
+                { server: "systemd", tool: "restart_unit", autonomous: true, args: { unit: "^nginx\\.service$" } }] },
+            triage: { mode: "advisory", paused: false, permissions: [{ server: "zypp", tool: "list_*", read_only: true },
+                { server: "agents", tool: "delegate", read_only: true }, { server: "zypp", tool: "install_patches" }] },
+            "disk-watch": { mode: "bounded", paused: false, permissions: [] },
+            "old-agent": { mode: "supervised", paused: false, permissions: [] },
+        },
+        control: { stopped: false },
+    };
+    let enabled = { "agent-schedule@triage_morning-check.timer": true };
 
     function fail(status, problem, body) {
         const ex = new Error(body || problem);
@@ -103,7 +123,38 @@
             return { get: path => route("GET", path), post: (path, body) => route("POST", path, body) };
         },
         spawn(args, opts) {
-            log.push(["spawn", args.join(" "), "", "", (opts || {}).superuser || ""]);
+            opts = opts || {};
+            log.push(["spawn", args.join(" "), (opts.environ || []).join(" "), "", opts.superuser || ""]);
+            if (args[0] === "agent-admin") {
+                const [cmd, name, arg] = args.slice(1);
+                if (cmd === "show") return Promise.resolve(JSON.stringify(posture));
+                // Changes need the root bridge.
+                if (opts.superuser !== "require") return Promise.reject({ problem: "access-denied" });
+                const d = posture.agents[name];
+                if (cmd === "mode") d.mode = arg;
+                if (cmd === "pause" || cmd === "resume") d.paused = cmd === "pause";
+                let input = "";
+                return { input(text) { input = text; return this; },
+                         then(ok, bad) {
+                             if (cmd === "permissions") {
+                                 if (!input.trim().startsWith("-")) return Promise.reject(new Error("agent-admin: permissions: want a YAML list")).then(ok, bad);
+                                 d.permissions = input.trim().split("\n").map(l => JSON.parse(l.replace(/^- /, "")));
+                             }
+                             return Promise.resolve("").then(ok, bad);
+                         },
+                         catch(bad) { return this.then(v => v, bad); } };
+            }
+            if (args[0] === "mcp-gateway-admin" && args[1] === "policy") {
+                return Promise.resolve(JSON.stringify({ origin: "yaml", data: { approvers: { default: ["self"], zypp: ["role:admin", "group:agent-clients"] } } }));
+            }
+            if (args[0] === "systemctl" && args[1] === "is-enabled") {
+                return enabled[args[2]] ? Promise.resolve("enabled\n") : Promise.reject(Object.assign(new Error("disabled"), { exit_status: 1 }));
+            }
+            if (args[0] === "systemctl" && ["start", "stop", "enable", "disable"].includes(args[1])) {
+                if (opts.superuser !== "require") return Promise.reject({ problem: "access-denied" });
+                if (args[1] === "enable" || args[1] === "disable") enabled[args[args.length - 1]] = args[1] === "enable";
+                return Promise.resolve("");
+            }
             if (args[0] === "ls") return Promise.resolve("disk-watch\npatch-pilot\ntriage\nnot_an_agent\n");
             if (args[0] === "systemctl") {
                 const next = new Date(); next.setHours(next.getHours() + 3, 0, 0, 0);

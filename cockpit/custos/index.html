@@ -9,6 +9,8 @@
     <script src="common.js" defer></script>
     <script src="activity.js" defer></script>
     <script src="approvals.js" defer></script>
+    <script src="agents.js" defer></script>
+    <script src="policy.js" defer></script>
     <script src="main.js" defer></script>
 </head>
 <body>
@@ -25,7 +27,10 @@
     <nav id="tabs" role="tablist">
         <button role="tab" data-tab="activity">Activity <span class="count" hidden></span></button>
         <button role="tab" data-tab="approvals">Approvals <span class="count count-warn" hidden></span></button>
+        <button role="tab" data-tab="agents">Agents</button>
+        <button role="tab" data-tab="policy">Policy</button>
     </nav>
+    <div id="stopped" class="error" hidden></div>
     <div id="error" class="error" hidden></div>
     <main>
         <div id="tab-activity" class="tab" hidden>
@@ -67,6 +72,44 @@
             <section class="card">
                 <h2>Decided today</h2>
                 <div id="decided"></div>
+            </section>
+        </div>
+
+        <div id="tab-agents" class="tab" hidden>
+            <section class="card">
+                <h2>Agents on this host</h2>
+                <p class="muted">Found through <code>/run/agents/*/api.sock</code>: any host that implements
+                contract 1 shows up here. Changing an agent needs administrative access.</p>
+                <table id="agents">
+                    <thead><tr><th>Agent</th><th>State</th><th>Autonomy</th><th>Host · model</th>
+                        <th>Schedules</th><th>Now</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </section>
+            <div id="agent-detail" hidden></div>
+        </div>
+
+        <div id="tab-policy" class="tab" hidden>
+            <section class="card">
+                <h2>Posture</h2>
+                <p class="muted">What mcp-gateway enforces for each agent now: how many of its permissions
+                run, wait for an approval, or run without one, and who may decide its approvals (the gateway's
+                approver rules).</p>
+                <table id="posture">
+                    <thead><tr><th>Agent</th><th>Mode</th><th>Read-only</th><th>Need approval</th>
+                        <th>Autonomous</th><th>Approvers</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </section>
+            <section class="card">
+                <h2>What would the gateway decide?</h2>
+                <p class="muted">The rules the gateway applies to agents (agents.rego), for one call. The
+                gateway's own decision is the one that counts.</p>
+                <form id="whatif" class="inline">
+                    <select aria-label="Agent"></select>
+                    <input placeholder="server__tool, e.g. zypp__install_patches" aria-label="Tool" class="mono">
+                    <span id="whatif-result"></span>
+                </form>
             </section>
         </div>
     </main>
