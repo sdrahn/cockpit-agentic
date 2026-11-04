@@ -11,6 +11,7 @@
     <script src="approvals.js" defer></script>
     <script src="agents.js" defer></script>
     <script src="policy.js" defer></script>
+    <script src="audit.js" defer></script>
     <script src="stop.js" defer></script>
     <script src="main.js" defer></script>
 </head>
@@ -42,6 +43,7 @@
         <button role="tab" data-tab="approvals">Approvals <span class="count count-warn" hidden></span></button>
         <button role="tab" data-tab="agents">Agents</button>
         <button role="tab" data-tab="policy">Policy</button>
+        <button role="tab" data-tab="audit">Audit</button>
     </nav>
     <div id="stopped" class="error" hidden></div>
     <div id="error" class="error" hidden></div>
@@ -123,6 +125,44 @@
                     <input placeholder="server__tool, e.g. zypp__install_patches" aria-label="Tool" class="mono">
                     <span id="whatif-result"></span>
                 </form>
+            </section>
+        </div>
+
+        <div id="tab-audit" class="tab" hidden>
+            <section class="card">
+                <div class="toolbar">
+                    <h2>State-changing actions</h2>
+                    <span class="mono muted">journalctl AGENT_CONTRACT=1 + -u mcp-gateway.service</span>
+                </div>
+                <p class="muted">Proposed → decided → executed, joined from the agents' journal records and the
+                gateway's audit records by approval id. Who decided is the gateway's record; the rationale is the
+                agent's.</p>
+                <div id="audit-gateway-note" class="note" hidden>The gateway's records are not readable here, so the
+                approvers are missing.</div>
+                <div id="audit-actions"></div>
+            </section>
+            <section class="card">
+                <h2>Records</h2>
+                <p class="muted">The agents' records and the gateway's audit records about agents, newest
+                first. Arguments never appear: the agents log their digest only.</p>
+                <form id="audit-filter" class="inline">
+                    <select name="agent" aria-label="Agent"><option value="">All agents</option></select>
+                    <select name="kind" aria-label="Kind of record">
+                        <option value="all">All records</option>
+                        <option value="approvals">Approvals</option>
+                        <option value="interventions">Pause, resume, cancel</option>
+                        <option value="denials">Denials</option>
+                        <option value="tools">Tool calls</option>
+                    </select>
+                    <input name="text" placeholder="Filter (tool, approval, reason, …)" aria-label="Filter">
+                    <select name="lines" aria-label="Number of journal lines"></select>
+                    <button type="submit" class="secondary">Refresh</button>
+                </form>
+                <table id="audit-records">
+                    <thead><tr><th>Time</th><th>Source</th><th>Agent</th><th>Event</th><th>Outcome</th>
+                        <th>Details</th></tr></thead>
+                    <tbody></tbody>
+                </table>
             </section>
         </div>
     </main>

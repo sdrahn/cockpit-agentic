@@ -71,6 +71,48 @@
     };
     let enabled = { "agent-schedule@triage_morning-check.timer": true };
 
+    // The journal: the agents' records (§10) and the gateway's (JSON in
+    // MESSAGE, "audit": true). a-17 was declined, a-9 approved and run,
+    // a-42 waits.
+    const query = new URLSearchParams(window.location.search);
+    const at = s => String((Date.now() - s * 1000) * 1000);
+    const rec = (s, name, event, f) => Object.assign({ __REALTIME_TIMESTAMP: at(s), AGENT_CONTRACT: "1", AGENT_NAME: name,
+        AGENT_EVENT: event, SYSLOG_IDENTIFIER: "agent-" + name, MESSAGE: event }, f);
+    const agentJournal = [
+        rec(660, "disk-watch", "tool.call", { AGENT_INVOCATION: "e-0d77", AGENT_CALL_ID: "c3", AGENT_TOOL: "snapper__delete_snapshots",
+            AGENT_RATIONALE: "Free 4 GiB: delete snapshots older than 30 days." }),
+        rec(659, "disk-watch", "approval.pending", { AGENT_INVOCATION: "e-0d77", AGENT_CALL_ID: "c3", AGENT_TOOL: "snapper__delete_snapshots",
+            AGENT_APPROVAL_ID: "a-17", AGENT_USER: "system:event" }),
+        rec(600, "disk-watch", "approval.resolved", { AGENT_INVOCATION: "e-0d77", AGENT_CALL_ID: "c3", AGENT_TOOL: "snapper__delete_snapshots",
+            AGENT_APPROVAL_ID: "a-17", AGENT_OUTCOME: "declined" }),
+        rec(599, "disk-watch", "tool.result", { AGENT_INVOCATION: "e-0d77", AGENT_CALL_ID: "c3", AGENT_TOOL: "snapper__delete_snapshots",
+            AGENT_APPROVAL_ID: "a-17", AGENT_OUTCOME: "error", AGENT_REASON: "Forbidden: declined by an approver" }),
+        rec(300, "patch-pilot", "tool.call", { AGENT_INVOCATION: "e-1111", AGENT_CALL_ID: "c2", AGENT_TOOL: "zypp__install_patches",
+            AGENT_RATIONALE: "Installing 2 patches; no restart." }),
+        rec(299, "patch-pilot", "approval.pending", { AGENT_INVOCATION: "e-1111", AGENT_CALL_ID: "c2", AGENT_TOOL: "zypp__install_patches",
+            AGENT_APPROVAL_ID: "a-9", AGENT_USER: "alice" }),
+        rec(250, "patch-pilot", "approval.resolved", { AGENT_INVOCATION: "e-1111", AGENT_CALL_ID: "c2", AGENT_TOOL: "zypp__install_patches",
+            AGENT_APPROVAL_ID: "a-9", AGENT_OUTCOME: "approved" }),
+        rec(240, "patch-pilot", "tool.result", { AGENT_INVOCATION: "e-1111", AGENT_CALL_ID: "c2", AGENT_TOOL: "zypp__install_patches",
+            AGENT_APPROVAL_ID: "a-9", AGENT_OUTCOME: "ok" }),
+        rec(200, "triage", "agent.paused", { MESSAGE: "Paused by alice" }),
+        rec(95, "patch-pilot", "tool.call", { AGENT_INVOCATION: "e-7c21beef", AGENT_CALL_ID: "c2", AGENT_TOOL: "zypp__install_patches",
+            AGENT_RATIONALE: "Installing 1 security patch (openssl-3); nginx restarts, about 5 s." }),
+        rec(90, "patch-pilot", "approval.pending", { AGENT_INVOCATION: "e-7c21beef", AGENT_CALL_ID: "c2", AGENT_TOOL: "zypp__install_patches",
+            AGENT_APPROVAL_ID: "a-42", AGENT_USER: "agent-triage" }),
+    ];
+    const gw = (s, m) => ({ __REALTIME_TIMESTAMP: at(s), _SYSTEMD_UNIT: "mcp-gateway.service",
+        MESSAGE: JSON.stringify(Object.assign({ level: "INFO", msg: "mcp", audit: true }, m)) });
+    const gatewayJournal = [
+        gw(601, { event: "mcp-approval", ok: false, id: "a-17", principal: "agent-disk-watch", server: "snapper", target: "delete_snapshots",
+                  by: "admin", scope: "", channel: "oob", via: "cockpit" }),
+        gw(251, { event: "mcp-approval", ok: true, id: "a-9", principal: "agent-patch-pilot", server: "zypp", target: "install_patches",
+                  by: "carol", scope: "once", channel: "oob", via: "cockpit" }),
+        gw(180, { sub: "agent-triage", action: "tools/call", server: "zypp", name: "install_patches", effect: "deny", reason: "agent paused" }),
+        gw(170, { sub: "alice", action: "tools/call", server: "fs", name: "read_file", effect: "allow" }),
+        gw(160, { level: "INFO", msg: "listening", audit: undefined }),
+    ];
+
     function fail(status, problem, body) {
         const ex = new Error(body || problem);
         ex.status = status;
@@ -167,9 +209,13 @@
                 ]));
             }
             if (args[0] === "journalctl") {
-                return Promise.resolve(JSON.stringify({ AGENT_EVENT: "approval.resolved", AGENT_OUTCOME: "declined",
-                    AGENT_NAME: "disk-watch", AGENT_TOOL: "snapper__delete_snapshots", AGENT_APPROVAL_ID: "a-17",
-                    __REALTIME_TIMESTAMP: String((Date.now() - 600000) * 1000) }) + "\n");
+                const lines = recs => Promise.resolve(recs.map(r => JSON.stringify(r)).join("\n") + "\n");
+                if (args.includes("mcp-gateway.service")) {
+                    if (query.has("nogw")) return Promise.reject(Object.assign(new Error("no access"), { exit_status: 1 }));
+                    return lines(gatewayJournal);
+                }
+                if (args.includes("AGENT_EVENT=approval.resolved")) return lines(agentJournal.filter(r => r.AGENT_EVENT === "approval.resolved"));
+                return lines(agentJournal);
             }
             return Promise.reject(Object.assign(new Error("not stubbed"), { exit_status: 1 }));
         },
