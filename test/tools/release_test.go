@@ -5,6 +5,8 @@ package tools
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -163,9 +165,13 @@ func TestThisTree(t *testing.T) {
 }
 
 // The release notes are the tag's section of CHANGELOG.md, as the Release
-// workflow extracts it.
+// workflow extracts it. The package's tarball has no .github (_service
+// excludes it), so the spec's %check has no workflow to read.
 func TestReleaseNotes(t *testing.T) {
 	b, err := os.ReadFile("../../.github/workflows/release.yml")
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Skip("no .github/workflows/release.yml (a source tarball)")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
