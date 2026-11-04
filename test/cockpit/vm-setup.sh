@@ -56,7 +56,9 @@ usermod -aG agent-clients,wheel,systemd-journal,mcp-users carol
 # asks for root's by default: targetpw).
 printf 'Defaults:carol !targetpw\ncarol ALL=(ALL) ALL\n' >/etc/sudoers.d/90-custos-carol
 chmod 0440 /etc/sudoers.d/90-custos-carol
-visudo -c >/tmp/visudo.log 2>&1 || { cat /tmp/visudo.log >&2; die "sudoers"; }
+# Only our file: visudo -c also judges the distribution's /usr/etc/sudoers
+# (whose mode it finds wrong on Leap 16), which is not ours to change.
+visudo -cf /etc/sudoers.d/90-custos-carol >/tmp/visudo.log 2>&1 || { cat /tmp/visudo.log >&2; die "sudoers"; }
 
 echo "vm-setup: the gateway's test servers and the model" >&2
 systemctl enable --now mcp-gateway.service >/dev/null 2>&1
