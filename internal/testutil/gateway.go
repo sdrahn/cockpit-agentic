@@ -178,13 +178,10 @@ func StartHTTPGateway(t *testing.T, tools []string) (*Gateway, string) {
 	return g, srv.URL + "/mcp"
 }
 
-// NewGateway returns a fake gateway to serve with Handler.
+// NewGateway returns a fake gateway.
 func NewGateway(tools []string) *Gateway {
 	return &Gateway{Tools: tools, Ask: map[string]string{}, Block: map[string]bool{}, decisions: map[string]chan bool{}}
 }
-
-// Handler serves the gateway's MCP Streamable HTTP endpoint.
-func (g *Gateway) Handler() http.Handler { return http.HandlerFunc(g.serveHTTP) }
 
 // Pending reports whether approval id waits for Decide.
 func (g *Gateway) Pending(id string) bool {
