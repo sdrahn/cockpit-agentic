@@ -54,5 +54,12 @@ decided by mcp-gateway (≥ 1.12).
 - **Functional tests** (`custos-tests`) for openQA:
   `/usr/libexec/custos/tests/run-tests.sh --disposable --results DIR`,
   writing TAP and JUnit.
+- **User guide** (`docs/user-guide`, package `custos-docs`): installing,
+  connecting to mcp-gateway and an identity provider (Keycloak and
+  others), configuration, permissions and modes, approvals, the Cockpit
+  page, administration, monitoring and audit, OpenShell, troubleshooting
+  with every error message, and a reference. `custos-docs` installs it
+  with the contract in `/usr/share/custos/docs`, together with a
+  collection file from which mcp-docs serves it to agents on the host.
 - **The contract** (`CONTRACT.md`), version 1: the interface between
   the agent hosts and the control plane.
