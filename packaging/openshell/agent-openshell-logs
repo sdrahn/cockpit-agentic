@@ -25,10 +25,14 @@ for rt in $runtimes; do
 	# OpenShell runs two containers per sandbox:
 	# openshell-<workspace>--<sandbox>-<uuid> with the agent, and the same
 	# with -supervisor (the supervisor's lines only).
-	c=$($as_user "$rt" ps --format '{{.Names}}' 2>/dev/null |
-		grep -E -- "--$sandbox-[0-9a-f-]+\$" | grep -v -- '-supervisor$' | head -n 1)
+	# shellcheck disable=SC2086 # as_user is words
+	names=$($as_user "$rt" ps --format '{{.Names}}' 2>&1) || {
+		echo "agent-openshell-logs: $rt ps${user:+ as $user}: $(echo "$names" | tail -n 3 | tr '\n' ' ')" >&2
+		continue
+	}
+	c=$(echo "$names" | grep -E -- "--$sandbox-[0-9a-f-]+\$" | grep -v -- '-supervisor$' | head -n 1)
 	# shellcheck disable=SC2086 # as_user is words
 	[ -n "$c" ] && exec $as_user "$rt" logs --follow --since "$since" "$c" 2>&1
 done
-echo "agent-openshell-logs: no running container for sandbox $sandbox" >&2
+echo "agent-openshell-logs: no running container for sandbox $sandbox${user:+ (user $user)}" >&2
 exit 1

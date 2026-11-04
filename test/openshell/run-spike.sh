@@ -376,7 +376,17 @@ if [ -n "$relay_ok" ]; then
 		# Where the relay's bridge reads the agent's records from.
 		echo "    | relay: $(journalctl --no-pager -o cat --since "@$t0" -u agent-openshell@sb.service 2>&1 | grep -v 'proxy error' | tail -n 8 | tr '\n' '|')"
 		echo "    | containers: $(ctr ps --format '{{.Names}} ({{.Image}})' </dev/null 2>&1 | tr '\n' ' ')"
-		echo "    | helper: $(timeout 5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | tail -n 5 | tr '\n' '|')"
+		# The helper with the agent's openshell.env, then also with the relay
+		# unit's sandboxing and SELinux domain (what differs from a shell).
+		echo "    | helper: $(set -a; . /etc/custos/agents/sb/openshell.env; timeout 5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | tail -n 5 | tr '\n' '|')"
+		echo "    | helper as the unit: $(timeout 20 systemd-run --wait --pipe --quiet -p EnvironmentFile=/etc/custos/agents/sb/openshell.env \
+			-p NoNewPrivileges=yes -p ProtectHome=read-only -p PrivateTmp=yes \
+			-p "ReadWritePaths=-$osh_home/.local/share/containers -/run/user/$osh_uid" \
+			-p RuntimeMaxSec=5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | tail -n 5 | tr '\n' '|')"
+		echo "    | helper as the unit without NoNewPrivileges: $(timeout 20 systemd-run --wait --pipe --quiet -p EnvironmentFile=/etc/custos/agents/sb/openshell.env \
+			-p ProtectHome=read-only -p PrivateTmp=yes -p "ReadWritePaths=-$osh_home/.local/share/containers -/run/user/$osh_uid" \
+			-p RuntimeMaxSec=5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | tail -n 5 | tr '\n' '|')"
+		echo "    | the relay's drop-ins: $(systemctl show -p DropInPaths --value agent-openshell@sb.service)"
 		echo "    | journal AGENT_NAME=sb: $(journalctl --no-pager -o cat --since "@$t0" AGENT_NAME=sb 2>&1 | wc -l) records"
 	}
 	check "journal: approval.resolved approved" eventually 60 journal_has approval.resolved '.AGENT_OUTCOME == "approved"'
