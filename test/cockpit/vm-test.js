@@ -167,6 +167,17 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
         await frame().locator("#agent-detail button:text-is('Restart')").click({ timeout: 30000 });
         check(await vmEventually(60, `id=$(systemctl show -p InvocationID --value agent@patch-pilot.service); [ -n "$id" ] && [ "$id" != "${before}" ] && systemctl is-active -q agent@patch-pilot.service`),
               "Restart restarts agent@patch-pilot.service");
+        // Stop, then Start: on a real system the socket's directory stays
+        // (RemoveOnStop= removes only the socket), and the page must still
+        // see the agent as stopped and offer Start.
+        await frame().locator("#agent-detail button:text-is('Stop')").click({ timeout: 30000 });
+        check(await vmEventually(30, "! systemctl is-active -q agent@patch-pilot.socket && ! systemctl is-active -q agent@patch-pilot.service"),
+              "Stop stops agent@patch-pilot's socket and service");
+        await frame().locator("#agent-detail button:text-is('Start')").waitFor({ timeout: 60000 });
+        check((await frame().locator("#agent-detail").textContent()).includes("stopped"), "the page shows patch-pilot stopped, with Start");
+        await frame().locator("#agent-detail button:text-is('Start')").click();
+        check(await vmEventually(30, "systemctl is-active -q agent@patch-pilot.socket"), "Start starts agent@patch-pilot.socket again");
+        await frame().locator("#agent-detail button:text-is('Stop')").waitFor({ timeout: 60000 });
         // Logs: Cockpit's own journal page, for the agent's unit.
         await frame().locator("#agent-detail button:text-is('Logs')").click();
         await page.waitForURL(/\/system\/logs#\/\?.*service=agent%40patch-pilot\.service/, { timeout: 30000 });

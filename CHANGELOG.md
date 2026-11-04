@@ -30,6 +30,14 @@ removed.
 
 ### Fixed
 
+- The Cockpit page showed no **Start** for a stopped agent: it took an
+  agent for stopped only when its directory in `/run/agents` was gone,
+  but systemd removes only the socket and keeps the directory. An agent
+  without a socket is now stopped, and **Start** starts it again; for an
+  OpenShell agent its relay's socket, which the page finds from systemd.
+- **Stop** in the Cockpit page did not stop an OpenShell agent: it
+  stopped the relay's service and left its socket listening, so the next
+  request started the agent again. It stops both now.
 - An OpenShell agent's unit could fail to start after a restart (a
   no-op `agent-admin edit`, say): `openshell sandbox start` missed that
   the sandbox was Ready and waited past the unit's start timeout.
