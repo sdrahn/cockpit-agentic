@@ -205,6 +205,14 @@ the host never writes itself:
 - **Agent data is the only source.** A gateway role bound to an agent
   user would bypass its mode, so it denies the agent everything. An
   `agent-*` principal without agent data gets nothing.
+- **Agents over HTTPS.** On the gateway's socket an agent is its user
+  `agent-<name>`. On the gateway's HTTPS listener (an agent in a sandbox,
+  §16a) it is a token whose subject is `agent-<name>` from an issuer
+  listed in `/etc/mcp-gateway/policy/agents/_http.yaml`
+  (`_http: {issuers: [...]}`, none by default); that issuer gives such
+  subjects to agents only. An `agent-*` subject from any other issuer is
+  denied everything. Modes, pause and the emergency stop are the same on
+  both.
 - The rules are a Rego module added to the gateway's shipped policy
   (`mcp.authz`: `perms` and `denied`), installed as
   `/usr/share/mcp-gateway/policy/cockpit-agentic/agents.rego`. The gateway
@@ -432,7 +440,7 @@ and fleet scope is out of scope for SLES 16.2. Nothing here precludes it:
 | `/usr/share/cockpit-agentic/gateway/servers.d/agents.yaml` | root 0644 | the `agents` server definition; copy to `/etc/mcp-gateway/servers.d/` to allow delegation |
 | `/etc/cockpit-agentic/agents/<name>/agent.yaml` | root:agent-`<name>` 0640 | configuration (§14) |
 | `/etc/sysusers.d/agent-<name>.conf` | root 0644 | the agent's user |
-| `/etc/mcp-gateway/policy/agents/<name>.yaml` | root 0644 | mode, pause, permissions (§6). All agents' files and the emergency stop's `_control.yaml` (shipped by the package) are in this one directory: mcp-gateway's OPA (`--watch`) watches only directories it loaded a file from when it started |
+| `/etc/mcp-gateway/policy/agents/<name>.yaml` | root 0644 | mode, pause, permissions (§6). All agents' files, the emergency stop's `_control.yaml` and the agents' token issuers' `_http.yaml` (§6; both shipped by the package) are in this one directory: mcp-gateway's OPA (`--watch`) watches only directories it loaded a file from when it started |
 | `/etc/credstore.encrypted/agent-<name>.<cred>` | root 0600 | secrets (`systemd-creds encrypt`) |
 | `/etc/systemd/system/agent@<name>.service.d/` | root | sandbox changes; Cockpit writes `50-cockpit.conf` only |
 | `/etc/systemd/system/agent-schedule@<name>_<schedule>.timer.d/schedule.conf` | root | a schedule's `OnCalendar=` |
@@ -527,7 +535,8 @@ instead of `agent@.service`:
 | relay secret | in the sandbox's environment, which OpenShell flags as readable by the agent. That is intended: it proves to the agent that a request comes from the relay, so the agent must know it; host users who cannot reach the agent's socket must not (`relay.secret` is root's, 0600) |
 | relay | `agent-openshell@<name>.socket` owns `/run/agents/<name>/api.sock`; `agent-openshell@<name>.service` starts the sandbox and `openshell forward`, and runs `agent-openshell-relay` (SELinux `agent_relay_t`): callers by `SO_PEERCRED`, passed on as `X-Agentic-Caller` with `X-Agentic-Relay-Secret` (the agent's `--listen-tcp` mode believes nothing else); and the agent's records from its container's output (`agent-openshell-logs`: `docker logs` or `podman logs` of the sandbox's container; `openshell logs` has only the supervisor's lines), written to the journal with their `AGENT_*` fields |
 | openshell CLI | `agent-admin` and the relay unit run it as root with `HOME=/root`: the OpenShell gateway named in `sandbox.openshell_gateway` is registered for root (`openshell gateway add ... --name <gateway>`), and the CLI keeps its forwards there |
-| token | `agent-admin set-credential <name> gateway-token < token` creates the provider and the sandbox; the token is an OAuth access token mcp-gateway accepts with subject `agent-<name>` |
+| gateway | mcp-gateway's HTTPS listener (`http:` in its configuration): the agent's `gateway.url` is its audience, e.g. `https://host.openshell.internal:8443/mcp`, since the sandbox reaches the host by that name. The certificate names that host. OpenShell's proxy terminates the agent's TLS (to inspect MCP and swap the token in) and verifies the gateway with the image's trust store: a CA no public root signs goes into the image (`--build-arg GATEWAY_CA=`) |
+| token | `agent-admin set-credential <name> gateway-token < token` creates the provider and the sandbox; the token is an OAuth access token for the gateway's audience, subject `agent-<name>`, from an issuer in `_http.yaml` (§6). It carries no claim of the gateway's `local_user_claim`: the gateway maps a token to a local user only for accounts of persons (UID_MIN..UID_MAX) and refuses system accounts, which agents' users are, so the subject stays the principal |
 
 `stop-all` stops the relay units and every OpenShell agent's sandbox by
 name; the gateway's `agents_control` flag denies them like any agent.
@@ -628,16 +637,18 @@ is installed). There is no Cockpit page package yet.
   against.
 - **O10 — OpenShell backend.** §3a and §16a are a draft. CI runs the
   backend with a real OpenShell on Docker (`test/openshell/run-spike.sh`,
-  job `openshell`), against a stand-in for mcp-gateway's HTTP listener
-  that only accepts the real token. Settled by the spike: the token
-  stays with the supervisor; the control API is relayed with the
+  job `openshell`), against mcp-gateway's own HTTPS listener (in its
+  development mode) with the gateway's policy and the agents module,
+  and a test token issuer (`test/vm/testidp`). Settled by the spike: the
+  token stays with the supervisor; the control API is relayed with the
   caller; the agent's records reach the host journal through
   the relay's bridge, from the sandbox container's output (OpenShell's
-  own log stream has only the supervisor's lines). Still open:
-  - mcp-gateway's own HTTPS listener in place of the stand-in, and the
-    OAuth issuer of the agents' tokens (a local one, or the site's IdP
-    with a client per agent; `http.local_user_claim` maps the subject to
-    `agent-<name>`);
+  own log stream has only the supervisor's lines); the agent is
+  `agent-<name>` over HTTPS too, with its mode and approvals. Still open:
+  - the issuer of the agents' tokens in production (the site's IdP with
+    a client per agent and a subject mapper, or a local issuer), and
+    their renewal: OpenShell's provider holds one token, while access
+    tokens live minutes (a host-side refresh that updates the provider);
   - SLES 16 / Leap 16 with Podman and SELinux enforcing: the containers'
     domain (`container_t` with MCS) and `agent_relay_t`, which CI builds
     but has not yet run enforcing;

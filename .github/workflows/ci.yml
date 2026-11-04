@@ -207,6 +207,19 @@ jobs:
           go-version-file: go.mod
       - name: Build
         run: CGO_ENABLED=0 make build build-tests
+      # The agent reaches mcp-gateway's HTTPS listener: the gateway from its
+      # repository, in development mode, with OPA (test/openshell/run-spike.sh).
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GATEWAY_REPO }}
+          ref: ${{ env.GATEWAY_REF }}
+          path: mcp-gateway
+      - name: Build mcp-gateway
+        run: make -C mcp-gateway build
+      - uses: open-policy-agent/setup-opa@v2
+        with:
+          version: latest
+          static: true
       - name: Install OpenShell
         run: |
           curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
@@ -224,7 +237,7 @@ jobs:
           sudo openshell gateway list
           sudo openshell status
       - name: Run the OpenShell tests
-        run: sudo -E env "PATH=$PATH" test/openshell/run-spike.sh --disposable --results "$RUNNER_TEMP/osh"
+        run: sudo -E env "PATH=$PATH" MCPGW_SRC="$GITHUB_WORKSPACE/mcp-gateway" test/openshell/run-spike.sh --disposable --results "$RUNNER_TEMP/osh"
       - if: always()
         uses: actions/upload-artifact@v4
         with:

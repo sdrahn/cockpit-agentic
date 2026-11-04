@@ -92,3 +92,43 @@ test_humans_unaffected if {
 		with data.mcp.agents as agents("advisory")
 		with data.mcp.agents._control as {"stopped": true}
 }
+
+# Over the HTTPS listener (OpenShell, CONTRACT.md §16a): a token from an
+# issuer listed in agents/_http.yaml.
+pp_http(iss) := {"sub": "agent-patch-pilot", "iss": iss, "groups": [], "transport": "http", "session_id": "s2"}
+
+http_effect(iss, issuers, mode, tool) := e if {
+	a := object.union(agents(mode), {"_http": {"issuers": issuers}})
+	e := authz.decision.effect with input as call(pp_http(iss), "zypp", tool, {})
+		with data.mcp.agents as a
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+}
+
+test_http_agent_from_trusted_issuer if {
+	http_effect("https://agents.example", ["https://agents.example"], "supervised", "list_updates") == "allow"
+	http_effect("https://agents.example", ["https://agents.example"], "supervised", "install_patches") == "ask"
+	http_effect("https://agents.example", ["https://agents.example"], "advisory", "install_patches") == "deny"
+}
+
+test_http_agent_subject_from_other_issuer_denied if {
+	http_effect("https://idp.example", ["https://agents.example"], "bounded", "list_updates") == "deny"
+
+	# None trusted by default.
+	http_effect("https://agents.example", [], "bounded", "list_updates") == "deny"
+	authz.decision.effect == "deny" with input as call(pp_http("https://agents.example"), "zypp", "list_updates", {})
+		with data.mcp.agents as agents("bounded")
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+}
+
+test_http_agent_subject_from_other_issuer_denied_despite_role if {
+	authz.decision.effect == "deny" with input as call(pp_http("https://idp.example"), "zypp", "list_updates", {})
+		with data.mcp.agents as {"_http": {"issuers": ["https://agents.example"]}}
+		with data.mcp.rbac.bindings as {"users": {"agent-patch-pilot": ["admin"]}, "groups": {}}
+}
+
+test_http_agent_stopped_and_paused if {
+	a := object.union(agents("bounded"), {"_http": {"issuers": ["https://agents.example"]}, "_control": {"stopped": true}})
+	authz.decision.effect == "deny" with input as call(pp_http("https://agents.example"), "zypp", "list_updates", {})
+		with data.mcp.agents as a
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+}
