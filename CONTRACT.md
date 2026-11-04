@@ -49,7 +49,7 @@ agent and enriches the record.
 |---|---|
 | agent name | `^[a-z][a-z0-9-]{0,30}[a-z0-9]$`, unique on the host |
 | agent user | `agent-<name>`: a static system user without a password, member of `mcp-users` and `agent-clients`. The prefix `agent-` is reserved for agents |
-| gateway principal | `sub: agent-<name>`. With the `systemd` backend: `transport: unix`, identified by `SO_PEERCRED`. With the `openshell` backend: `transport: http`, identified by an OAuth bearer token whose subject is `agent-<name>` (gateway `http.local_user_claim` maps it to the agent's local user). Never by what the agent says |
+| gateway principal | `sub: agent-<name>`. With the `systemd` backend: `transport: unix`, identified by `SO_PEERCRED`. With the `openshell` backend: `transport: http`, identified by an OAuth bearer token whose subject is `agent-<name>`, from an issuer trusted for agents (§6); the token carries no local-user claim, so the subject stays the principal (§16a). Never by what the agent says |
 | journal identifier | `SYSLOG_IDENTIFIER=agent-<name>`, `AGENT_NAME=<name>` |
 | activity id | unique on the host; in the journal as `AGENT_INVOCATION` |
 
@@ -58,6 +58,22 @@ runs: a local account for chat (taken from `SO_PEERCRED` on the
 agent's socket), `system:schedule` or `system:event`, or `agent-<other>`
 for delegation. The agent acts at the gateway as `agent-<name>`, never
 as the session user.
+
+**People and the control plane.** A control plane acts for the person
+using it, under that person's own account (a local or directory user):
+the agents' sockets (§3) and the gateway's control API identify them by
+`SO_PEERCRED`. It never acts as the gateway's account or an agent's.
+Where it can also act as root (Cockpit with administrative access), it
+does so only for what needs root, and names the person:
+
+| Done as | What |
+|---|---|
+| **the person**, always | approval decisions: approve, decline, revoke a grant (§7, §8). The gateway records the approver it sees, so a decision made as root would be root's. Also reading status, activities and the journal, and chat (§11) |
+| root | creating and removing agents, modes and permissions (§6), pause and resume, stop, the emergency stop and its release (§8), through `agent-admin` (§17), which records the person (`by`) |
+
+Having administrative access therefore never changes for whom an
+approval is recorded. `docs/user-flow.md` walks through the roles and
+flows.
 
 ## 3. Discovery
 

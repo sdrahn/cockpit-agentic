@@ -49,6 +49,8 @@ of action:
 | Pause, resume, cancel, stop all, release all, mode, permissions, create, delete | **root** | only root may change agent data and units; `agent-admin` records the person in its `by:` and the journal |
 
 So *Administrative access* never changes who an approval is recorded for.
+CONTRACT.md §2 (*People and the control plane*) makes this a rule for any
+control plane.
 
 ## 1. Setting up (administrator, once)
 
