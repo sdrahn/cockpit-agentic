@@ -23,6 +23,23 @@ removed.
   TEXT`. `agent-admin demote` takes it back. Both are recorded in the
   journal (`custos-promotion`, `category.promoted`,
   `category.demoted`), and `agent-admin show` lists the categories.
+
+## v0.1.1 — 2026-11-04
+
+Fixes from testing 0.1.0. The package builds on OBS. The Cockpit page
+shows Start for a stopped agent, stops OpenShell agents for good, and
+gains Restart and Logs. OpenShell agents get through a token renewal,
+and their unit no longer fails to start when OpenShell misses that the
+sandbox is ready.
+
+Upgrading from 0.1.0 needs nothing: no configuration, gateway data or
+contract changes. Running agents keep the old launcher until they exit
+on idle or are restarted (`systemctl restart agent@NAME.service`, or
+the page's Restart); OpenShell agents pick up the relay unit's change
+at their next start.
+
+### Added
+
 - The Cockpit page: **Restart** and **Logs** for an agent. Restart
   restarts its service (an OpenShell agent's relay and sandbox); Logs
   opens Cockpit's journal for the agent's unit, with the unit's messages
@@ -30,6 +47,10 @@ removed.
 
 ### Fixed
 
+- The spec's `%check` failed in the package's tarball, which has no
+  `.github`: a test of the release workflow read
+  `.github/workflows/release.yml`. It skips without it. CI now builds
+  the RPM from the same tarball as OBS.
 - The Cockpit page showed no **Start** for a stopped agent: it took an
   agent for stopped only when its directory in `/run/agents` was gone,
   but systemd removes only the socket and keeps the directory. An agent
