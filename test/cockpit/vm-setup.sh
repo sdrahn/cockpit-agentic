@@ -39,7 +39,8 @@ state_is() { [ "$(api "$1" "/v1/activities/$2" | jq -r .state)" = "$3" ]; }
 approval_of() { api "$1" "/v1/activities/$2" | jq -r '[.calls[] | select(.approval_id != null and .approval_id != "")][0].approval_id // empty'; }
 
 echo "vm-setup: Cockpit and the page" >&2
-zypper -n --gpg-auto-import-keys in --no-recommends cockpit >/tmp/zypper-cockpit.log 2>&1 ||
+# sudo: Cockpit's administrative access (the minimal image may lack it).
+zypper -n --gpg-auto-import-keys in --no-recommends cockpit sudo >/tmp/zypper-cockpit.log 2>&1 ||
 	{ tail -n 20 /tmp/zypper-cockpit.log >&2; die "installing cockpit failed"; }
 zypper -n --gpg-auto-import-keys in --no-recommends --allow-unsigned-rpm "$rpms"/custos-cockpit-*.rpm >/tmp/zypper-page.log 2>&1 ||
 	{ tail -n 20 /tmp/zypper-page.log >&2; die "installing custos-cockpit failed"; }
@@ -55,7 +56,7 @@ usermod -aG agent-clients,wheel,systemd-journal,mcp-users carol
 # asks for root's by default: targetpw).
 printf 'Defaults:carol !targetpw\ncarol ALL=(ALL) ALL\n' >/etc/sudoers.d/90-custos-carol
 chmod 0440 /etc/sudoers.d/90-custos-carol
-visudo -cq || die "sudoers"
+visudo -c >/tmp/visudo.log 2>&1 || { cat /tmp/visudo.log >&2; die "sudoers"; }
 
 echo "vm-setup: the gateway's test servers and the model" >&2
 systemctl enable --now mcp-gateway.service >/dev/null 2>&1
