@@ -54,6 +54,7 @@ fields, gateway data, AG-UI events) are defined in the contract,
 | `agent@<name>.service` | runs the agent; exits after 10 minutes idle |
 | `agent-schedule@<name>_<schedule>.timer` | starts the schedule's service at its calendar |
 | `agent-schedule@<name>_<schedule>.service` | runs `agent-admin trigger <name>_<schedule>` |
+| `custos-demote.timer`, `custos-demote.service` | the demotion evaluator (`agent-admin evaluate`), every 5 minutes; enabled by `agent-admin promote` |
 | `agent-openshell@<name>.socket`, `.service` | an OpenShell agent's socket and relay |
 
 ## Users and groups {#users}

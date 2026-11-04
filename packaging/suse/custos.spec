@@ -140,9 +140,13 @@ export GOFLAGS="-mod=vendor"
 go test ./internal/... ./test/...
 
 %pre -f %{name}.pre
+%service_add_pre custos-demote.service custos-demote.timer
 
 %post
 %tmpfiles_create %{_tmpfilesdir}/%{name}.conf
+# The demotion evaluator's timer stays as the presets say (off);
+# agent-admin promote enables it with the first bounded category.
+%service_add_post custos-demote.service custos-demote.timer
 # mcp-gateway's OPA watches only the directories it loaded a file from
 # when it started: once restarted, it watches the agents' directory
 # (with _control.yaml) and loads agent-admin's changes there by itself.
@@ -151,7 +155,11 @@ if [ $1 -eq 1 ]; then
 fi
 # Agents are template instances, enabled by agent-admin create.
 
+%preun
+%service_del_preun custos-demote.service custos-demote.timer
+
 %postun
+%service_del_postun custos-demote.service custos-demote.timer
 # Running agents keep the old launcher until they exit on idle or are
 # restarted; restarting them here could cut off an activity waiting for
 # an approval.
@@ -193,6 +201,8 @@ done
 %{_unitdir}/agent-schedule@.timer
 %{_unitdir}/agent-openshell@.service
 %{_unitdir}/agent-openshell@.socket
+%{_unitdir}/custos-demote.service
+%{_unitdir}/custos-demote.timer
 %{_sysusersdir}/%{name}.conf
 %{_tmpfilesdir}/%{name}.conf
 %dir %{_sysconfdir}/custos

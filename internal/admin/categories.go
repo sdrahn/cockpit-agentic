@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -51,7 +52,21 @@ type CategoryState struct {
 // the other parts of §6a are refused until something enforces them.
 type Envelope struct {
 	Windows []Window `yaml:"windows" json:"windows"`
+	// Rollback: conditions on which the demotion evaluator demotes the
+	// category at once (agent-admin evaluate, custos-demote.timer).
+	Rollback *Rollback `yaml:"rollback,omitempty" json:"rollback,omitempty"`
 }
+
+// Rollback conditions (§6a): tool_error, limit_exceeded (of the
+// category's calls without approval since the promotion) and
+// health_check_failed (HealthCheck, run as root by sh -c, exits non-zero).
+type Rollback struct {
+	On          []string `yaml:"on" json:"on"`
+	HealthCheck string   `yaml:"health_check,omitempty" json:"health_check,omitempty"`
+}
+
+// RollbackConditions are the conditions the evaluator knows.
+var RollbackConditions = []string{"tool_error", "limit_exceeded", "health_check_failed"}
 
 // Window is a weekly time window.
 type Window struct {
@@ -130,7 +145,6 @@ func ParseEnvelope(b []byte) (*Envelope, error) {
 		case "rate":
 			return nil, errors.New("envelope: rate is not enforced by mcp-gateway yet (CONTRACT.md O12)")
 		case "rollback":
-			return nil, errors.New("envelope: rollback needs the demotion evaluator, not there yet (CONTRACT.md O11)")
 		case "hosts", "blast_radius":
 			return nil, fmt.Errorf("envelope: %s needs the fleet, which is parked (CONTRACT.md O13)", k)
 		default:
@@ -162,6 +176,21 @@ func ParseEnvelope(b []byte) (*Envelope, error) {
 			if _, err := time.LoadLocation(w.TZ); err != nil {
 				return nil, fmt.Errorf("envelope: windows[%d]: tz %q: %v", i, w.TZ, err)
 			}
+		}
+	}
+	if r := e.Rollback; r != nil {
+		if len(r.On) == 0 {
+			return nil, errors.New("envelope: rollback: no conditions (on: tool_error, limit_exceeded, health_check_failed)")
+		}
+		health := false
+		for _, c := range r.On {
+			if !slices.Contains(RollbackConditions, c) {
+				return nil, fmt.Errorf("envelope: rollback: condition %q: want tool_error, limit_exceeded or health_check_failed", c)
+			}
+			health = health || c == "health_check_failed"
+		}
+		if health != (strings.TrimSpace(r.HealthCheck) != "") {
+			return nil, errors.New("envelope: rollback: health_check_failed and health_check (a command) go together")
 		}
 	}
 	return &e, nil
@@ -234,6 +263,10 @@ func (a *Admin) Promote(name, cat, by string, p Promotion) error {
 		"CATEGORY": cat, "PROMOTION": id, "MODE_FROM": from, "MODE_TO": "bounded", "BY": by,
 		"REASON": p.Reason, "ENVELOPE_SHA256": envelopeHash(env), "READINESS": string(readinessJSON),
 	})
+	// The demotion evaluator must run while any category is bounded.
+	if err := a.Run(nil, "systemctl", "enable", "--now", "custos-demote.timer"); err != nil {
+		fmt.Fprintf(a.Out, "agent-admin: custos-demote.timer could not be enabled (%v): nothing demotes %s of %s automatically until it runs\n", err, cat, name)
+	}
 	fmt.Fprintf(a.Out, "agent %s: category %s is bounded within its envelope (promotion %s)\n", name, cat, id)
 	return nil
 }

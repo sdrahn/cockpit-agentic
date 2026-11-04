@@ -1,0 +1,11 @@
+# The demotion evaluator (CONTRACT.md §6a): demotes a bounded task
+# category whose override rate or rollback conditions say so. It runs as
+# root, outside any agent; agent-admin promote enables its timer.
+[Unit]
+Description=Custos demotion evaluator
+Documentation=https://github.com/sdrahn/custos/blob/main/CONTRACT.md
+After=mcp-gateway.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/agent-admin evaluate

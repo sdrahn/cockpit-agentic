@@ -214,7 +214,7 @@ agent-admin promote patch-pilot patch-errata --envelope window.yaml \
 - a category that is not in the catalog, or in which the agent has no
   permission;
 - an agent in `advisory` mode;
-- `rate` and `rollback` in the envelope (not enforced yet), and `hosts`
+- `rate` in the envelope (not enforced yet), and `hosts`
   or `blast_radius` (they need a fleet). It refuses them rather than
   ignore them.
 
@@ -233,6 +233,37 @@ agent-admin demote patch-pilot patch-errata --reason "a patch broke nginx"
 The category is supervised again, so its calls need an approval. Its
 envelope stays for a later promotion. The record is `category.demoted`.
 Pause and the emergency stop still stop everything, promoted or not.
+
+## Automatic demotion {#auto-demote}
+
+The demotion evaluator, `custos-demote.timer`, checks every bounded
+category every 5 minutes, as root and outside any agent. `promote`
+enables the timer. It demotes a category when:
+
+- its override rate since the promotion (at most the last 7 days) is
+  above the threshold. Outside its windows the category still asks for
+  approvals, and a decline counts;
+- a **rollback** condition of its envelope fires.
+
+```yaml
+windows:
+  - {days: [sat], from: '02:00', to: '04:00', tz: Europe/Berlin}
+rollback:
+  on: [tool_error, limit_exceeded, health_check_failed]
+  health_check: 'systemctl is-active --quiet nginx.service'
+```
+
+| Condition | Fires when |
+|---|---|
+| `tool_error` | a call of the category that ran without an approval since the promotion failed |
+| `limit_exceeded` | an activity with such a call reached one of the agent's limits |
+| `health_check_failed` | `health_check` (run as root with `sh -c`, at most 60 seconds) exits non-zero |
+
+`health_check` goes with `health_check_failed`, and only with it. The
+demotion is recorded as `category.demoted` by `custos-demote`, with the
+trigger as the reason. Run the evaluator by hand with `agent-admin
+evaluate`, which prints each demotion. A demotion stops what follows; it
+does not undo what ran (for that, a snapshot, say, is the tool's).
 
 ## How the gateway applies modes {#how-enforced}
 

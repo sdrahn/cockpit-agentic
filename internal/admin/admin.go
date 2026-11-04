@@ -72,6 +72,9 @@ type Admin struct {
 	// JournalJSON reads journal records (journalctl -o json with these
 	// matches, over the readiness window); nil: journalctl.
 	JournalJSON func(args ...string) ([]byte, error)
+	// HealthCheck runs a rollback health check (sh -c, as root); nil:
+	// runHealthCheck.
+	HealthCheck func(cmd string) error
 }
 
 // New is agent-admin on a host. Its standard output is its own messages

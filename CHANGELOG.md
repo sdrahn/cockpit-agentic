@@ -26,7 +26,14 @@ removed.
   calls went wrong. `promote` refuses a category below the thresholds
   (14 days, 50 proposals, at most 5 % overrides and 2 % incidents; your
   own in `/etc/custos/promotion.yaml`) unless given
-  `--despite-readiness --reason TEXT`. Both are recorded in the
+  `--despite-readiness --reason TEXT`.
+- The demotion evaluator: `custos-demote.timer` (every 5 minutes;
+  `promote` enables it) runs `agent-admin evaluate`, which demotes a
+  bounded category whose override rate since its promotion is above the
+  threshold, or whose envelope's `rollback` condition fires:
+  `tool_error`, `limit_exceeded` or `health_check_failed` (a command of
+  `health_check`). Demotions are recorded by `custos-demote` with the
+  reason. Both are recorded in the
   journal (`custos-promotion`, `category.promoted`,
   `category.demoted`), and `agent-admin show` lists the categories.
 

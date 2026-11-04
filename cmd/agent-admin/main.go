@@ -26,6 +26,8 @@ const usage = `usage: agent-admin COMMAND …
   promote NAME CATEGORY --envelope FILE [--despite-readiness --reason TEXT]
                                          let a category act without approval within its envelope (FILE -: stdin)
   demote NAME CATEGORY [--reason TEXT]   back to supervised (the envelope is kept)
+  evaluate                               the demotion evaluator: demote bounded categories whose override rate
+                                         or rollback conditions say so (custos-demote.timer)
   pause NAME | resume NAME               hold an agent / let it go on
   trigger NAME_SCHEDULE                  start a schedule's activity (agent-schedule@.service)
   stop-all                               emergency stop: every agent, every schedule
@@ -175,6 +177,12 @@ func run(a *admin.Admin, args []string) error {
 		}
 		reason, _ := flag("--reason")
 		return a.Demote(args[0], args[1], by(), reason)
+	case "evaluate":
+		d, err := a.Evaluate()
+		for _, x := range d {
+			fmt.Printf("agent %s: category %s demoted: %s\n", x.Agent, x.Category, x.Reason)
+		}
+		return err
 	case "pause", "resume":
 		if err := need(1); err != nil {
 			return err

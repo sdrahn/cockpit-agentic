@@ -53,6 +53,7 @@ first working agent.
 | Who is recorded as having approved? | [07-approvals.md#who-is-recorded](07-approvals.md#who-is-recorded) |
 | How do I let a kind of work (patching, say) run without approval in a maintenance window? | [06-permissions-and-modes.md#categories](06-permissions-and-modes.md#categories), [06-permissions-and-modes.md#promote](06-permissions-and-modes.md#promote) |
 | Is a category ready to run without approval? | [06-permissions-and-modes.md#readiness](06-permissions-and-modes.md#readiness) |
+| Can a promoted category be demoted automatically, say when a patch breaks something? | [06-permissions-and-modes.md#auto-demote](06-permissions-and-modes.md#auto-demote) |
 | How do I take that back? | [06-permissions-and-modes.md#demote](06-permissions-and-modes.md#demote) |
 | How do I restart an agent? | [09-administration.md#stop](09-administration.md#stop), [08-cockpit.md#agents](08-cockpit.md#agents) |
 | Where are one agent's logs? | [10-monitoring-and-audit.md#journal](10-monitoring-and-audit.md#journal) |

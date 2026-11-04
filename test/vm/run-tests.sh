@@ -413,6 +413,20 @@ check "outside its window, the change waits for an approval" asks_and_deny
 check "agent-admin demote t1 patch-errata" agent-admin demote t1 patch-errata --reason "functional test"
 check "demoted: the change waits for an approval" asks_and_deny
 check "journal: category.demoted" eventually 10 journal_has t1 category.demoted '.AGENT_CATEGORY == "patch-errata" and .AGENT_MODE_TO == "supervised"'
+# The demotion evaluator (§6a), on a rollback health check.
+touch /run/custos-test-healthy
+printf 'windows:\n  - {days: [%s], from: "00:00", to: "23:59", tz: UTC}\nrollback: {on: [health_check_failed], health_check: "test -e /run/custos-test-healthy"}\n' "$today" >"$work/rollback.yaml"
+check "promote with a rollback health check" agent-admin promote t1 patch-errata --envelope "$work/rollback.yaml" --despite-readiness --reason "functional test"
+check "promote enabled custos-demote.timer" systemctl is-enabled -q custos-demote.timer
+check "evaluate leaves a healthy category bounded" bash -c \
+	"agent-admin evaluate >/dev/null && agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"bounded\"' >/dev/null"
+rm -f /run/custos-test-healthy
+check "evaluate demotes it when its health check fails" bash -c "agent-admin evaluate | grep -q 'category patch-errata demoted: rollback health_check_failed'"
+check "the category is supervised again" bash -c "agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"supervised\"' >/dev/null"
+check "journal: category.demoted by custos-demote, with the reason" eventually 10 journal_has t1 category.demoted \
+	'.AGENT_BY == "custos-demote" and (.AGENT_REASON | startswith("rollback health_check_failed"))'
+check "custos-demote.service runs the evaluator" systemctl start custos-demote.service
+systemctl disable --now custos-demote.timer >/dev/null 2>&1
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' | agent-admin permissions t1
 
 # --- intervention -----------------------------------------------------------------

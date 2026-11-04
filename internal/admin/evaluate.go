@@ -1,0 +1,190 @@
+package admin
+
+import (
+	"context"
+	"fmt"
+	"os/exec"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/sdrahn/custos/internal/readiness"
+)
+
+// DemoteBy is the demotion evaluator's name in the records (§10,
+// AGENT_BY) and in demoted_by.
+const DemoteBy = "custos-demote"
+
+// OverrideWindow: the evaluator measures a bounded category's override
+// rate over the last 7 days since its promotion (§6a).
+const OverrideWindow = 7 * 24 * time.Hour
+
+// HealthCheckTimeout bounds a rollback health check.
+const HealthCheckTimeout = 60 * time.Second
+
+// Demotion is one category the evaluator demoted, and why.
+type Demotion struct {
+	Agent, Category, Reason string
+}
+
+// Evaluate is the demotion evaluator (agent-admin evaluate, run by
+// custos-demote.timer as root, outside any agent; §6a). For each bounded
+// category of each agent it demotes when, since the promotion:
+//   - the override rate over the last 7 days exceeds the threshold;
+//   - a rollback condition of the envelope fires: tool_error or
+//     limit_exceeded for a call of the category made without an
+//     approval, or health_check_failed.
+//
+// An agent whose records cannot be read is reported and the others are
+// still evaluated.
+func (a *Admin) Evaluate() ([]Demotion, error) {
+	p, err := a.Show()
+	if err != nil {
+		return nil, err
+	}
+	th, err := a.Thresholds()
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(p.Agents))
+	for n := range p.Agents {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	var out []Demotion
+	var errs []string
+	for _, name := range names {
+		d := p.Agents[name]
+		var cats []string
+		for c, st := range d.Categories {
+			if st != nil && st.Mode == "bounded" {
+				cats = append(cats, c)
+			}
+		}
+		if len(cats) == 0 {
+			continue
+		}
+		sort.Strings(cats)
+		now := a.Now()
+		recs, decisions, err := a.journalRecords(name, now.Add(-OverrideWindow))
+		if err != nil {
+			errs = append(errs, err.Error())
+			continue
+		}
+		for _, c := range cats {
+			reason := a.demotionReason(d, c, recs, decisions, th, now)
+			if reason == "" {
+				continue
+			}
+			if err := a.Demote(name, c, DemoteBy, reason); err != nil {
+				errs = append(errs, fmt.Sprintf("agent %s: demoting %s: %v", name, c, err))
+				continue
+			}
+			out = append(out, Demotion{name, c, reason})
+		}
+	}
+	if len(errs) > 0 {
+		return out, fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return out, nil
+}
+
+// demotionReason is why category c of agent d is to be demoted, or "".
+func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record, decisions map[string]readiness.Decision, th readiness.Thresholds, now time.Time) string {
+	st := d.Categories[c]
+	since := promotedAt(st)
+	if from := now.Add(-OverrideWindow); since.Before(from) {
+		since = from
+	}
+	var after []readiness.Record
+	for _, r := range recs {
+		if !readiness.At(r).Before(since) {
+			after = append(after, r)
+		}
+	}
+	// Outside its windows a bounded category is supervised, so it still
+	// has proposals to decline.
+	m := readiness.Measure(c, d.Permissions, after, decisions, th, now)
+	if m.Proposals > 0 && m.OverrideRate > th.OverrideRate {
+		return fmt.Sprintf("override rate %.1f %% above %.1f %% since %s (%d of %d proposals)",
+			m.OverrideRate*100, th.OverrideRate*100, since.UTC().Format(time.RFC3339), m.Overrides, m.Proposals)
+	}
+	if st.Envelope == nil || st.Envelope.Rollback == nil {
+		return ""
+	}
+	rb := st.Envelope.Rollback
+	on := func(cond string) bool {
+		for _, x := range rb.On {
+			if x == cond {
+				return true
+			}
+		}
+		return false
+	}
+	// The category's calls since the promotion that ran without an
+	// approval: the ones the promotion let through.
+	approved := map[string]bool{}
+	for _, r := range after {
+		if r["AGENT_EVENT"] == "approval.pending" {
+			approved[r["AGENT_INVOCATION"]+" "+r["AGENT_CALL_ID"]] = true
+		}
+	}
+	autonomous := map[string]bool{} // invocations
+	for _, r := range after {
+		if r["AGENT_EVENT"] != "tool.result" || !readiness.InCategory(c, r["AGENT_TOOL"], d.Permissions) ||
+			r["AGENT_APPROVAL_ID"] != "" || approved[r["AGENT_INVOCATION"]+" "+r["AGENT_CALL_ID"]] {
+			continue
+		}
+		autonomous[r["AGENT_INVOCATION"]] = true
+		if on("tool_error") && r["AGENT_OUTCOME"] == "error" {
+			return fmt.Sprintf("rollback tool_error: %s failed at %s (%s)", r["AGENT_TOOL"], readiness.At(r).UTC().Format(time.RFC3339), r["AGENT_REASON"])
+		}
+	}
+	if on("limit_exceeded") {
+		for _, r := range after {
+			if r["AGENT_EVENT"] == "limit.exceeded" && autonomous[r["AGENT_INVOCATION"]] {
+				return fmt.Sprintf("rollback limit_exceeded: %s in activity %s at %s", r["AGENT_REASON"], r["AGENT_INVOCATION"], readiness.At(r).UTC().Format(time.RFC3339))
+			}
+		}
+	}
+	if on("health_check_failed") {
+		check := a.HealthCheck
+		if check == nil {
+			check = runHealthCheck
+		}
+		if err := check(rb.HealthCheck); err != nil {
+			return fmt.Sprintf("rollback health_check_failed: %q: %v", rb.HealthCheck, err)
+		}
+	}
+	return ""
+}
+
+// promotedAt is the time in promoted_by ("<who> <RFC 3339>").
+func promotedAt(st *CategoryState) time.Time {
+	f := strings.Fields(st.PromotedBy)
+	if len(f) == 0 {
+		return time.Time{}
+	}
+	t, _ := time.Parse(time.RFC3339, f[len(f)-1])
+	return t
+}
+
+func runHealthCheck(cmd string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), HealthCheckTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "sh", "-c", cmd).CombinedOutput()
+	if err != nil {
+		if s := strings.TrimSpace(string(out)); s != "" {
+			return fmt.Errorf("%w: %s", err, lastLine(s))
+		}
+		return err
+	}
+	return nil
+}
+
+func lastLine(s string) string {
+	if i := strings.LastIndex(s, "\n"); i >= 0 {
+		return s[i+1:]
+	}
+	return s
+}

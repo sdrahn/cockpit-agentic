@@ -95,7 +95,7 @@ func Measure(category string, perms []map[string]any, recs []Record, decisions m
 		case "tool.result":
 			results[k] = r
 		case "approval.pending":
-			if r["AGENT_APPROVAL_ID"] != "" && inCategory(category, r["AGENT_TOOL"], perms) {
+			if r["AGENT_APPROVAL_ID"] != "" && InCategory(category, r["AGENT_TOOL"], perms) {
 				proposals = append(proposals, r)
 			}
 		case "activity.cancel":
@@ -198,9 +198,9 @@ func pausedBetween(pauses []time.Time, from, to time.Time) bool {
 
 func pct(f float64) string { return strconv.FormatFloat(f*100, 'f', 1, 64) + " %" }
 
-// inCategory: a permission of the category that changes the system
+// InCategory: a permission of the category that changes the system
 // matches the tool (server__name; globs as the gateway's).
-func inCategory(category, tool string, perms []map[string]any) bool {
+func InCategory(category, tool string, perms []map[string]any) bool {
 	srv, name, ok := strings.Cut(tool, "__")
 	if !ok {
 		return false
