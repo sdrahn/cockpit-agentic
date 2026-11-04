@@ -1,6 +1,6 @@
 # mcp-gateway server definition: delegation between agents
-# (cockpit-agentic CONTRACT.md §9). Installed as
-# /usr/share/cockpit-agentic/gateway/servers.d/agents.yaml; link or copy it
+# (Custos CONTRACT.md §9). Installed as
+# /usr/share/custos/gateway/servers.d/agents.yaml; link or copy it
 # to /etc/mcp-gateway/servers.d/ to let agents delegate.
 #
 # Its one tool, agents__delegate, is governed like any other: an agent
@@ -9,7 +9,7 @@
 # (agent-admin permissions NAME).
 version: 1
 name: agents
-command: ["/usr/libexec/cockpit-agentic/agent-delegate"]
+command: ["/usr/libexec/custos/agent-delegate"]
 selinux_type: mcpsrv_agents_t
 isolation: principal
 network: false

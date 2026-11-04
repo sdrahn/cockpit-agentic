@@ -36,14 +36,14 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/sdrahn/cockpit-agentic/internal/agui"
-	"github.com/sdrahn/cockpit-agentic/internal/clienttools"
-	"github.com/sdrahn/cockpit-agentic/internal/config"
-	"github.com/sdrahn/cockpit-agentic/internal/gateway"
-	"github.com/sdrahn/cockpit-agentic/internal/governance"
-	"github.com/sdrahn/cockpit-agentic/internal/journal"
-	"github.com/sdrahn/cockpit-agentic/internal/openai"
-	"github.com/sdrahn/cockpit-agentic/internal/peercred"
+	"github.com/sdrahn/custos/internal/agui"
+	"github.com/sdrahn/custos/internal/clienttools"
+	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/gateway"
+	"github.com/sdrahn/custos/internal/governance"
+	"github.com/sdrahn/custos/internal/journal"
+	"github.com/sdrahn/custos/internal/openai"
+	"github.com/sdrahn/custos/internal/peercred"
 )
 
 // Version is set by the build.
@@ -338,7 +338,7 @@ func (l *Launcher) status(w http.ResponseWriter, r *http.Request) {
 		reachable = true
 	}
 	writeJSON(w, http.StatusOK, Status{
-		Contract: config.ContractVersion, Implementation: "cockpit-agentic/adk-go", Name: l.cfg.Name, Version: Version,
+		Contract: config.ContractVersion, Implementation: "custos/adk-go", Name: l.cfg.Name, Version: Version,
 		Units: units, Lifecycle: l.cfg.Lifecycle(),
 		Model: l.cfg.Model.Provider + ":" + l.cfg.Model.Name, Paused: l.Governor.Paused(),
 		Gateway:  GatewayStatus{Socket: l.cfg.Gateway.Socket, URL: l.cfg.Gateway.URL, Reachable: reachable},

@@ -1,4 +1,4 @@
-# cockpit-agentic: build, test and install (also used by the OBS spec).
+# custos: build, test and install (also used by the OBS spec).
 VERSION    ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
 PREFIX     ?= /usr
 LIBEXECDIR ?= $(PREFIX)/libexec
@@ -15,9 +15,9 @@ OPA        ?= opa
 # The gateway's shipped policy, for testing the agents module against it.
 GATEWAY_POLICY ?= $(DATADIR)/mcp-gateway/policy
 
-LDFLAGS := -X github.com/sdrahn/cockpit-agentic/internal/launcher.Version=$(VERSION)
+LDFLAGS := -X github.com/sdrahn/custos/internal/launcher.Version=$(VERSION)
 BINS := agent-launcher agent-admin agent-delegate agent-openshell-relay
-# The functional tests' helpers (package cockpit-agentic-tests).
+# The functional tests' helpers (package custos-tests).
 TESTBINS := fakemodel testsrv fakegateway testidp
 
 .PHONY: all build build-tests test check fmt-check vet policy-test selinux install install-selinux install-tests clean
@@ -55,44 +55,44 @@ policy-test:
 check: fmt-check vet test
 
 # Needs selinux-policy-devel and mcp_gateway.if (mcp-gateway-selinux).
-selinux: selinux/cockpit_agentic.pp
+selinux: selinux/custos.pp
 
-selinux/cockpit_agentic.pp: selinux/cockpit_agentic.te selinux/cockpit_agentic.fc
-	$(MAKE) -C selinux -f $(SELINUX_DEVEL) cockpit_agentic.pp
+selinux/custos.pp: selinux/custos.te selinux/custos.fc
+	$(MAKE) -C selinux -f $(SELINUX_DEVEL) custos.pp
 
 install: build
-	install -d $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic
-	install -m 0755 bin/agent-launcher bin/agent-delegate bin/agent-openshell-relay $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/
+	install -d $(DESTDIR)$(LIBEXECDIR)/custos
+	install -m 0755 bin/agent-launcher bin/agent-delegate bin/agent-openshell-relay $(DESTDIR)$(LIBEXECDIR)/custos/
 	install -d $(DESTDIR)$(SBINDIR)
 	install -m 0755 bin/agent-admin $(DESTDIR)$(SBINDIR)/agent-admin
-	ln -sf ../../sbin/agent-admin $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/agent-admin
+	ln -sf ../../sbin/agent-admin $(DESTDIR)$(LIBEXECDIR)/custos/agent-admin
 	install -d $(DESTDIR)$(UNITDIR)
 	install -m 0644 systemd/agent@.service systemd/agent@.socket systemd/agent-schedule@.service systemd/agent-schedule@.timer \
 		systemd/agent-openshell@.service systemd/agent-openshell@.socket $(DESTDIR)$(UNITDIR)/
-	install -m 0755 packaging/openshell/agent-openshell-logs $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/agent-openshell-logs
-	install -D -m 0644 packaging/openshell/Containerfile $(DESTDIR)$(DATADIR)/cockpit-agentic/openshell/Containerfile
-	install -D -m 0644 packaging/sysusers/cockpit-agentic.conf $(DESTDIR)$(SYSUSERSDIR)/cockpit-agentic.conf
-	install -D -m 0644 packaging/tmpfiles/cockpit-agentic.conf $(DESTDIR)$(TMPFILESDIR)/cockpit-agentic.conf
-	install -D -m 0644 gateway/policy/agents.rego $(DESTDIR)$(DATADIR)/mcp-gateway/policy/cockpit-agentic/agents.rego
+	install -m 0755 packaging/openshell/agent-openshell-logs $(DESTDIR)$(LIBEXECDIR)/custos/agent-openshell-logs
+	install -D -m 0644 packaging/openshell/Containerfile $(DESTDIR)$(DATADIR)/custos/openshell/Containerfile
+	install -D -m 0644 packaging/sysusers/custos.conf $(DESTDIR)$(SYSUSERSDIR)/custos.conf
+	install -D -m 0644 packaging/tmpfiles/custos.conf $(DESTDIR)$(TMPFILESDIR)/custos.conf
+	install -D -m 0644 gateway/policy/agents.rego $(DESTDIR)$(DATADIR)/mcp-gateway/policy/custos/agents.rego
 	install -D -m 0644 gateway/policy/_control.yaml $(DESTDIR)$(SYSCONFDIR)/mcp-gateway/policy/agents/_control.yaml
 	install -D -m 0644 gateway/policy/_http.yaml $(DESTDIR)$(SYSCONFDIR)/mcp-gateway/policy/agents/_http.yaml
-	install -D -m 0644 gateway/servers.d/agents.yaml $(DESTDIR)$(DATADIR)/cockpit-agentic/gateway/servers.d/agents.yaml
-	install -D -m 0644 examples/patch-pilot/agent.yaml $(DESTDIR)$(DATADIR)/cockpit-agentic/examples/patch-pilot/agent.yaml
-	install -D -m 0644 examples/patch-pilot/permissions.yaml $(DESTDIR)$(DATADIR)/cockpit-agentic/examples/patch-pilot/permissions.yaml
-	install -d -m 0755 $(DESTDIR)$(SYSCONFDIR)/cockpit-agentic/agents
+	install -D -m 0644 gateway/servers.d/agents.yaml $(DESTDIR)$(DATADIR)/custos/gateway/servers.d/agents.yaml
+	install -D -m 0644 examples/patch-pilot/agent.yaml $(DESTDIR)$(DATADIR)/custos/examples/patch-pilot/agent.yaml
+	install -D -m 0644 examples/patch-pilot/permissions.yaml $(DESTDIR)$(DATADIR)/custos/examples/patch-pilot/permissions.yaml
+	install -d -m 0755 $(DESTDIR)$(SYSCONFDIR)/custos/agents
 
 # The functional tests, for openQA (test/openqa/README.md).
 install-tests: build-tests
-	install -Dm0755 test/vm/run-tests.sh $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/tests/run-tests.sh
-	install -Dm0755 bin/tests/fakemodel $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/tests/fakemodel
-	install -Dm0755 bin/tests/testsrv $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/tests/testsrv
-	install -Dm0755 bin/tests/fakegateway $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/tests/fakegateway
-	install -Dm0755 bin/tests/testidp $(DESTDIR)$(LIBEXECDIR)/cockpit-agentic/tests/testidp
+	install -Dm0755 test/vm/run-tests.sh $(DESTDIR)$(LIBEXECDIR)/custos/tests/run-tests.sh
+	install -Dm0755 bin/tests/fakemodel $(DESTDIR)$(LIBEXECDIR)/custos/tests/fakemodel
+	install -Dm0755 bin/tests/testsrv $(DESTDIR)$(LIBEXECDIR)/custos/tests/testsrv
+	install -Dm0755 bin/tests/fakegateway $(DESTDIR)$(LIBEXECDIR)/custos/tests/fakegateway
+	install -Dm0755 bin/tests/testidp $(DESTDIR)$(LIBEXECDIR)/custos/tests/testidp
 
 install-selinux: selinux
 	install -d $(DESTDIR)$(SELINUXDIR)
-	bzip2 -9 -c selinux/cockpit_agentic.pp >$(DESTDIR)$(SELINUXDIR)/cockpit_agentic.pp.bz2
-	chmod 0644 $(DESTDIR)$(SELINUXDIR)/cockpit_agentic.pp.bz2
+	bzip2 -9 -c selinux/custos.pp >$(DESTDIR)$(SELINUXDIR)/custos.pp.bz2
+	chmod 0644 $(DESTDIR)$(SELINUXDIR)/custos.pp.bz2
 
 clean:
 	rm -rf bin selinux/*.pp selinux/tmp

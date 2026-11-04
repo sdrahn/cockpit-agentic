@@ -1,4 +1,4 @@
-# The emergency stop of every cockpit-agentic agent (agent-admin stop-all,
+# The emergency stop of every Custos agent (agent-admin stop-all,
 # release-all; CONTRACT.md §8). Installed as
 # /etc/mcp-gateway/policy/agents/_control.yaml: OPA watches this directory
 # because it loads this file when it starts.

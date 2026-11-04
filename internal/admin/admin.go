@@ -23,9 +23,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/sdrahn/cockpit-agentic/internal/config"
-	"github.com/sdrahn/cockpit-agentic/internal/delegate"
-	"github.com/sdrahn/cockpit-agentic/internal/openshell"
+	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/delegate"
+	"github.com/sdrahn/custos/internal/openshell"
 )
 
 type Admin struct {
@@ -42,7 +42,7 @@ type Admin struct {
 	// RunEnv runs a command with extra environment variables (secrets
 	// handed to openshell, which reads them from its environment).
 	RunEnv func(env []string, name string, args ...string) error
-	// Image is the OpenShell sandbox image (AGENTIC_OPENSHELL_IMAGE).
+	// Image is the OpenShell sandbox image (CUSTOS_OPENSHELL_IMAGE).
 	Image string
 	// Secret makes the relay secrets.
 	Secret func() string
@@ -68,7 +68,7 @@ func New() *Admin {
 			c.Stdout, c.Stderr = os.Stdout, os.Stderr
 			return c.Run()
 		},
-		Image: envOr("AGENTIC_OPENSHELL_IMAGE", "localhost/cockpit-agentic-agent:latest"),
+		Image: envOr("CUSTOS_OPENSHELL_IMAGE", "localhost/custos-agent:latest"),
 		Secret: func() string {
 			b := make([]byte, 32)
 			rand.Read(b)
@@ -148,7 +148,7 @@ func (a *Admin) Create(name, from string) error {
 		return fmt.Errorf("agent %s exists", name)
 	}
 	user := "agent-" + name
-	sysusers := fmt.Sprintf("# agent-admin: the user of agent %[1]s (CONTRACT.md §2)\nu %[2]s - \"cockpit-agentic agent %[1]s\" /var/lib/agents/%[1]s /usr/sbin/nologin\nm %[2]s mcp-users\nm %[2]s agent-clients\n", name, user)
+	sysusers := fmt.Sprintf("# agent-admin: the user of agent %[1]s (CONTRACT.md §2)\nu %[2]s - \"Custos agent %[1]s\" /var/lib/agents/%[1]s /usr/sbin/nologin\nm %[2]s mcp-users\nm %[2]s agent-clients\n", name, user)
 	sf := a.p(filepath.Join(SysusersDir, user+".conf"))
 	if err := writeFile(sf, []byte(sysusers), 0o644); err != nil {
 		return err
@@ -378,7 +378,7 @@ func (a *Admin) writeGateway(name string, d *GatewayData) error {
 	if err != nil {
 		return err
 	}
-	head := "# Written by agent-admin: the autonomy mode and permissions of agent " + name + "\n# (cockpit-agentic CONTRACT.md §6). mcp-gateway's OPA reloads it by itself.\n"
+	head := "# Written by agent-admin: the autonomy mode and permissions of agent " + name + "\n# (Custos CONTRACT.md §6). mcp-gateway's OPA reloads it by itself.\n"
 	if err := writeFile(a.gatewayFile(name), append([]byte(head), b...), 0o644); err != nil {
 		return err
 	}
@@ -489,7 +489,7 @@ func (a *Admin) StopAll(by string) error {
 
 // writeStop writes the emergency stop's flag (data.mcp.agents._control).
 func (a *Admin) writeStop(stopped bool, by string) error {
-	b := fmt.Sprintf("# The emergency stop of every agent (agent-admin stop-all, release-all;\n# cockpit-agentic CONTRACT.md §8).\n_control:\n  stopped: %t\n  by: %q\n  at: %q\n",
+	b := fmt.Sprintf("# The emergency stop of every agent (agent-admin stop-all, release-all;\n# custos CONTRACT.md §8).\n_control:\n  stopped: %t\n  by: %q\n  at: %q\n",
 		stopped, by, a.Now().UTC().Format(time.RFC3339))
 	if err := writeFile(a.p(GatewayStop), []byte(b), 0o644); err != nil {
 		return err

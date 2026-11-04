@@ -18,11 +18,11 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
-	"github.com/sdrahn/cockpit-agentic/internal/clienttools"
-	"github.com/sdrahn/cockpit-agentic/internal/config"
-	"github.com/sdrahn/cockpit-agentic/internal/governance"
-	"github.com/sdrahn/cockpit-agentic/internal/journal"
-	"github.com/sdrahn/cockpit-agentic/internal/peercred"
+	"github.com/sdrahn/custos/internal/clienttools"
+	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/governance"
+	"github.com/sdrahn/custos/internal/journal"
+	"github.com/sdrahn/custos/internal/peercred"
 )
 
 // RunAgentInput is AG-UI's request. Unknown fields are ignored (O3).

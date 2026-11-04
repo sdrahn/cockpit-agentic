@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sdrahn/cockpit-agentic/internal/governance"
-	"github.com/sdrahn/cockpit-agentic/internal/testutil"
+	"github.com/sdrahn/custos/internal/governance"
+	"github.com/sdrahn/custos/internal/testutil"
 )
 
 // Cancelling an activity whose tool call is in flight must not break the
@@ -61,7 +61,7 @@ func TestCancelThenAGUI(t *testing.T) {
 	json.Unmarshal(b, &st)
 	waitFor(t, func() bool { return len(e.l.Governor.InFlight()) == 1 })
 	e.do("POST", "/v1/activities/"+st.ID+"/cancel", "0:root", nil)
-	ch := e.agui(map[string]any{"threadId": "agentic-test-1", "messages": []any{map[string]any{"role": "user", "content": "PROBE"}},
+	ch := e.agui(map[string]any{"threadId": "custos-test-1", "messages": []any{map[string]any{"role": "user", "content": "PROBE"}},
 		"tools": []any{map[string]any{"name": "evil", "parameters": map[string]any{"type": "object"}}}})
 	var types []string
 	timeout := time.After(20 * time.Second)
@@ -106,7 +106,7 @@ func TestLateAnswerToCancelledCall(t *testing.T) {
 			return a.State == governance.StateWaiting
 		})
 		e.do("POST", "/v1/activities/"+st.ID+"/cancel", "0:root", nil)
-		ch := e.agui(map[string]any{"threadId": "agentic-test-1", "messages": []any{map[string]any{"role": "user", "content": "PROBE"}}})
+		ch := e.agui(map[string]any{"threadId": "custos-test-1", "messages": []any{map[string]any{"role": "user", "content": "PROBE"}}})
 		go func() { time.Sleep(time.Duration(i) * time.Millisecond); e.gw.Decide("a-1", false) }()
 		var types []string
 		timeout := time.After(20 * time.Second)

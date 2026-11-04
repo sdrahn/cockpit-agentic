@@ -103,7 +103,7 @@ func cutPrefix(s, p string) (string, bool) {
 // capability (no ElicitationHandler), so the gateway never asks the
 // agent to approve its own call (§6). Logging messages go to onLog.
 func NewClient(agentName, version string, onLog func(context.Context, *mcp.LoggingMessageParams)) *mcp.Client {
-	return mcp.NewClient(&mcp.Implementation{Name: "cockpit-agentic/" + agentName, Version: version}, &mcp.ClientOptions{
+	return mcp.NewClient(&mcp.Implementation{Name: "custos/" + agentName, Version: version}, &mcp.ClientOptions{
 		LoggingMessageHandler: func(ctx context.Context, r *mcp.LoggingMessageRequest) {
 			if onLog != nil {
 				onLog(ctx, r.Params)

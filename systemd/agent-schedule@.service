@@ -4,7 +4,7 @@
 # program in the agents' SELinux domain, which may not reach their sockets.
 [Unit]
 Description=Scheduled activity %i
-Documentation=https://github.com/sdrahn/cockpit-agentic/blob/main/CONTRACT.md
+Documentation=https://github.com/sdrahn/custos/blob/main/CONTRACT.md
 
 [Service]
 Type=oneshot

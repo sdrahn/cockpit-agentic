@@ -6,8 +6,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/sdrahn/cockpit-agentic/internal/config"
-	"github.com/sdrahn/cockpit-agentic/internal/journal"
+	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/journal"
 )
 
 func TestArgsDigest(t *testing.T) {
