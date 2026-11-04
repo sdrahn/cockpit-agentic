@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"encoding/base64"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -9,14 +11,24 @@ import (
 	"time"
 )
 
-type rec struct{ cmds []string }
+type rec struct {
+	cmds []string
+	// fail makes the commands it reports fail (systemctl is-active, say).
+	fail func(cmd string) bool
+	// gone answers the probes (openshell sandbox get): nil when the sandbox is there.
+	gone func(cmd string) error
+}
 
 func newAdmin(t *testing.T) (*Admin, *rec) {
 	r := &rec{}
 	a := &Admin{
 		Root: t.TempDir(),
 		Run: func(_ io.Reader, name string, args ...string) error {
-			r.cmds = append(r.cmds, name+" "+strings.Join(args, " "))
+			c := name + " " + strings.Join(args, " ")
+			r.cmds = append(r.cmds, c)
+			if r.fail != nil && r.fail(c) {
+				return errors.New("failed")
+			}
 			return nil
 		},
 		Out: io.Discard, Now: func() time.Time { return time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC) },
@@ -35,6 +47,17 @@ func newAdmin(t *testing.T) (*Admin, *rec) {
 		},
 		Image:  "localhost/agent:test",
 		Secret: func() string { return "0123456789abcdef0123456789abcdef" },
+		// OpenShell has deleted a sandbox by the first look, unless gone says otherwise.
+		Probe: func(name string, args ...string) error {
+			c := name + " " + strings.Join(args, " ")
+			r.cmds = append(r.cmds, c)
+			if r.gone != nil {
+				return r.gone(c)
+			}
+			return errors.New("not found")
+		},
+		Sleep:       func(time.Duration) {},
+		SandboxGone: 5 * time.Second,
 	}
 	return a, r
 }
@@ -395,6 +418,239 @@ func TestOpenShellUser(t *testing.T) {
 	}
 }
 
+// inOrder reports the first of want that is missing from cmds or out of order.
+func inOrder(cmds []string, want ...string) string {
+	all := strings.Join(cmds, "\n")
+	last := -1
+	for _, w := range want {
+		i := strings.Index(all[last+1:], w)
+		if i < 0 {
+			return w
+		}
+		last += 1 + i
+	}
+	return ""
+}
+
+func countPrefix(cmds []string, p string) int {
+	n := 0
+	for _, c := range cmds {
+		if strings.HasPrefix(c, p) {
+			n++
+		}
+	}
+	return n
+}
+
+// openShellRunning is agent sb in OpenShell with its sandbox created.
+func openShellRunning(t *testing.T, yml string) (*Admin, *rec) {
+	t.Helper()
+	a, r := newAdmin(t)
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(yml), 0o644)
+	if err := a.Create("sb", f); err != nil {
+		t.Fatal(err)
+	}
+	cred, secret := "gateway-token", "tok"
+	if strings.Contains(yml, "oauth:") {
+		cred = "gateway-client-secret"
+	}
+	if err := a.SetCredential("sb", cred, strings.NewReader(secret)); err != nil {
+		t.Fatal(err)
+	}
+	r.cmds = nil
+	return a, r
+}
+
+func edit(t *testing.T, a *Admin, yml string) error {
+	t.Helper()
+	f := filepath.Join(t.TempDir(), "b.yaml")
+	os.WriteFile(f, []byte(yml), 0o644)
+	return a.Edit("sb", f)
+}
+
+// An edit of a systemd agent restarts agent@NAME.service, nothing of OpenShell's.
+func TestEditSystemd(t *testing.T) {
+	a, r := newAdmin(t)
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(yml), 0o644)
+	if err := a.Create("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	r.cmds = nil
+	os.WriteFile(f, []byte(strings.Replace(yml, "name: m", "name: m2", 1)), 0o644)
+	if err := a.Edit("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(r.cmds, "\n")
+	if !strings.HasSuffix(all, "systemctl try-restart agent@patch-pilot.service") || strings.Contains(all, "openshell") {
+		t.Errorf("edit of a systemd agent:\n%s", all)
+	}
+	// The backend is the one it was created with.
+	os.WriteFile(f, []byte(strings.Replace(oshYml, "name: sb", "name: patch-pilot", 1)), 0o644)
+	if err := a.Edit("patch-pilot", f); err == nil || !strings.Contains(err.Error(), "sandbox.kind") {
+		t.Errorf("a change of the backend: %v", err)
+	}
+}
+
+// An edit that changes what the sandbox gets (its configuration, the
+// policy) recreates the sandbox from the new files, with the image it had,
+// and the relay runs again as it ran.
+func TestEditOpenShellRecreatesSandbox(t *testing.T) {
+	a, r := openShellRunning(t, oshYml)
+	dir := a.agentDir("sb")
+	a.Image = "localhost/agent:other" // CUSTOS_OPENSHELL_IMAGE now; the sandbox keeps its own
+	edited := strings.Replace(oshYml, "http://127.0.0.1:8008/v1", "http://127.0.0.1:9009/v1", 1) + "limits: {max_llm_calls: 7}\n"
+	if err := edit(t, a, edited); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "openshell-policy.yaml")); !strings.Contains(string(b), "port: 9009") {
+		t.Errorf("policy not rewritten:\n%s", b)
+	}
+	if w := inOrder(r.cmds,
+		"systemctl stop agent-openshell@sb.socket agent-openshell@sb.service",
+		"openshell -g openshell sandbox delete agent-sb",
+		"openshell -g openshell sandbox create --name agent-sb --from localhost/agent:test --policy "+filepath.Join(dir, "openshell-policy.yaml"),
+		"systemctl start agent-openshell@sb.socket agent-openshell@sb.service",
+	); w != "" {
+		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.cmds, "\n"))
+	}
+	// The new configuration is the sandbox's.
+	var create string
+	for _, c := range r.cmds {
+		if strings.Contains(c, "sandbox create") {
+			create = c
+		}
+	}
+	i := strings.Index(create, "CUSTOS_CONFIG=")
+	if i < 0 {
+		t.Fatalf("no configuration: %s", create)
+	}
+	enc, _, _ := strings.Cut(create[i+len("CUSTOS_CONFIG="):], " ")
+	sc, _ := base64.StdEncoding.DecodeString(enc)
+	if !strings.Contains(string(sc), "max_llm_calls: 7") || !strings.Contains(string(sc), "host.openshell.internal:9009") {
+		t.Errorf("the sandbox's configuration:\n%s", sc)
+	}
+	all := strings.Join(r.cmds, "\n")
+	// The profile did not change; the provider and its token stay.
+	if strings.Contains(all, "profile import") || strings.Contains(all, "openshell -g openshell provider") || strings.Contains(all, "agent@sb") {
+		t.Errorf("edit touched the profile, the provider or systemd's units:\n%s", all)
+	}
+}
+
+// After stop-all (relay stopped), the recreated sandbox is stopped and
+// the relay stays down.
+func TestEditOpenShellStopped(t *testing.T) {
+	a, r := openShellRunning(t, oshYml)
+	r.fail = func(c string) bool { return strings.HasPrefix(c, "systemctl -q is-active") }
+	if err := edit(t, a, oshYml+"limits: {max_llm_calls: 7}\n"); err != nil {
+		t.Fatal(err)
+	}
+	if w := inOrder(r.cmds, "sandbox create --name agent-sb", "openshell -g openshell sandbox stop agent-sb"); w != "" {
+		t.Errorf("missing %q:\n%s", w, strings.Join(r.cmds, "\n"))
+	}
+	if n := countPrefix(r.cmds, "systemctl start"); n != 0 {
+		t.Errorf("the relay was started:\n%s", strings.Join(r.cmds, "\n"))
+	}
+}
+
+// A change of the gateway's URL changes the provider's endpoint: the
+// profile is imported again before the sandbox is recreated.
+func TestEditOpenShellProfile(t *testing.T) {
+	a, r := openShellRunning(t, oshYml)
+	dir := a.agentDir("sb")
+	if err := edit(t, a, strings.Replace(oshYml, "gw.example.com:8443", "gw2.example.com:9443", 1)); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "openshell-profile.yaml")); !strings.Contains(string(b), "host: gw2.example.com") {
+		t.Errorf("profile not rewritten:\n%s", b)
+	}
+	if w := inOrder(r.cmds,
+		"openshell -g openshell profile import -f "+filepath.Join(dir, "openshell-profile.yaml")+" --global",
+		"openshell -g openshell sandbox create --name agent-sb",
+	); w != "" {
+		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.cmds, "\n"))
+	}
+}
+
+// Without a change to the sandbox's inputs (the same file again), only
+// the relay restarts, if it runs.
+func TestEditOpenShellUnchanged(t *testing.T) {
+	a, r := openShellRunning(t, oshYml)
+	if err := edit(t, a, oshYml); err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(r.cmds, "\n")
+	if !strings.HasSuffix(all, "systemctl try-restart agent-openshell@sb.service") || strings.Contains(all, "sandbox") || strings.Contains(all, "agent@sb") {
+		t.Errorf("unchanged edit:\n%s", all)
+	}
+}
+
+// Before set-credential there is no sandbox: the files are rewritten,
+// set-credential creates the sandbox from them.
+func TestEditOpenShellBeforeCredential(t *testing.T) {
+	a, r := newAdmin(t)
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(oshYml), 0o644)
+	if err := a.Create("sb", f); err != nil {
+		t.Fatal(err)
+	}
+	r.cmds = nil
+	r.fail = func(c string) bool { return strings.HasPrefix(c, "systemctl -q is-enabled agent-openshell@sb.socket") }
+	if err := edit(t, a, strings.Replace(oshYml, "8008", "9009", 1)); err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(r.cmds, "\n")
+	if strings.Contains(all, "sandbox") || strings.Contains(all, "systemctl start") || strings.Contains(all, "try-restart") {
+		t.Errorf("edit before the sandbox exists:\n%s", all)
+	}
+	if b, _ := os.ReadFile(filepath.Join(a.agentDir("sb"), "openshell-policy.yaml")); !strings.Contains(string(b), "port: 9009") {
+		t.Errorf("policy not rewritten:\n%s", b)
+	}
+}
+
+// A static token replaced by an OAuth client: the provider must be made
+// again with the secret, which agent-admin does not keep. The agent stops
+// until set-credential.
+func TestEditOpenShellCredentialKind(t *testing.T) {
+	a, r := openShellRunning(t, oshYml)
+	if err := edit(t, a, oshOAuthYml); err != nil {
+		t.Fatal(err)
+	}
+	if w := inOrder(r.cmds,
+		"openshell -g openshell profile import",
+		"systemctl disable --now agent-openshell@sb.socket agent-openshell@sb.service",
+		"openshell -g openshell sandbox delete agent-sb",
+		"openshell -g openshell provider delete agent-sb-gateway",
+	); w != "" {
+		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.cmds, "\n"))
+	}
+	if all := strings.Join(r.cmds, "\n"); strings.Contains(all, "sandbox create") {
+		t.Errorf("a sandbox without a provider:\n%s", all)
+	}
+	// An OAuth agent whose scopes change keeps its client: recreated.
+	a, r = openShellRunning(t, oshOAuthYml)
+	if err := edit(t, a, strings.Replace(oshOAuthYml, "scopes: [mcp]", "scopes: [mcp, more]", 1)); err != nil {
+		t.Fatal(err)
+	}
+	if w := inOrder(r.cmds, "profile import", "sandbox create --name agent-sb", "systemctl start"); w != "" {
+		t.Errorf("missing %q:\n%s", w, strings.Join(r.cmds, "\n"))
+	}
+	if all := strings.Join(r.cmds, "\n"); strings.Contains(all, "provider delete") {
+		t.Errorf("the provider was deleted:\n%s", all)
+	}
+}
+
+// The OpenShell gateway is where the sandbox and provider are: an edit
+// does not move them.
+func TestEditOpenShellGatewayFixed(t *testing.T) {
+	a, _ := openShellRunning(t, oshYml)
+	err := edit(t, a, strings.Replace(oshYml, "{kind: openshell}", "{kind: openshell, openshell_gateway: other}", 1))
+	if err == nil || !strings.Contains(err.Error(), "openshell_gateway") {
+		t.Errorf("moving to another OpenShell gateway: %v", err)
+	}
+}
+
 // A control plane gives the configuration on stdin (--from -, check -),
 // without a file of its own.
 func TestConfigurationFromStdin(t *testing.T) {
@@ -421,5 +677,67 @@ func TestConfigurationFromStdin(t *testing.T) {
 	a.In = nil
 	if err := a.Check("-"); err == nil {
 		t.Error("check - without stdin")
+	}
+}
+
+// Deleting a running sandbox is only accepted at first: the new one is
+// created once OpenShell no longer knows the old one (the spike on a real
+// host: "sandbox 'agent-sb' already exists").
+func TestEditOpenShellWaitsForDeletion(t *testing.T) {
+	a, r := openShellRunning(t, oshYml)
+	left := 3
+	r.gone = func(c string) error {
+		if strings.Contains(c, "sandbox get agent-sb") && left > 0 {
+			left--
+			return nil
+		}
+		return errors.New("not found")
+	}
+	if err := edit(t, a, oshYml+"limits: {max_llm_calls: 7}\n"); err != nil {
+		t.Fatal(err)
+	}
+	if n := countPrefix(r.cmds, "openshell -g openshell sandbox get agent-sb"); n != 4 {
+		t.Errorf("%d probes, want 4:\n%s", n, strings.Join(r.cmds, "\n"))
+	}
+	if w := inOrder(r.cmds, "sandbox delete agent-sb", "sandbox get agent-sb", "sandbox get agent-sb", "sandbox get agent-sb", "sandbox get agent-sb", "sandbox create --name agent-sb"); w != "" {
+		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.cmds, "\n"))
+	}
+	// A sandbox that does not go away: an error, no create.
+	a, r = openShellRunning(t, oshYml)
+	r.gone = func(string) error { return nil }
+	if err := edit(t, a, oshYml+"limits: {max_llm_calls: 8}\n"); err == nil || !strings.Contains(err.Error(), "still there") {
+		t.Errorf("a sandbox that stays: %v", err)
+	}
+	if all := strings.Join(r.cmds, "\n"); strings.Contains(all, "sandbox create") {
+		t.Errorf("created over the old sandbox:\n%s", all)
+	}
+}
+
+// agent-admin's stdout is its own words (Cockpit shows them after an
+// edit); the programs it runs print to its stderr.
+func TestProgramsPrintToStderr(t *testing.T) {
+	dir := t.TempDir()
+	out, _ := os.Create(filepath.Join(dir, "out"))
+	errf, _ := os.Create(filepath.Join(dir, "err"))
+	oldOut, oldErr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = out, errf
+	a := New()
+	runErr := a.Run(nil, "sh", "-c", "echo run-out; echo run-err >&2")
+	envErr := a.RunEnv([]string{"X=env-out"}, "sh", "-c", "echo $X")
+	os.Stdout, os.Stderr = oldOut, oldErr
+	out.Close()
+	errf.Close()
+	if runErr != nil || envErr != nil {
+		t.Fatal(runErr, envErr)
+	}
+	o, _ := os.ReadFile(filepath.Join(dir, "out"))
+	e, _ := os.ReadFile(filepath.Join(dir, "err"))
+	if len(o) != 0 {
+		t.Errorf("stdout has the programs' output: %q", o)
+	}
+	for _, w := range []string{"run-out", "run-err", "env-out"} {
+		if !strings.Contains(string(e), w) {
+			t.Errorf("stderr lacks %q: %q", w, e)
+		}
 	}
 }
