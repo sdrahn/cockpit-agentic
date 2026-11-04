@@ -5,6 +5,18 @@ All notable changes to Custos. Versions follow
 (CONTRACT.md), names, paths and fields are added, never renamed or
 removed.
 
+## v0.1.1 — 2026-11-04
+
+The package builds on OBS. 0.1.0's sources are unchanged otherwise;
+upgrading needs nothing.
+
+### Fixed
+
+- The spec's `%check` failed in the package's tarball, which has no
+  `.github`: a test of the release workflow read
+  `.github/workflows/release.yml`. It skips without it. CI now builds
+  the RPM from the same tarball as OBS.
+
 ## v0.1.0 — 2026-11-04
 
 The first release: governed AI agents on SUSE Linux Enterprise Server 16
