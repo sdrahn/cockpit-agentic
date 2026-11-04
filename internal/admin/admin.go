@@ -35,6 +35,8 @@ type Admin struct {
 	// Run runs a command (systemctl, systemd-sysusers, systemd-creds).
 	Run func(stdin io.Reader, name string, args ...string) error
 	Out io.Writer
+	// In is read for a configuration given as "-" (--from -, check -).
+	In io.Reader
 	// Now is the clock (tests).
 	Now func() time.Time
 	// Control posts to an agent's control API (pause, resume).
@@ -65,7 +67,7 @@ func New() *Admin {
 			c.Stdin, c.Stdout, c.Stderr = stdin, os.Stdout, os.Stderr
 			return c.Run()
 		},
-		Out: os.Stdout, Now: time.Now,
+		Out: os.Stdout, In: os.Stdin, Now: time.Now,
 		Control: func(sock, path string) error { return delegate.Post(context.Background(), sock, path) },
 		Start:   func(sock string, body map[string]any) error { return delegate.Start(context.Background(), sock, body) },
 		RunEnv: func(env []string, name string, args ...string) error {
@@ -126,7 +128,7 @@ func (a *Admin) Check(target string) error {
 		_, err := config.Load(a.agentDir(target))
 		return err
 	}
-	b, err := os.ReadFile(target)
+	b, err := a.readFrom(target)
 	if err != nil {
 		return err
 	}
@@ -134,12 +136,24 @@ func (a *Admin) Check(target string) error {
 	return err
 }
 
+// readFrom reads a configuration from a file, or from In for "-" (as a
+// control plane gives it, without a file of its own).
+func (a *Admin) readFrom(from string) ([]byte, error) {
+	if from == "-" {
+		if a.In == nil {
+			return nil, errors.New("no configuration on stdin")
+		}
+		return io.ReadAll(io.LimitReader(a.In, 1<<20))
+	}
+	return os.ReadFile(from)
+}
+
 // Create installs a new agent from a configuration file.
 func (a *Admin) Create(name, from string) error {
 	if err := checkName(name); err != nil {
 		return err
 	}
-	b, err := os.ReadFile(from)
+	b, err := a.readFrom(from)
 	if err != nil {
 		return err
 	}
@@ -328,7 +342,7 @@ func (a *Admin) Edit(name, from string) error {
 	if err := checkName(name); err != nil {
 		return err
 	}
-	b, err := os.ReadFile(from)
+	b, err := a.readFrom(from)
 	if err != nil {
 		return err
 	}

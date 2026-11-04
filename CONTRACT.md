@@ -580,9 +580,9 @@ Run as root, by hand or by Cockpit with administrative access:
 
 | Command | Does |
 |---|---|
-| `create NAME --from FILE` | validates; writes the sysusers.d file and runs `systemd-sysusers`; installs `agent.yaml`; writes the gateway agent data (supervised, no permissions); writes the schedules' timer drop-ins; enables the socket and timers |
+| `create NAME --from FILE` | `FILE` `-` (here and for `edit` and `check`) is stdin, so a control plane needs no file of its own. Validates; writes the sysusers.d file and runs `systemd-sysusers`; installs `agent.yaml`; writes the gateway agent data (supervised, no permissions); writes the schedules' timer drop-ins; enables the socket and timers |
 | `edit NAME --from FILE` | validates, replaces `agent.yaml`, syncs schedules, `try-restart` |
-| `check NAME\|FILE` | validates only |
+| `check NAME\|FILE` | validates only; needs no root for a FILE |
 | `mode NAME MODE`, `permissions NAME < list.yaml` | the gateway agent data (§6). Like `pause`, `resume`, `stop-all` and `release-all`, it returns once the gateway's OPA has loaded the change (it reads it back on `/run/mcp-gateway/opa.sock`, for up to 20 s), so the change is in force when the command returns |
 | `set-credential NAME CRED < secret` | `systemd-creds encrypt`; for OpenShell agents `gateway-client-secret` or `gateway-token` (§16a) |
 | `pause NAME`, `resume NAME` | §8 (gateway data and `/v1/pause`) |
@@ -714,5 +714,7 @@ tests, for openQA).
   by approval id from the agents' records and the gateway's, and the
   records themselves, filtered), and chat (§11: the person's own thread
   with an agent over AG-UI, in the agent's view, with its tool calls and
-  pending approvals linked to the Approvals tab). Still open: creating
-  and deleting agents, and a test against a real Cockpit.
+  pending approvals linked to the Approvals tab), and creating and deleting
+  agents (`agent-admin create --from -` after `check -`, and `delete`
+  after typing the agent's name). Still open: editing an agent's
+  configuration, and a test against a real Cockpit.

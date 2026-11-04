@@ -10,6 +10,7 @@
     <script src="activity.js" defer></script>
     <script src="approvals.js" defer></script>
     <script src="chat.js" defer></script>
+    <script src="lifecycle.js" defer></script>
     <script src="agents.js" defer></script>
     <script src="policy.js" defer></script>
     <script src="audit.js" defer></script>
@@ -93,7 +94,10 @@
 
         <div id="tab-agents" class="tab" hidden>
             <section class="card">
-                <h2>Agents on this host</h2>
+                <div class="toolbar">
+                    <h2>Agents on this host</h2>
+                    <span class="actions"><button id="create-open">Create agent</button></span>
+                </div>
                 <p class="muted">Found through <code>/run/agents/*/api.sock</code>: any host that implements
                 contract 1 shows up here. Changing an agent needs administrative access.</p>
                 <table id="agents">
@@ -102,6 +106,22 @@
                     <tbody></tbody>
                 </table>
             </section>
+            <form id="create-agent" class="card" hidden>
+                <h2>Create an agent</h2>
+                <p class="muted">Its configuration (agent.yaml, CONTRACT.md §14). agent-admin creates its user,
+                units and schedules. It starts supervised and with no permissions: it can do nothing until its
+                tool boundaries list what it may do. This needs administrative access.</p>
+                <div class="inline"><label for="create-name">Name</label>
+                    <input id="create-name" name="name" class="mono" placeholder="patch-pilot" autocomplete="off"></div>
+                <textarea name="config" rows="18" spellcheck="false" aria-label="Configuration (agent.yaml)"></textarea>
+                <div class="actions">
+                    <button type="submit" name="create">Create</button>
+                    <button type="button" name="check" class="secondary">Check</button>
+                    <button type="button" name="cancel" class="link">Cancel</button>
+                    <span id="create-note" class="muted"></span>
+                </div>
+            </form>
+            <div id="agent-created" class="note" hidden></div>
             <div id="agent-detail" hidden></div>
         </div>
 

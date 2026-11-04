@@ -99,6 +99,8 @@ function stateBadgeText(text, st) {
 async function renderAgentDetail() {
     const box = document.getElementById("agent-detail");
     const name = selectedAgent();
+    // The note about an agent just created, while it is shown.
+    document.getElementById("agent-created").hidden = !name || justCreated !== name;
     const a = name && state.agents.find(x => x.name === name);
     box.hidden = !name;
     if (!name) return;
@@ -119,6 +121,7 @@ async function renderAgentDetail() {
     stop.addEventListener("click", () => act(stop, (a.stopped ? "Starting " : "Stopping ") + a.name,
         () => systemctl(a.stopped ? "start" : "stop", ...(a.stopped ? units.start : units.stop))));
 
+    const del = deleteControl(a);
     const head = el("section", { class: "card" },
         el("div", { class: "toolbar" },
            el("div", null,
@@ -126,8 +129,9 @@ async function renderAgentDetail() {
               el("div", { class: "mono muted" }, [units.stop.join(" · "),
                   a.status ? a.status.implementation + " · contract " + a.status.contract : null,
                   a.status && a.status.model ? "model " + a.status.model : null].filter(Boolean).join(" · "))),
-           el("span", { class: "actions" }, el("span", { id: "agent-action", class: "muted" }), pause, stop)),
-        data && data.paused && data.paused_by ? el("p", { class: "muted" }, "Paused by " + data.paused_by + ".") : null);
+           el("span", { class: "actions" }, el("span", { id: "agent-action", class: "muted" }), pause, stop, del.open)),
+        data && data.paused && data.paused_by ? el("p", { class: "muted" }, "Paused by " + data.paused_by + ".") : null,
+        del.box);
 
     const mode = el("section", { class: "card" }, el("h2", null, "Autonomy mode"));
     if (data) {
@@ -195,12 +199,13 @@ async function renderAgentDetail() {
 
 tabs.agents = {
     intervalMs: 5000,
+    init: initCreate,
     async refresh() {
         await refreshState();
         renderAgentList();
         // Not while someone edits the permissions or types a message.
         const f = document.activeElement;
-        const editing = f && (f.id === "permissions-yaml" || f.closest(".chat"));
+        const editing = f && (f.id === "permissions-yaml" || f.closest(".chat") || f.closest(".confirm-delete"));
         if (!editing) await renderAgentDetail();
     },
 };

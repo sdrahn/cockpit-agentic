@@ -95,7 +95,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1rem; align-items: start; }
 @media (max-width: 900px) { .split { grid-template-columns: minmax(0, 1fr); } }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin-bottom: 0.5rem; }
-.toolbar .chips { margin-left: auto; }
+.toolbar .chips, .toolbar > .actions { margin-left: auto; }
 .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
 button.chip { padding: 0.15rem 0.8rem; border-radius: 1rem; background: transparent; color: var(--accent); }
 button.chip[aria-pressed=true] { background: var(--accent); color: var(--accent-fg); }
@@ -166,6 +166,14 @@ td.details { overflow-wrap: anywhere; }
 .msg-error { align-self: stretch; max-width: none; background: var(--error-bg); border-color: var(--danger); }
 .chat-form { display: flex; gap: 0.5rem; }
 .chat-input { flex: 1; }
+
+#create-agent { margin-top: 1rem; }
+#create-agent .inline { display: flex; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
+.ok-text { color: var(--ok); }
+.error-text { color: var(--danger); }
+button.danger-text { color: var(--danger); }
+.confirm-delete { margin-top: 0.75rem; }
+.confirm-delete label { display: block; margin: 0.5rem 0; }
 
 .decided { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; border-top: 1px solid var(--border); padding: 0.5rem 0; }
 
