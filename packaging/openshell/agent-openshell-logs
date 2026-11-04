@@ -17,7 +17,7 @@ runtimes="docker podman"
 if [ -n "$user" ] && [ "$user" != root ]; then
 	uid=$(id -u "$user") || exit 1
 	home=$(getent passwd "$user" | cut -d: -f6)
-	as_user="setpriv --reuid=$uid --regid=$(id -g "$user") --init-groups -- env HOME=$home XDG_RUNTIME_DIR=/run/user/$uid"
+	as_user="setpriv --reuid=$uid --regid=$(id -g "$user") --init-groups -- env -i HOME=$home USER=$user LOGNAME=$user PATH=/usr/sbin:/usr/bin:/sbin:/bin XDG_RUNTIME_DIR=/run/user/$uid"
 	runtimes=podman
 fi
 for rt in $runtimes; do

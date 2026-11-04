@@ -78,8 +78,11 @@ if docker info >/dev/null 2>&1; then
 	ctr() { docker "$@"; }
 else
 	runtime=podman
+	# A clean environment: root's XDG_CONFIG_HOME would point podman at
+	# root's configuration.
 	ctr() { (cd / && setpriv --reuid="$osh_uid" --regid="$(id -g "$osh_user")" --init-groups -- \
-		env HOME="$osh_home" XDG_RUNTIME_DIR="/run/user/$osh_uid" podman "$@"); }
+		env -i HOME="$osh_home" USER="$osh_user" LOGNAME="$osh_user" PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+		XDG_RUNTIME_DIR="/run/user/$osh_uid" podman "$@"); }
 fi
 ctr_ok() { ctr "$@" >"$work/ctr.out" 2>&1 || { tail -n 8 "$work/ctr.out" | sed 's/^/    | /'; return 1; }; }
 check "the container runtime runs ($runtime)" ctr_ok info
@@ -144,7 +147,8 @@ if [ -n "$system" ]; then
 	# The system's OPA (mcp-opa.service) has the gateway's policy, the
 	# agents module and /etc/mcp-gateway/policy/agents already.
 	check "OPA has the agents' issuer" eventually 30 bash -c "curl -s --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http/issuers | grep -qF '$issuer'" || {
-		echo "    | OPA says: $(curl -s --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http 2>&1 | head -c 300)"
+		echo "    | OPA says: $(curl -sS -w ' (HTTP %{http_code})' --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http 2>&1 | head -c 400)"
+		echo "    | the socket: $(ls -lZ /run/mcp-gateway/ 2>&1 | tr '\n' ' ')"
 		echo "    | the file: $(ls -lZ /etc/mcp-gateway/policy/agents/ 2>&1 | tr '\n' ' ')"
 		journalctl -u mcp-opa.service -o cat --no-pager --since "@$t0" | tail -n 10 | sed 's/^/    | mcp-opa: /'
 	}
