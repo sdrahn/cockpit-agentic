@@ -114,3 +114,28 @@ func TestGatewayURL(t *testing.T) {
 		}
 	}
 }
+
+func TestGatewayOAuth(t *testing.T) {
+	base := "version: 1\nname: ab\nmodel: {provider: vertex, name: m}\n"
+	osh := "\nsandbox: {kind: openshell}\n"
+	for gw, want := range map[string]string{
+		"gateway: {servers: [a], url: \"https://gw/mcp\", oauth: {token_url: \"https://idp/token\", client_id: agent-ab, scopes: [mcp]}}" + osh:                     "",
+		"gateway: {servers: [a], url: \"https://gw/mcp\", oauth: {token_url: \"http://127.0.0.1:1/token\", client_id: agent-ab, refresh_before_seconds: 60}}" + osh: "",
+		"gateway: {servers: [a], url: \"https://gw/mcp\", oauth: {token_url: \"http://idp/token\", client_id: agent-ab}}" + osh:                                     "want an https URL",
+		"gateway: {servers: [a], url: \"https://gw/mcp\", oauth: {token_url: \"https://idp/token\"}}" + osh:                                                         "client_id",
+		"gateway: {servers: [a], url: \"https://gw/mcp\", oauth: {token_url: \"https://idp/token\", client_id: agent-ab, scopes: [\"a b\"]}}" + osh:                 "scope names",
+		"gateway: {servers: [a], url: \"https://gw/mcp\", oauth: {token_url: \"https://idp/token\", client_id: agent-ab, refresh_before_seconds: -1}}" + osh:        "0 or more",
+		"gateway: {servers: [a], url: \"https://gw/mcp\", oauth: {token_url: \"https://idp/token\", client_id: agent-ab, secret: x}}" + osh:                         "secret",
+		"gateway: {servers: [a], url: \"https://gw/mcp\", oauth: {token_url: \"https://idp/token\", client_id: agent-ab}}\n":                                        "only with sandbox kind openshell",
+	} {
+		c, err := Parse([]byte(base + gw))
+		switch {
+		case want == "" && err != nil:
+			t.Errorf("%s: %v", gw, err)
+		case want != "" && (err == nil || !strings.Contains(err.Error(), want)):
+			t.Errorf("%s: %v, want %q", gw, err, want)
+		case want == "" && (c.Gateway.OAuth == nil || c.Gateway.OAuth.ClientID != "agent-ab"):
+			t.Errorf("%s: oauth %+v", gw, c.Gateway.OAuth)
+		}
+	}
+}

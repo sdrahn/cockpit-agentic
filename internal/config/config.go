@@ -82,9 +82,27 @@ type Gateway struct {
 	// for URL. Under OpenShell it holds a placeholder that the supervisor
 	// replaces with the real token (the agent never sees it).
 	TokenEnv string `yaml:"token_env"`
+	// OAuth: the token for URL is an OAuth access token that OpenShell's
+	// gateway mints and renews with the client credentials grant
+	// (CONTRACT.md §16a); the client secret is set with agent-admin
+	// set-credential NAME gateway-client-secret. Without it, the token is
+	// a static one (set-credential NAME gateway-token).
+	OAuth *OAuth `yaml:"oauth,omitempty"`
 
 	Servers []string `yaml:"servers"`
 	Tools   []string `yaml:"tools"`
+}
+
+// OAuth is an agent's OAuth client at the token issuer the gateway
+// trusts for agents (its access tokens have the subject agent-<name> and
+// the gateway's audience: the issuer's client configuration).
+type OAuth struct {
+	TokenURL string   `yaml:"token_url"`
+	ClientID string   `yaml:"client_id"`
+	Scopes   []string `yaml:"scopes"`
+	// RefreshBefore: how long before a token's expiry a new one is minted
+	// (seconds; default OpenShell's).
+	RefreshBefore int `yaml:"refresh_before_seconds"`
 }
 
 type Limits struct {
@@ -286,6 +304,26 @@ func (c *Config) Check() error {
 	}
 	if c.Gateway.TokenEnv != "" && c.Gateway.URL == "" {
 		bad("gateway.token_env: only with gateway.url")
+	}
+	if o := c.Gateway.OAuth; o != nil {
+		if c.Sandbox.Kind != "openshell" {
+			bad("gateway.oauth: only with sandbox kind openshell (OpenShell's gateway mints the tokens)")
+		}
+		u, err := url.Parse(o.TokenURL)
+		if err != nil || (u.Scheme != "https" && !(u.Scheme == "http" && isLoopback(u.Hostname()))) || u.Host == "" {
+			bad("gateway.oauth.token_url: %q: want an https URL (http only on the host's loopback, for tests)", o.TokenURL)
+		}
+		if o.ClientID == "" || strings.ContainsAny(o.ClientID, " \t\n=") {
+			bad("gateway.oauth.client_id: %q: want the agent's OAuth client id", o.ClientID)
+		}
+		for _, s := range o.Scopes {
+			if s == "" || strings.ContainsAny(s, " \t\n") {
+				bad("gateway.oauth.scopes: %q: want scope names", s)
+			}
+		}
+		if o.RefreshBefore < 0 {
+			bad("gateway.oauth.refresh_before_seconds: want 0 or more")
+		}
 	}
 	if c.Sandbox.Kind == "openshell" && c.Gateway.URL == "" {
 		bad("gateway.url: an openshell agent reaches the gateway over HTTPS (CONTRACT.md §3a)")

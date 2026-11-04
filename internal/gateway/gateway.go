@@ -6,10 +6,13 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -55,8 +58,54 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 			r.Header.Set("Authorization", "Bearer "+tok)
 		}
 	}
-	return b.next.RoundTrip(r)
+	res, err := b.next.RoundTrip(r)
+	// OpenShell's proxy answers 500, without asking the gateway, for a
+	// little while after it renewed the token (until the sandbox's
+	// supervisor has the new one). mcp-gateway answers 500 only to an
+	// initialize it cannot serve. So a 500 is retried with backoff, while
+	// the request can be sent again and the caller still waits.
+	for wait := retryFirst; err == nil && res.StatusCode == http.StatusInternalServerError && wait <= retryLast; wait *= 2 {
+		if r.Body != nil && r.GetBody == nil {
+			break
+		}
+		drain(res)
+		select {
+		case <-r.Context().Done():
+			return nil, r.Context().Err()
+		case <-time.After(wait):
+		}
+		again := r.Clone(r.Context())
+		if r.GetBody != nil {
+			if again.Body, err = r.GetBody(); err != nil {
+				return nil, err
+			}
+		}
+		res, err = b.next.RoundTrip(again)
+	}
+	if err == nil && res.StatusCode == http.StatusInternalServerError && r.Header.Get(sessionHeader) != "" {
+		// Still 500 on a session: as "session not found" (404) the MCP
+		// client gives up the session, and the toolset opens a new one and
+		// retries the request once.
+		drain(res)
+		res = &http.Response{
+			Status: "404 Not Found", StatusCode: http.StatusNotFound, Proto: res.Proto, ProtoMajor: res.ProtoMajor, ProtoMinor: res.ProtoMinor,
+			Header: http.Header{"Content-Type": {"text/plain"}}, Body: io.NopCloser(strings.NewReader("session lost on the way (500)")), Request: r,
+		}
+	}
+	return res, err
 }
+
+// The backoff of retried 500s: 0.5 s doubling to 8 s, about 15 s in all
+// (OpenShell's supervisor syncs provider credentials within about 10 s).
+var retryFirst, retryLast = 500 * time.Millisecond, 8 * time.Second
+
+func drain(res *http.Response) {
+	io.Copy(io.Discard, io.LimitReader(res.Body, 64<<10))
+	res.Body.Close()
+}
+
+// sessionHeader is MCP's Streamable HTTP session header.
+const sessionHeader = "Mcp-Session-Id"
 
 // Notice is an approval notice of the gateway's broker.
 type Notice struct {

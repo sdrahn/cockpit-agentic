@@ -119,18 +119,51 @@ func Profile(cfg *config.Config) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gateway.url: %w", err)
 	}
+	cred := map[string]any{
+		"name": "gateway_token", "description": "OAuth access token whose subject is agent-" + cfg.Name,
+		"env_vars": []string{TokenEnv}, "required": true, "auth_style": "bearer", "header_name": "authorization",
+	}
+	if r := Refresh(cfg); r != nil {
+		cred["refresh"] = r
+	}
 	return yaml.Marshal(map[string]any{
 		"id":           ProfileID(cfg.Name),
 		"display_name": "mcp-gateway for agent " + cfg.Name,
 		"description":  "Bearer token of agent-" + cfg.Name + " for mcp-gateway (custos)",
 		"category":     "data",
-		"credentials": []map[string]any{{
-			"name": "gateway_token", "description": "OAuth access token whose subject is agent-" + cfg.Name,
-			"env_vars": []string{TokenEnv}, "required": true, "auth_style": "bearer", "header_name": "authorization",
-		}},
-		"endpoints": []map[string]any{{"host": gw.host, "port": gw.port, "protocol": "mcp", "enforcement": "enforce", "mcp": allMCP}},
-		"binaries":  []string{Launcher},
+		"credentials":  []map[string]any{cred},
+		"endpoints":    []map[string]any{{"host": gw.host, "port": gw.port, "protocol": "mcp", "enforcement": "enforce", "mcp": allMCP}},
+		"binaries":     []string{Launcher},
 	})
+}
+
+// Refresh is the gateway token's refresh metadata when the agent has an
+// OAuth client (gateway.oauth): OpenShell's gateway mints its access
+// tokens with the client credentials grant and renews them before they
+// expire, and the sandbox's placeholder resolves to the current one, so
+// the agent keeps running across renewals (CONTRACT.md §16a). The token
+// endpoint is the profile's; the client id and secret are the provider's
+// refresh material (agent-admin set-credential NAME gateway-client-secret).
+func Refresh(cfg *config.Config) map[string]any {
+	o := cfg.Gateway.OAuth
+	if o == nil {
+		return nil
+	}
+	r := map[string]any{
+		"strategy":  "oauth2_client_credentials",
+		"token_url": o.TokenURL,
+		"material": []map[string]any{
+			{"name": "client_id", "description": "OAuth client id of agent-" + cfg.Name, "required": true, "secret": false},
+			{"name": "client_secret", "description": "OAuth client secret of agent-" + cfg.Name, "required": true, "secret": true},
+		},
+	}
+	if len(o.Scopes) > 0 {
+		r["scopes"] = o.Scopes
+	}
+	if o.RefreshBefore > 0 {
+		r["refresh_before"] = fmt.Sprintf("%ds", o.RefreshBefore)
+	}
+	return r
 }
 
 // SandboxConfig is the agent's configuration as the sandbox gets it: the
@@ -140,6 +173,8 @@ func SandboxConfig(cfg *config.Config) ([]byte, error) {
 	c.InstructionFile = ""
 	c.Gateway.Socket = ""
 	c.Gateway.TokenEnv = TokenEnv
+	// The token's issuer is OpenShell's business, not the agent's.
+	c.Gateway.OAuth = nil
 	// The host's loopback is the sandbox's host.openshell.internal.
 	c.Gateway.URL = hostURL(c.Gateway.URL)
 	if c.Model.Endpoint != "" {

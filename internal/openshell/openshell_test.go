@@ -108,3 +108,78 @@ func TestPort(t *testing.T) {
 		t.Errorf("ports %d %d", Port("pp"), Port("pq"))
 	}
 }
+
+func oauthCfg(t *testing.T) *config.Config {
+	c, err := config.Parse([]byte(`version: 1
+name: pp
+model: {provider: openai, name: m, endpoint: "http://127.0.0.1:8008/v1"}
+instruction: Be careful.
+gateway:
+  url: "https://gw.example.com:8443/mcp"
+  servers: [zypp]
+  oauth: {token_url: "https://idp.example.com/token", client_id: agent-pp, scopes: [mcp], refresh_before_seconds: 60}
+sandbox: {kind: openshell}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// With an OAuth client, OpenShell's gateway mints and renews the token.
+func TestProfileRefresh(t *testing.T) {
+	b, err := Profile(oauthCfg(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p struct {
+		Credentials []struct {
+			EnvVars []string `yaml:"env_vars"`
+			Refresh struct {
+				Strategy      string
+				TokenURL      string `yaml:"token_url"`
+				Scopes        []string
+				RefreshBefore string `yaml:"refresh_before"`
+				Material      []struct {
+					Name     string
+					Required bool
+					Secret   bool
+				}
+			}
+		}
+	}
+	if err := yaml.Unmarshal(b, &p); err != nil {
+		t.Fatal(err)
+	}
+	r := p.Credentials[0].Refresh
+	if p.Credentials[0].EnvVars[0] != TokenEnv || r.Strategy != "oauth2_client_credentials" || r.TokenURL != "https://idp.example.com/token" ||
+		len(r.Scopes) != 1 || r.Scopes[0] != "mcp" || r.RefreshBefore != "60s" {
+		t.Errorf("refresh %+v\n%s", r, b)
+	}
+	secret := map[string]bool{}
+	for _, m := range r.Material {
+		if !m.Required {
+			t.Errorf("material %s not required", m.Name)
+		}
+		secret[m.Name] = m.Secret
+	}
+	if len(secret) != 2 || secret["client_id"] || !secret["client_secret"] {
+		t.Errorf("material: %v", secret)
+	}
+	// A static token has no refresh.
+	b, _ = Profile(cfg(t))
+	if strings.Contains(string(b), "refresh") {
+		t.Errorf("static token profile with refresh:\n%s", b)
+	}
+}
+
+// The sandbox does not learn the agent's OAuth client.
+func TestSandboxConfigWithoutOAuth(t *testing.T) {
+	b, err := SandboxConfig(oauthCfg(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "oauth") || strings.Contains(string(b), "idp.example.com") {
+		t.Errorf("sandbox config has the OAuth client:\n%s", b)
+	}
+}
