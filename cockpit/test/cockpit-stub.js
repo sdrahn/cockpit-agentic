@@ -161,6 +161,7 @@
         location,
         addEventListener(ev, f) { (listeners[ev] = listeners[ev] || []).push(f); },
         user() { return Promise.resolve({ name: "carol" }); },
+        jump(url) { log.push(["jump", url, "", "", ""]); },
         http(opts) {
             const sock = opts.unix;
             const route = (method, path, body) => {
