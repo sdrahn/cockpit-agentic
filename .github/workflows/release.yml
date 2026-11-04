@@ -1,0 +1,93 @@
+name: Release
+
+# Pushing a tag vX.Y.Z publishes a GitHub release with the source tarball
+# and vendor.tar.gz (the Go modules), named as the OBS package expects
+# them (packaging/suse), and the tag's section of CHANGELOG.md as notes.
+# A release published in the web interface instead (which creates the
+# tag) gets the same files and keeps what was set there (pre-release,
+# latest, title and notes). Binary packages come from OBS.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # Before anything is built or published: the spec, the CHANGELOG
+      # and _service must name this tag, and the tree must hold sources
+      # only (mcp-gateway's process: packaging/suse/README.md).
+      - name: Tag matches the files
+        run: tools/check-release "$GITHUB_REF_NAME" HEAD
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Check
+        run: make check build
+      - name: Sources
+        run: |
+          set -eu
+          version=${GITHUB_REF_NAME#v}
+          mkdir dist
+          git archive --prefix="custos-$version/" -o "dist/custos-$version.tar.gz" HEAD
+          go mod vendor
+          tar czf dist/vendor.tar.gz vendor
+          (cd dist && sha256sum -- * > SHA256SUMS)
+      - name: Release notes
+        run: |
+          set -eu
+          # The section of CHANGELOG.md headed "## <tag> ...", up to the next "## ".
+          awk -v tag="$GITHUB_REF_NAME" '
+            /^## / { if (found) exit; if ($2 == tag) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "CHANGELOG.md has no section for $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          title="Custos ${GITHUB_REF_NAME}"
+          if release=$(gh release view "$GITHUB_REF_NAME" --json databaseId,name,body 2>/dev/null); then
+            # A release made in the web interface (publishing it created
+            # the tag) keeps what was set there: pre-release, latest and
+            # draft are not touched, and a title or notes written there
+            # stay. The sources are attached; only an empty title or
+            # empty notes are filled in.
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            id=$(jq -r .databaseId <<<"$release")
+            name=$(jq -r '.name // ""' <<<"$release")
+            body=$(jq -r '.body // ""' <<<"$release")
+            fields=()
+            [ -n "${name//[[:space:]]/}" ] || fields+=(-f "name=$title")
+            [ -n "${body//[[:space:]]/}" ] || fields+=(-F "body=@notes.md")
+            if [ ${#fields[@]} -gt 0 ]; then
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" "${fields[@]}" >/dev/null
+            fi
+          else
+            # A pushed tag: a pre-release for tags like v1.2.0-rc1, else a
+            # full release.
+            prerelease=""
+            case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --title "$title" --notes-file notes.md --verify-tag $prerelease
+          fi
+      # What was published is what was built: the files download, match
+      # SHA256SUMS, and the tarball is git archive of the tag.
+      - name: Verify the published files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          version=${GITHUB_REF_NAME#v}
+          mkdir verify
+          gh release download "$GITHUB_REF_NAME" --dir verify
+          (cd verify && sha256sum -c SHA256SUMS)
+          git archive --prefix="custos-$version/" HEAD | cmp - <(gzip -dc "verify/custos-$version.tar.gz")
