@@ -103,6 +103,21 @@ no model is needed. For openQA and other test systems:
 /usr/libexec/custos/tests/run-tests.sh --disposable --results DIR.
 They change the system for good; install them on test systems only.
 
+%package doc
+Summary:        User guide of custos, also for mcp-docs
+Group:          Documentation/Other
+BuildArch:      noarch
+# Installed with mcp-docs, it serves the guide to agents.
+Supplements:    (%{name} and mcp-docs)
+
+%description doc
+The Custos user guide: installing, connecting to mcp-gateway and an
+identity provider, configuring, administering and supervising agents,
+the audit record, OpenShell sandboxes, troubleshooting and reference,
+and the contract between Custos's parts, in /usr/share/custos/docs.
+With a collection file for mcp-docs, which then serves them as the
+collection custos to the agents and assistants on the host.
+
 %prep
 %autosetup -p1 -a1
 
@@ -113,11 +128,12 @@ make selinux
 %sysusers_generate_pre packaging/sysusers/custos.conf %{name} %{name}.conf
 
 %install
-%make_install install install-selinux install-tests install-cockpit \
+%make_install install install-selinux install-tests install-cockpit install-doc \
     PREFIX=%{_prefix} LIBEXECDIR=%{_libexecdir} DATADIR=%{_datadir} SBINDIR=%{_sbindir} \
     SYSCONFDIR=%{_sysconfdir} UNITDIR=%{_unitdir} SYSUSERSDIR=%{_sysusersdir} \
     TMPFILESDIR=%{_tmpfilesdir} SELINUXDIR=%{_datadir}/selinux/packages/%{selinuxtype} \
-    COCKPITDIR=%{_datadir}/cockpit/custos
+    COCKPITDIR=%{_datadir}/cockpit/custos DOCDIR=%{_datadir}/custos/docs \
+    MCPDOCSDIR=%{_datadir}/mcp-docs/collections.d
 
 %check
 export GOFLAGS="-mod=vendor"
@@ -188,7 +204,17 @@ done
 %dir %{_sysconfdir}/mcp-gateway/policy/agents
 %config(noreplace) %{_sysconfdir}/mcp-gateway/policy/agents/_control.yaml
 %config(noreplace) %{_sysconfdir}/mcp-gateway/policy/agents/_http.yaml
-%{_datadir}/custos
+%dir %{_datadir}/custos
+%{_datadir}/custos/examples
+%{_datadir}/custos/gateway
+%{_datadir}/custos/openshell
+
+%files doc
+%dir %{_datadir}/custos
+%{_datadir}/custos/docs
+%dir %{_datadir}/mcp-docs
+%dir %{_datadir}/mcp-docs/collections.d
+%{_datadir}/mcp-docs/collections.d/custos.yaml
 
 %files cockpit
 %dir %{_datadir}/cockpit

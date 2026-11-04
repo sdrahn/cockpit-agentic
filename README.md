@@ -23,6 +23,11 @@ contract ([CONTRACT.md](CONTRACT.md) Part I). Cockpit is the first one.
 taken by its test ([docs/screenshots](docs/screenshots/README.md)). How
 people log in and use it: [docs/user-flow.md](docs/user-flow.md).*
 
+**User guide:** [docs/user-guide](docs/user-guide/README.md): installing,
+connecting to mcp-gateway and an identity provider, configuring,
+administering and supervising agents, troubleshooting. Packaged as
+`custos-doc`, which mcp-docs serves to the agents on the host.
+
 ## How it works
 
 Each agent is its own process: a Google ADK agent, run by systemd as its
@@ -88,7 +93,7 @@ open items.
 | `examples/patch-pilot` | an example agent and its gateway permissions |
 | `test/vm` | the functional tests on an installed system (`run-tests.sh`) and their helpers (`fakemodel`, `testsrv`), packaged as `custos-tests` |
 | `test/openqa` | the openQA test module and how to run the functional tests |
-| `docs/` | the [logo](docs/logo/README.md), the [user flow](docs/user-flow.md) (who logs in to Cockpit, roles, approving and intervening), [screenshots](docs/screenshots/README.md) of the Cockpit page |
+| `docs/` | the [user guide](docs/user-guide/README.md) (packaged as `custos-doc`, with its mcp-docs collection file `packaging/mcp-docs/custos.yaml`; checked by `test/docs`), the [logo](docs/logo/README.md), the [user flow](docs/user-flow.md) (who logs in to Cockpit, roles, approving and intervening), [screenshots](docs/screenshots/README.md) of the Cockpit page |
 
 ## Development
 
@@ -126,6 +131,7 @@ curl --unix-socket /tmp/pp.sock http://agent/v1/status
 | SELinux module | written, not yet built or run on SLES 16 / Leap 16 |
 | OBS packaging | spec and services written, with the `-tests` subpackage; first OBS build to do |
 | Functional tests (`custos-tests`, openQA) | written; not yet run on SLES 16 / Leap 16 |
+| User guide (`custos-doc`) | 13 chapters; structure and links checked by `make check`, served by mcp-docs in CI |
 | Cockpit page (`custos-cockpit`) | Activity, Approvals, Agents and Policy tabs implemented, the emergency stop, chat, and creating, editing and deleting agents too; smoke-tested against a stub of Cockpit and tested in a real Cockpit in the Leap 16 VM (CI job `cockpit-vm`) |
 
 See [packaging/suse/README.md](packaging/suse/README.md) for building on OBS.

@@ -1,0 +1,24 @@
+# The collection file for mcp-docs (github.com/sdrahn/mcp-docs), installed
+# by custos-doc in /usr/share/mcp-docs/collections.d/. mcp-docs serves
+# the collection custos from it once both are installed. An administrator
+# replaces it with a file of the same name in /etc/mcp-docs/collections.d/;
+# an empty file there disables it.
+name: custos
+title: Custos documentation
+root: /usr/share/custos/docs
+description: >
+  Custos, governed AI agents on this host (SLES 16, Leap 16), for the
+  installed version: the user guide (13 chapters: installation,
+  connecting to mcp-gateway and an identity provider, configuration,
+  permissions and modes, approvals, Cockpit, administration, audit,
+  OpenShell, troubleshooting with every error message, reference) and
+  the contract between its parts.
+# Which file answers which question, and where errors are explained.
+index: user-guide/README.md
+include: ["**/*.md"]
+instructions: >
+  This machine's agents are not described here: agent-admin list and
+  agent-admin show [NAME] give them (modes, permissions, pause, the
+  emergency stop), agent-admin check NAME validates a configuration.
+  The gateway's own configuration and policy are mcp-gateway's
+  documentation and gateway-admin's.

@@ -10,6 +10,8 @@ TMPFILESDIR ?= $(PREFIX)/lib/tmpfiles.d
 SYSCONFDIR ?= /etc
 SELINUXDIR ?= $(DATADIR)/selinux/packages/targeted
 COCKPITDIR ?= $(DATADIR)/cockpit/custos
+DOCDIR     ?= $(DATADIR)/custos/docs
+MCPDOCSDIR ?= $(DATADIR)/mcp-docs/collections.d
 SELINUX_DEVEL ?= /usr/share/selinux/devel/Makefile
 GO         ?= go
 OPA        ?= opa
@@ -21,7 +23,7 @@ BINS := agent-launcher agent-admin agent-delegate agent-openshell-relay
 # The functional tests' helpers (package custos-tests).
 TESTBINS := fakemodel testsrv testidp
 
-.PHONY: all build build-tests test check fmt-check vet policy-test cockpit-test selinux install install-selinux install-tests install-cockpit clean
+.PHONY: all build build-tests test check fmt-check vet policy-test cockpit-test selinux install install-selinux install-tests install-cockpit install-doc clean
 
 all: build
 
@@ -101,6 +103,14 @@ install-cockpit:
 	install -d $(DESTDIR)$(COCKPITDIR)
 	install -m 0644 cockpit/custos/*.html cockpit/custos/*.js cockpit/custos/*.css cockpit/custos/*.svg \
 		cockpit/custos/manifest.json $(DESTDIR)$(COCKPITDIR)/
+
+# The user guide and the contract, for people and for mcp-docs
+# (package custos-doc).
+install-doc:
+	install -d $(DESTDIR)$(DOCDIR)/user-guide
+	install -m 0644 docs/user-guide/*.md $(DESTDIR)$(DOCDIR)/user-guide/
+	install -m 0644 CONTRACT.md $(DESTDIR)$(DOCDIR)/CONTRACT.md
+	install -D -m 0644 packaging/mcp-docs/custos.yaml $(DESTDIR)$(MCPDOCSDIR)/custos.yaml
 
 install-selinux: selinux
 	install -d $(DESTDIR)$(SELINUXDIR)
