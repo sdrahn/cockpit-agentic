@@ -6,10 +6,12 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -55,8 +57,26 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 			r.Header.Set("Authorization", "Bearer "+tok)
 		}
 	}
-	return b.next.RoundTrip(r)
+	res, err := b.next.RoundTrip(r)
+	if err == nil && res.StatusCode == http.StatusInternalServerError && r.Header.Get(sessionHeader) != "" {
+		// mcp-gateway answers 500 only to an initialize it cannot serve,
+		// never on a session: a 500 on one comes from between, OpenShell's
+		// proxy, which forgets the sessions it inspected when the provider's
+		// token is renewed. As "session not found" (404) the MCP client
+		// gives up the session, and the toolset opens a new one and retries
+		// the request once.
+		io.Copy(io.Discard, io.LimitReader(res.Body, 64<<10))
+		res.Body.Close()
+		res = &http.Response{
+			Status: "404 Not Found", StatusCode: http.StatusNotFound, Proto: res.Proto, ProtoMajor: res.ProtoMajor, ProtoMinor: res.ProtoMinor,
+			Header: http.Header{"Content-Type": {"text/plain"}}, Body: io.NopCloser(strings.NewReader("session lost on the way (500)")), Request: r,
+		}
+	}
+	return res, err
 }
+
+// sessionHeader is MCP's Streamable HTTP session header.
+const sessionHeader = "Mcp-Session-Id"
 
 // Notice is an approval notice of the gateway's broker.
 type Notice struct {
