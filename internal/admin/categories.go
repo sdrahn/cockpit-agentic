@@ -172,8 +172,7 @@ type Promotion struct {
 	Envelope []byte
 	// Reason is the person's; required with DespiteReadiness.
 	Reason string
-	// DespiteReadiness promotes although readiness is not met. Readiness
-	// is not measured yet (§6a, O11), so every promotion needs it for now.
+	// DespiteReadiness promotes although readiness is not met (§6a).
 	DespiteReadiness bool
 }
 
@@ -189,10 +188,7 @@ func (a *Admin) Promote(name, cat, by string, p Promotion) error {
 	if err != nil {
 		return err
 	}
-	if !p.DespiteReadiness {
-		return errors.New("readiness is not measured yet (CONTRACT.md O11): promote with --despite-readiness --reason TEXT")
-	}
-	if strings.TrimSpace(p.Reason) == "" {
+	if p.DespiteReadiness && strings.TrimSpace(p.Reason) == "" {
 		return errors.New("--despite-readiness needs --reason TEXT")
 	}
 	d, err := a.readGateway(name)
@@ -212,6 +208,16 @@ func (a *Admin) Promote(name, cat, by string, p Promotion) error {
 	if from == "bounded" && a.sameEnvelope(d.Categories[cat].Envelope, env) {
 		return fmt.Errorf("agent %s: category %s is already bounded with this envelope", name, cat)
 	}
+	rep, err := a.Readiness(name, cat)
+	if err != nil {
+		return err
+	}
+	ready := rep.Categories[cat]
+	if !ready.Ready && !p.DespiteReadiness {
+		return fmt.Errorf("agent %s: category %s is not ready (%s); see agent-admin readiness %s %s, or promote with --despite-readiness --reason TEXT",
+			name, cat, strings.Join(ready.Unmet, "; "), name, cat)
+	}
+	readinessJSON, _ := json.Marshal(ready)
 	id := "p-" + a.Secret()
 	if len(id) > 18 {
 		id = id[:18]
@@ -226,7 +232,7 @@ func (a *Admin) Promote(name, cat, by string, p Promotion) error {
 	}
 	a.record(journal.CategoryPromoted, name, fmt.Sprintf("%s promoted %s of agent %s to bounded", by, cat, name), journal.Fields{
 		"CATEGORY": cat, "PROMOTION": id, "MODE_FROM": from, "MODE_TO": "bounded", "BY": by,
-		"REASON": p.Reason, "ENVELOPE_SHA256": envelopeHash(env), "READINESS": `{"measured":false}`,
+		"REASON": p.Reason, "ENVELOPE_SHA256": envelopeHash(env), "READINESS": string(readinessJSON),
 	})
 	fmt.Fprintf(a.Out, "agent %s: category %s is bounded within its envelope (promotion %s)\n", name, cat, id)
 	return nil

@@ -19,8 +19,14 @@ removed.
 - `agent-admin promote NAME CATEGORY --envelope FILE` lets a category
   act without approval within its envelope's time windows, which the
   gateway's policy enforces; outside them its calls need an approval.
-  Until readiness is measured, it needs `--despite-readiness --reason
-  TEXT`. `agent-admin demote` takes it back. Both are recorded in the
+  `agent-admin demote` takes it back.
+- Readiness: `agent-admin readiness NAME [CATEGORY]` measures, from the
+  agent's records and the gateway's approval decisions, how often
+  approvers overrode a category's proposals and how often approved
+  calls went wrong. `promote` refuses a category below the thresholds
+  (14 days, 50 proposals, at most 5 % overrides and 2 % incidents; your
+  own in `/etc/custos/promotion.yaml`) unless given
+  `--despite-readiness --reason TEXT`. Both are recorded in the
   journal (`custos-promotion`, `category.promoted`,
   `category.demoted`), and `agent-admin show` lists the categories.
 

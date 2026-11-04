@@ -390,6 +390,10 @@ asks_and_deny() {
 check "the catalog has patch-errata" bash -c "agent-admin categories | jq -e '.\"patch-errata\".title' >/dev/null"
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change, category: patch-errata}' | agent-admin permissions t1
 check "a category starts supervised: its change waits for an approval" asks_and_deny
+# Readiness (§6a) from the agent's records and the gateway's decision.
+check "readiness counts the declined proposal, from the gateway's decision" eventually 30 bash -c \
+	"agent-admin readiness t1 patch-errata | jq -e '.categories[\"patch-errata\"] | .proposals >= 1 and .declined >= 1 and .override_rate > 0 and .ready == false' >/dev/null"
+check "promote says why the category is not ready" bash -c "printf 'windows: [{from: \"00:00\", to: \"23:59\"}]\n' | agent-admin promote t1 patch-errata --envelope - 2>&1 | grep -q 'is not ready (.*proposals of 50'"
 # Today, all day (UTC); not in the last minutes of a day.
 [ "$(date -u +%H%M)" -ge 2357 ] && sleep 180
 today=$(date -u +%a | tr '[:upper:]' '[:lower:]')

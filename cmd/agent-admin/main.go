@@ -22,7 +22,8 @@ const usage = `usage: agent-admin COMMAND …
   mode NAME advisory|supervised|bounded  set the autonomy mode (enforced by mcp-gateway)
   permissions NAME                       replace its gateway permissions (YAML list on stdin)
   categories                             the task categories (CONTRACT.md §6a), as JSON
-  promote NAME CATEGORY --envelope FILE --despite-readiness --reason TEXT
+  readiness NAME [CATEGORY]              a category's promotion readiness (CONTRACT.md §6a), as JSON
+  promote NAME CATEGORY --envelope FILE [--despite-readiness --reason TEXT]
                                          let a category act without approval within its envelope (FILE -: stdin)
   demote NAME CATEGORY [--reason TEXT]   back to supervised (the envelope is kept)
   pause NAME | resume NAME               hold an agent / let it go on
@@ -143,6 +144,17 @@ func run(a *admin.Admin, args []string) error {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(c)
+	case "readiness":
+		if err := need(1); err != nil {
+			return err
+		}
+		r, err := a.Readiness(args[0], args[1:]...)
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(r)
 	case "promote":
 		if err := need(2); err != nil {
 			return err
