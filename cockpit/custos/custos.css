@@ -151,6 +151,12 @@ input, select { font: inherit; color: var(--fg); background: var(--bg); border: 
 #whatif input { min-width: 22rem; }
 details > summary { cursor: pointer; margin-top: 0.75rem; color: var(--accent); }
 
+.action { border-top: 1px solid var(--border); padding: 0.6rem 0; }
+.action .head { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; margin-bottom: 0.25rem; }
+.action .step { padding-left: 1rem; margin: 0.15rem 0; }
+.action .step .badge { min-width: 6.5rem; text-align: center; }
+td.details { overflow-wrap: anywhere; }
+
 .decided { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; border-top: 1px solid var(--border); padding: 0.5rem 0; }
 
 @media (max-width: 600px) {

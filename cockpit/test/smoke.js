@@ -193,6 +193,43 @@ function site() {
     check(rel.length === 1 && rel[0][4] === "require" && rel[0][2] === "SUDO_USER=carol", "release-all names the person too");
     check(!(await page.$eval("#stop-all", b => b.disabled)), "Stop all agents is back");
 
+    // Audit tab: each state-changing action's history, and the records.
+    await page.goto(url + "?audit#/audit");
+    await page.waitForSelector("#action-a-17");
+    const hist = async id => page.textContent("#action-" + id);
+    const a17 = await hist("a-17"), a9 = await hist("a-9"), a42 = await hist("a-42");
+    check(a17.includes("snapper__delete_snapshots") && a17.includes("Free 4 GiB") && a17.includes("declined") &&
+          a17.includes("by admin") && a17.includes("not executed"), "a declined action: proposed, declined by the approver, not executed");
+    check(a9.includes("approved") && a9.includes("by carol (once) via cockpit") && a9.includes("executed") && a9.includes("for alice"),
+          "an approved action: who approved it, from the gateway's record, and that it ran");
+    check(a42.includes("pending") && a42.includes("no decision yet") && !a42.includes("executed"), "a pending action");
+    const actionOrder = await page.$$eval("#audit-actions .action", es => es.map(e => e.id));
+    check(actionOrder.join(",") === "action-a-42,action-a-9,action-a-17", "newest action first");
+    const recs = await page.$$eval("#audit-records tbody tr", rs => rs.map(r => r.textContent));
+    check(recs.some(r => r.includes("gateway") && r.includes("zypp__install_patches") && r.includes("agent paused")),
+          "the gateway's denial of an agent is a record");
+    check(!recs.some(r => r.includes("fs__read_file")), "the gateway's records about people are left out");
+    check(recs.some(r => r.includes("mcp-approval") && r.includes("declined") && r.includes("by admin")),
+          "the gateway's approval record says approved or declined");
+    await page.selectOption("#audit-filter select[name=kind]", "interventions");
+    check((await page.$$eval("#audit-records tbody tr", rs => rs.length)) === 1 &&
+          (await page.textContent("#audit-records tbody")).includes("agent.paused"), "the interventions filter");
+    await page.selectOption("#audit-filter select[name=kind]", "all");
+    await page.selectOption("#audit-filter select[name=agent]", "disk-watch");
+    check((await page.$$eval("#audit-records tbody tr", rs => rs.map(r => r.cells[2].textContent))).every(a => a === "disk-watch"),
+          "the agent filter");
+    await page.selectOption("#audit-filter select[name=agent]", "");
+    await page.fill("#audit-filter input[name=text]", "a-9");
+    check((await page.$$eval("#audit-records tbody tr", rs => rs.length)) === 4, "the text filter: a-9's three agent records and the gateway's");
+    check(!(await page.isVisible("#audit-gateway-note")), "no note while the gateway's records are readable");
+    if (shots) await page.screenshot({ path: path.join(shots, "audit.png"), fullPage: true });
+    await page.goto(url + "?nogw#/audit");
+    await page.waitForSelector("#action-a-9");
+    check(await page.isVisible("#audit-gateway-note") && (await hist("a-9")).includes("not readable here"),
+          "without the gateway's records, the approver is said to be missing");
+    check((await calls()).some(c => c[0] === "spawn" && c[1].includes("AGENT_CONTRACT=1") && c[4] === ""),
+          "the journal is read as the person");
+
     check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join("; ") : ""));
     await browser.close();
 })().catch(e => { console.error(e); process.exit(1); });

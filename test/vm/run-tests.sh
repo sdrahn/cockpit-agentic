@@ -322,6 +322,12 @@ for decision in approve deny; do
 	want=$([ "$decision" = approve ] && echo approved || echo declined)
 	check "its call is $want" json_ok "$(activity t1 "$id")" ".calls[-1].approval == \"$want\""
 	check "journal: approval.resolved $want" eventually 10 journal_has t1 approval.resolved ".AGENT_APPROVAL_ID == \"$aid\" and .AGENT_OUTCOME == \"$want\""
+	# The history of the action (§10) as the Cockpit page's Audit tab joins
+	# it: the gateway's decision record and the result, by approval id.
+	ok=$([ "$decision" = approve ] && echo true || echo false)
+	check "the gateway's audit: mcp-approval for $aid, $want" eventually 10 \
+		gw_audit_has ".event == \"mcp-approval\" and .id == \"$aid\" and .principal == \"agent-t1\" and .ok == $ok and .by != null"
+	check "journal: tool.result names approval $aid" eventually 10 journal_has t1 tool.result ".AGENT_APPROVAL_ID == \"$aid\""
 	if [ "$decision" = approve ]; then
 		check "the change ran" summary_has "$(activity t1 "$id")" 'changed test'
 	else

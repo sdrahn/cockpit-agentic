@@ -387,7 +387,9 @@ and without the `AGENT_` prefix):
 
 **History of an action** (proposed → approved/declined → executed):
 `tool.call` (with rationale) → `approval.pending` → the gateway's
-approval decision record (`op=mcp-approval`, with the approver) →
+approval decision record (in its journal `"event": "mcp-approval"` with
+the approval `id`, `principal`, `ok`, the approver `by`, `scope` and
+`via`; `op=mcp-approval` in the kernel audit) →
 `approval.resolved` → `tool.result`, joined by `AGENT_CALL_ID` and
 `AGENT_APPROVAL_ID`. The control plane reads them with
 `journalctl -o json AGENT_NAME=<name>` and
@@ -634,7 +636,7 @@ tests, for openQA).
 | See activity not started in chat (schedules, events), what runs, waits, ran | §3, §4, §5, §10 | host side done and tested (scheduled and API activities, states, history); Cockpit Activity tab done, smoke-tested against a stub of Cockpit (O9) |
 | …including delegation chains, traceable to the origin | §4 `parent`/`root`, §9, §10 | done and tested (trace verified by `SO_PEERCRED`); bridge `agent-delegate` built, untested against a real gateway |
 | Pending action as an approval item with actions, evidence, impact; nothing state-changing without approval | §6 supervised default, §7 | enforcement done in gateway policy (tested with OPA against the gateway's policy); approval flow tested end to end with a fake gateway; impact and evidence are the agent's self-asserted rationale plus the activity (O6); Cockpit Approvals tab done, decisions as the person (O9) |
-| Outcome after execution; proposed → approved/rejected → executed history | §4, §10 "History of an action" | done (journal and activity API) |
+| Outcome after execution; proposed → approved/rejected → executed history | §4, §10 "History of an action" | done (journal and activity API); Cockpit Audit tab done, the join tested on a real gateway (O9) |
 | Chat as one mode | §11 | AG-UI and ADK REST, tested |
 | See autonomy mode and policy; adjust where permitted | §6 | gateway data + `agent-admin mode/permissions/show`; Cockpit Agents and Policy tabs done, smoke-tested against a stub of Cockpit (O9) |
 | Stop / pause / override in-flight or scheduled activity; emergency stop | §8 | cancel, pause (host and gateway), stop-all done; tested on the host side and in policy |
@@ -707,6 +709,8 @@ tests, for openQA).
   gateway would decide for one call), and the emergency stop (§8: *Stop
   all agents* in the header after a confirmation, a banner with who
   stopped them and when, *Release…*; `agent-admin stop-all` and
-  `release-all` through the root bridge). Still open: creating and
-  deleting agents, Audit (§10 with the gateway's audit), chat (§11), and
-  a test against a real Cockpit.
+  `release-all` through the root bridge), and the Audit tab (§10: each
+  state-changing action's history, proposed → decided → executed, joined
+  by approval id from the agents' records and the gateway's, and the
+  records themselves, filtered). Still open: creating and deleting
+  agents, chat (§11), and a test against a real Cockpit.
