@@ -103,9 +103,18 @@ agent does. And the agent holds its activities before their next model or
 tool call and refuses new ones (`409`). Resuming lets them go on. The
 journal has `agent.paused` and `agent.resumed`.
 
-## Stopping and starting an agent {#stop}
+## Stopping, starting and restarting an agent {#stop}
 
-Stop an agent by its units; the next request no longer starts it:
+Restart an agent, for example after a credential changed. Its running
+activities end. A stopped (idle) agent is started:
+
+```bash
+systemctl restart agent@NAME.service
+systemctl restart agent-openshell@NAME.service   # an OpenShell agent, with its sandbox
+```
+
+In Cockpit, the agent's **Restart**. Stop an agent by its units; the
+next request no longer starts it:
 
 ```bash
 systemctl stop agent@NAME.socket agent@NAME.service

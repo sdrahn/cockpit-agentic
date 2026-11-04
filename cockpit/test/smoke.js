@@ -105,9 +105,10 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.goto(url + "?agents#/agents/patch-pilot");
     await page.waitForSelector("#boundaries");
     const rows = await page.$$eval("#agents tbody tr", es => es.map(e => e.id));
-    check(rows.join(",") === "agent-row-disk-watch,agent-row-old-agent,agent-row-patch-pilot,agent-row-triage",
+    check(rows.join(",") === "agent-row-disk-watch,agent-row-old-agent,agent-row-patch-pilot,agent-row-sandboxed,agent-row-triage",
           "the agents: on /run/agents, and those with gateway data only");
-    check((await page.textContent("#agent-row-old-agent")).includes("stopped"), "an agent without a socket is stopped");
+    check((await page.textContent("#agent-row-old-agent")).includes("stopped"),
+          "an agent whose directory is there without a socket is stopped (systemd's RemoveOnStop)");
     const effect = async tool => page.$eval("#boundaries", (t, tool) =>
         [...t.querySelectorAll("tbody tr")].find(r => r.cells[0].textContent === tool).cells[3].textContent, tool);
     check(await effect("zypp__list_*") === "allowed" && await effect("zypp__install_patches") === "needs approval" &&
@@ -121,6 +122,14 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
           "the mode is set with agent-admin through the root bridge, naming the person");
     await page.waitForFunction(() => document.querySelector("#boundaries").textContent.includes("allowed, no approval"));
     check(await effect("systemd__restart_unit") === "allowed, no approval", "bounded: autonomous changes run without approval");
+    await page.click("#agent-detail button:text-is('Restart')");
+    await page.waitForTimeout(300);
+    const restarted = await spawned("systemctl restart agent@patch-pilot.service");
+    check(restarted.length === 1 && restarted[0][4] === "require", "restart restarts the agent's service through the root bridge");
+    await page.click("#agent-detail button:has-text('Logs')");
+    const jumps = (await calls()).filter(c => c[0] === "jump");
+    check(jumps.length === 1 && jumps[0][1] === "/system/logs#/?priority=info&service=agent%40patch-pilot.service",
+          "logs opens Cockpit's journal for the agent's unit");
     await page.click("#agent-detail button:has-text('Pause')");
     await page.waitForFunction(() => document.querySelector("#boundaries").textContent.includes("denied (paused)"));
     check((await spawned("agent-admin pause patch-pilot")).length === 1, "pause runs agent-admin pause");
@@ -142,10 +151,29 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(dis.length === 1 && dis[0][4] === "require", "a schedule is disabled with systemctl through the root bridge");
 
     await page.click("#agent-row-old-agent button");
-    await page.waitForSelector("#agent-detail button:has-text('Start')");
-    await page.click("#agent-detail button:has-text('Start')");
+    await page.waitForSelector("#agent-detail button:text-is('Start')");
+    check(await page.$eval("#agent-detail button:text-is('Restart')", b => b.hidden), "a stopped agent offers Start, not Restart");
+    await page.click("#agent-detail button:text-is('Start')");
     await page.waitForTimeout(300);
     check((await spawned("systemctl start agent@old-agent.socket")).length === 1, "a stopped agent is started by its socket");
+
+    // A stopped OpenShell agent: its relay's socket, which the page finds
+    // from systemd since the agent cannot say.
+    await page.click("#agent-row-sandboxed button");
+    await page.waitForSelector("#agent-detail button:text-is('Start')");
+    await page.click("#agent-detail button:text-is('Start')");
+    await page.waitForTimeout(300);
+    check((await spawned("systemctl start agent-openshell@sandboxed.socket")).length === 1,
+          "a stopped OpenShell agent is started by its relay's socket");
+
+    // Stop stops an OpenShell agent's socket too, or the next request
+    // would start it again.
+    await page.click("#agent-row-triage button");
+    await page.waitForSelector("#agent-detail button:text-is('Stop')");
+    await page.click("#agent-detail button:text-is('Stop')");
+    await page.waitForTimeout(300);
+    check((await spawned("systemctl stop agent-openshell@triage.socket agent-openshell@triage.service")).length === 1,
+          "Stop stops an OpenShell agent's socket and service");
 
     // Task categories (§6a): a promoted category runs without approval
     // only within its window; the others need one.

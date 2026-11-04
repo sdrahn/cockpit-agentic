@@ -949,7 +949,7 @@ the product and release process, tracked here so that nothing is lost.
   cancel) and the Approvals tab (§7: the approval item, decided as the
   person; today's decisions from the journal, §10), the Agents tab (each
   agent's state, autonomy mode, tool boundaries with their effect now,
-  schedules; mode, permissions, pause, stop and schedules changed through
+  schedules; mode, permissions, pause, restart, stop and schedules changed through
   the root bridge with `agent-admin` and `systemctl`, §6, §8) and the
   Policy tab (the posture of every agent with its approvers, and what the
   gateway would decide for one call), and the emergency stop (§8: *Stop

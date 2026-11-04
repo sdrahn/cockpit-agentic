@@ -154,9 +154,24 @@ async function listAgents() {
             const status = await agentApi(name).get("/v1/status");
             return status.contract === 1 ? { name, status } : { name, error: "speaks contract " + status.contract };
         } catch (ex) {
-            return { name, error: describeAgentFailure(ex) };
+            // No socket file: its socket unit is stopped. systemd removes
+            // the file (RemoveOnStop=) and leaves the directory, so the
+            // directory alone does not mean the agent runs.
+            return { name, error: describeAgentFailure(ex), stopped: !!(ex && ex.problem === "not-found") };
         }
     }));
+}
+
+/* stoppedLifecycle is a stopped agent's backend, which it cannot tell
+ * itself (§3a): an OpenShell agent's socket unit is enabled once it has
+ * its sandbox (agent-admin set-credential). Needs no root. */
+async function stoppedLifecycle(name) {
+    const socket = "agent-openshell@" + name + ".socket";
+    try {
+        const state = (await cockpit.spawn(["systemctl", "show", "-p", "UnitFileState", "--value", socket], { err: "ignore" })).trim();
+        if (state === "enabled") return { kind: "openshell", service: "agent-openshell@" + name + ".service", socket };
+    } catch (ex) { /* systemd's answer is all there is */ }
+    return { kind: "systemd", service: "agent@" + name + ".service", socket: "agent@" + name + ".socket" };
 }
 
 /* loadActivities reads every reachable agent's activities, each with its
@@ -213,6 +228,7 @@ async function refreshState() {
         }
         agents.sort((x, y) => x.name.localeCompare(y.name));
     }
+    await Promise.all(agents.filter(a => a.stopped).map(async a => { a.lifecycle = await stoppedLifecycle(a.name); }));
     state.agents = agents;
     state.posture = posture;
     state.activities = await loadActivities(agents);

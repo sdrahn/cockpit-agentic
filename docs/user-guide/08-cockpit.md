@@ -90,7 +90,10 @@ work. **Create agent** opens a form for a new agent's configuration
 Selecting an agent shows:
 
 - its state and mode, its units, with **Pause**/**Resume**,
-  **Stop**/**Start** and **Delete…**;
+  **Restart**, **Stop**/**Start**, **Logs** and **Delete…**. **Restart**
+  restarts the agent's service, which ends its running activities.
+  **Logs** opens Cockpit's *Logs* page for the agent's unit: the unit's
+  messages and the agent's own records ([chapter 10](10-monitoring-and-audit.md#journal));
 - **Autonomy mode**: advisory, supervised or bounded, one click each;
 - **Tool boundaries**: its permissions and their effect now, and **Edit
   the permissions** as a YAML list;

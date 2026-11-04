@@ -25,13 +25,17 @@ function modeBadge(mode) {
               mode || "no gateway data");
 }
 
-/* unitsOf are the units that stop and start the agent (§3a lifecycle). */
+/* unitsOf are the units that stop and start the agent (§3a lifecycle):
+ * its socket and service, so that a stopped agent stays stopped (a
+ * request to a listening socket would start it again), and its socket to
+ * start it, which starts the service on the next request. For a stopped
+ * agent, which has no status, the lifecycle refreshState found. */
 function unitsOf(a) {
-    const l = (a.status && a.status.lifecycle) || {};
-    if (l.kind === "openshell") return { stop: [l.service], start: [l.service] };
-    const service = l.service || "agent@" + a.name + ".service";
-    const socket = l.socket || "agent@" + a.name + ".socket";
-    return { stop: [socket, service], start: [socket] };
+    const l = (a.status && a.status.lifecycle) || a.lifecycle || {};
+    const openshell = l.kind === "openshell";
+    const service = l.service || (openshell ? "agent-openshell@" : "agent@") + a.name + ".service";
+    const socket = l.socket || (openshell ? "agent-openshell@" : "agent@") + a.name + ".socket";
+    return { stop: [socket, service], start: [socket], service };
 }
 
 /* act runs one administrative action from a button, then refreshes. */
@@ -121,6 +125,16 @@ async function renderAgentDetail() {
     stop.addEventListener("click", () => act(stop, (a.stopped ? "Starting " : "Stopping ") + a.name,
         () => systemctl(a.stopped ? "start" : "stop", ...(a.stopped ? units.start : units.stop))));
 
+    // Restart: the agent's service (an OpenShell agent's relay, with its
+    // sandbox). Its running activities end, as with agent-admin edit.
+    const restart = el("button", { class: "secondary" }, "Restart");
+    restart.hidden = !!a.stopped;
+    restart.addEventListener("click", () => act(restart, "Restarting " + a.name, () => systemctl("restart", units.service)));
+    // Logs: Cockpit's journal for the agent's unit, which holds the unit's
+    // messages and the agent's own records (agent-<name>, §10).
+    const logs = el("button", { class: "secondary" }, "Logs");
+    logs.addEventListener("click", () => cockpit.jump("/system/logs#/?priority=info&service=" + encodeURIComponent(units.service)));
+
     const del = deleteControl(a);
     const head = el("section", { class: "card" },
         el("div", { class: "toolbar" },
@@ -129,7 +143,7 @@ async function renderAgentDetail() {
               el("div", { class: "mono muted" }, [units.stop.join(" · "),
                   a.status ? a.status.implementation + " · contract " + a.status.contract : null,
                   a.status && a.status.model ? "model " + a.status.model : null].filter(Boolean).join(" · "))),
-           el("span", { class: "actions" }, el("span", { id: "agent-action", class: "muted" }), pause, stop, del.open)),
+           el("span", { class: "actions" }, el("span", { id: "agent-action", class: "muted" }), pause, restart, stop, logs, del.open)),
         data && data.paused && data.paused_by ? el("p", { class: "muted" }, "Paused by " + data.paused_by + ".") : null,
         del.box);
 
