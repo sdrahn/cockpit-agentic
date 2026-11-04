@@ -574,6 +574,22 @@ instead of `agent@.service`:
 `stop-all` stops the relay units and every OpenShell agent's sandbox by
 name; the gateway's `agents_control` flag denies them like any agent.
 
+`edit` (§17) applies the new `agent.yaml` to the sandbox, since the
+sandbox holds what it was created with: the configuration
+(`CUSTOS_CONFIG`), the policy and, through the provider, the gateway's
+endpoint. `openshell.env` takes nothing from `agent.yaml` and stays.
+
+| The edit changes | `edit` does |
+|---|---|
+| nothing the sandbox gets | `systemctl try-restart agent-openshell@<name>.service` |
+| the configuration as the sandbox gets it (model, instruction, servers, tools, limits, interaction, schedules, …), the policy (`model.endpoint`) or the profile (`gateway.url`, `gateway.oauth`'s token URL, scopes, `refresh_before_seconds`) | rewrites `openshell-policy.yaml` and `openshell-profile.yaml` (and imports the profile again if it changed), stops the relay's socket and service, recreates the sandbox with the provider it has and the image it was created from (`AGENT_IMAGE`), then starts the socket and service that ran before; if the service did not run (after `stop-all`, or idle), it stops the new sandbox, which the relay starts when it starts. The state inside the old sandbox (sessions) goes with it, as with `set-credential` |
+| the credential's kind: `gateway.oauth` added or removed, or its `client_id` | the provider must be made again with the secret, which `agent-admin` does not keep: rewrites the files, disables and stops the relay, deletes the sandbox and the provider, and asks for `set-credential`, which creates both again |
+| `sandbox.kind`, `sandbox.openshell_gateway` | refused: `delete` and `create` |
+
+Before the first `set-credential` (no sandbox yet, the relay's socket
+not enabled), `edit` rewrites the files only; `set-credential` creates
+the sandbox from them.
+
 ## 17. `agent-admin`
 
 Run as root, by hand or by Cockpit with administrative access:
@@ -581,7 +597,7 @@ Run as root, by hand or by Cockpit with administrative access:
 | Command | Does |
 |---|---|
 | `create NAME --from FILE` | validates; writes the sysusers.d file and runs `systemd-sysusers`; installs `agent.yaml`; writes the gateway agent data (supervised, no permissions); writes the schedules' timer drop-ins; enables the socket and timers |
-| `edit NAME --from FILE` | validates, replaces `agent.yaml`, syncs schedules, `try-restart` |
+| `edit NAME --from FILE` | validates, replaces `agent.yaml`, syncs schedules; systemd agents: `try-restart agent@<name>.service`; OpenShell agents: the policy, the profile and the sandbox as in §16a (at least `try-restart agent-openshell@<name>.service`). `sandbox.kind` (and `sandbox.openshell_gateway`) stay as created |
 | `check NAME\|FILE` | validates only |
 | `mode NAME MODE`, `permissions NAME < list.yaml` | the gateway agent data (§6). Like `pause`, `resume`, `stop-all` and `release-all`, it returns once the gateway's OPA has loaded the change (it reads it back on `/run/mcp-gateway/opa.sock`, for up to 20 s), so the change is in force when the command returns |
 | `set-credential NAME CRED < secret` | `systemd-creds encrypt`; for OpenShell agents `gateway-client-secret` or `gateway-token` (§16a) |

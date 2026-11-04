@@ -306,6 +306,16 @@ func (a *Admin) startOpenShellOAuth(cfg *config.Config, secret string) error {
 // startSandbox creates the sandbox with the provider attached and starts
 // the relay.
 func (a *Admin) startSandbox(cfg *config.Config) error {
+	if err := a.createSandbox(cfg, a.Image); err != nil {
+		return err
+	}
+	return a.Run(nil, "systemctl", "enable", "--now", "agent-openshell@"+cfg.Name+".socket")
+}
+
+// createSandbox (re)creates the sandbox from the agent's files: the
+// policy, the relay secret and the configuration as the sandbox gets it.
+// OpenShell starts it.
+func (a *Admin) createSandbox(cfg *config.Config, image string) error {
 	g := cfg.Sandbox.OpenShellGateway
 	dir := a.agentDir(cfg.Name)
 	secret, err := os.ReadFile(filepath.Join(dir, "relay.secret"))
@@ -313,17 +323,19 @@ func (a *Admin) startSandbox(cfg *config.Config) error {
 		return err
 	}
 	a.Run(nil, "openshell", "-g", g, "sandbox", "delete", openshell.SandboxName(cfg.Name))
-	args, err := openshell.CreateArgs(cfg, a.Image, filepath.Join(dir, "openshell-policy.yaml"), strings.TrimSpace(string(secret)), openshell.Port(cfg.Name))
+	args, err := openshell.CreateArgs(cfg, image, filepath.Join(dir, "openshell-policy.yaml"), strings.TrimSpace(string(secret)), openshell.Port(cfg.Name))
 	if err != nil {
 		return err
 	}
 	if err := a.Run(nil, "openshell", append([]string{"-g", g}, args...)...); err != nil {
 		return fmt.Errorf("creating the sandbox: %w", err)
 	}
-	return a.Run(nil, "systemctl", "enable", "--now", "agent-openshell@"+cfg.Name+".socket")
+	return nil
 }
 
-// Edit replaces an agent's configuration and restarts it if it runs.
+// Edit replaces an agent's configuration and applies it: a systemd agent
+// restarts if it runs; an OpenShell agent gets the change in its sandbox
+// (editOpenShell). The backend and the OpenShell gateway stay as created.
 func (a *Admin) Edit(name, from string) error {
 	if err := checkName(name); err != nil {
 		return err
@@ -339,15 +351,141 @@ func (a *Admin) Edit(name, from string) error {
 	if cfg.Name != name {
 		return fmt.Errorf("the file is for agent %q, not %q", cfg.Name, name)
 	}
-	if err := writeFile(filepath.Join(a.agentDir(name), "agent.yaml"), b, 0o640); err != nil {
+	dir := a.agentDir(name)
+	old, err := config.Load(dir)
+	if err != nil {
+		old = nil // the sandbox's inputs count as changed
+	}
+	if old != nil && old.Sandbox.Kind != cfg.Sandbox.Kind {
+		return fmt.Errorf("sandbox.kind: agent %s runs with %s, not %s; delete and create it to change the backend", name, old.Sandbox.Kind, cfg.Sandbox.Kind)
+	}
+	if old != nil && cfg.Sandbox.Kind == "openshell" && old.Sandbox.OpenShellGateway != cfg.Sandbox.OpenShellGateway {
+		return fmt.Errorf("sandbox.openshell_gateway: agent %s's sandbox is on OpenShell gateway %q; delete and create it to move it", name, old.Sandbox.OpenShellGateway)
+	}
+	if err := writeFile(filepath.Join(dir, "agent.yaml"), b, 0o640); err != nil {
 		return err
 	}
-	a.Run(nil, "chgrp", "agent-"+name, filepath.Join(a.agentDir(name), "agent.yaml"))
+	a.Run(nil, "chgrp", "agent-"+name, filepath.Join(dir, "agent.yaml"))
 	if err := a.syncSchedules(cfg); err != nil {
 		return err
 	}
 	a.Run(nil, "systemctl", "daemon-reload")
+	if cfg.Sandbox.Kind == "openshell" {
+		return a.editOpenShell(old, name)
+	}
 	return a.Run(nil, "systemctl", "try-restart", "agent@"+name+".service")
+}
+
+// editOpenShell applies an edited configuration to an OpenShell agent
+// (CONTRACT.md §16a). The sandbox holds the configuration it was created
+// with (CUSTOS_CONFIG), the policy and the provider's endpoint, so a
+// change to any of them rewrites the policy and the profile and recreates
+// the sandbox; the relay and the sandbox then run as they did before. A
+// change of the gateway credential's kind (gateway.oauth, its client_id)
+// needs the credential again, which agent-admin does not keep: the agent
+// stays down until set-credential. Without any change the relay restarts
+// if it runs. openshell.env takes nothing from agent.yaml and stays.
+func (a *Admin) editOpenShell(old *config.Config, name string) error {
+	dir := a.agentDir(name)
+	cfg, err := config.Load(dir) // as the sandbox gets it: instruction_file read
+	if err != nil {
+		return err
+	}
+	g := cfg.Sandbox.OpenShellGateway
+	pol, err := openshell.Policy(cfg)
+	if err != nil {
+		return err
+	}
+	prof, err := openshell.Profile(cfg)
+	if err != nil {
+		return err
+	}
+	polFile, profFile := filepath.Join(dir, "openshell-policy.yaml"), filepath.Join(dir, "openshell-profile.yaml")
+	oldPol, _ := os.ReadFile(polFile)
+	oldProf, _ := os.ReadFile(profFile)
+	polChanged, profChanged := !bytes.Equal(pol, oldPol), !bytes.Equal(prof, oldProf)
+	cfgChanged := true
+	if old != nil {
+		oc, e1 := openshell.SandboxConfig(old)
+		ns, e2 := openshell.SandboxConfig(cfg)
+		cfgChanged = e1 != nil || e2 != nil || !bytes.Equal(oc, ns)
+	}
+	if polChanged {
+		if err := writeFile(polFile, pol, 0o644); err != nil {
+			return err
+		}
+	}
+	if profChanged {
+		if err := writeFile(profFile, prof, 0o644); err != nil {
+			return err
+		}
+		if err := a.Run(nil, "openshell", "-g", g, "profile", "import", "-f", profFile, "--global"); err != nil {
+			return fmt.Errorf("importing the provider profile: %w", err)
+		}
+	}
+	socket, service := "agent-openshell@"+name+".socket", "agent-openshell@"+name+".service"
+	// set-credential enables the socket once it has created the sandbox:
+	// before that, it creates the sandbox from the files written here.
+	if a.Run(nil, "systemctl", "-q", "is-enabled", socket) != nil {
+		fmt.Fprintf(a.Out, "agent %s: no sandbox yet; set-credential creates it with this configuration\n", name)
+		return nil
+	}
+	if old != nil && credentialChanged(old, cfg) {
+		a.Run(nil, "systemctl", "disable", "--now", socket, service)
+		a.Run(nil, "openshell", "-g", g, "sandbox", "delete", openshell.SandboxName(name))
+		a.Run(nil, "openshell", "-g", g, "provider", "delete", openshell.ProviderName(name))
+		cred := "gateway-token < token"
+		if cfg.Gateway.OAuth != nil {
+			cred = "gateway-client-secret < secret"
+		}
+		fmt.Fprintf(a.Out, "agent %s: its gateway credential changed (gateway.oauth); it is stopped until: agent-admin set-credential %s %s\n", name, name, cred)
+		return nil
+	}
+	if !polChanged && !profChanged && !cfgChanged {
+		return a.Run(nil, "systemctl", "try-restart", service)
+	}
+	// The relay must not start the old sandbox, or forward to none, while
+	// the new one is made; afterwards it runs again as it ran before
+	// (not after stop-all, say).
+	socketUp := a.Run(nil, "systemctl", "-q", "is-active", socket) == nil
+	serviceUp := a.Run(nil, "systemctl", "-q", "is-active", service) == nil
+	a.Run(nil, "systemctl", "stop", socket, service)
+	if err := a.createSandbox(cfg, a.sandboxImage(name)); err != nil {
+		return err
+	}
+	var start []string
+	if socketUp {
+		start = append(start, socket)
+	}
+	if serviceUp {
+		start = append(start, service)
+	} else {
+		// OpenShell started it; the relay starts it when it starts.
+		a.Run(nil, "openshell", "-g", g, "sandbox", "stop", openshell.SandboxName(name))
+	}
+	if len(start) == 0 {
+		return nil
+	}
+	return a.Run(nil, "systemctl", append([]string{"start"}, start...)...)
+}
+
+// credentialChanged: the provider's credential is made differently (a
+// static token or an OAuth client, and which client).
+func credentialChanged(old, cfg *config.Config) bool {
+	o, n := old.Gateway.OAuth, cfg.Gateway.OAuth
+	return (o == nil) != (n == nil) || (o != nil && o.ClientID != n.ClientID)
+}
+
+// sandboxImage is the image the agent's sandbox was created from
+// (openshell.env's AGENT_IMAGE), so that an edit keeps it.
+func (a *Admin) sandboxImage(name string) string {
+	b, _ := os.ReadFile(filepath.Join(a.agentDir(name), "openshell.env"))
+	for _, l := range strings.Split(string(b), "\n") {
+		if v, ok := strings.CutPrefix(l, "AGENT_IMAGE="); ok && v != "" {
+			return v
+		}
+	}
+	return a.Image
 }
 
 // Delete removes an agent. Its user stays: uids are not reused while
