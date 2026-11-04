@@ -46,7 +46,10 @@
         running: (activities[name] || []).filter(a => a.state === "running" || a.state === "waiting_approval").length,
         interaction: { agui: name !== "triage", client_tools: "deny" },
         schedules: name === "triage" ? [{ name: "morning-check", on_calendar: "*-*-* 06:00", prompt: "Check the host and patch what is due." }] : [],
-        lifecycle: { kind: "systemd", service: "agent@" + name + ".service", socket: "agent@" + name + ".socket" } });
+        // triage runs in an OpenShell sandbox (§3a).
+        lifecycle: name === "triage"
+            ? { kind: "openshell", sandbox: "agent-triage", gateway: "openshell", service: "agent-openshell@triage.service" }
+            : { kind: "systemd", service: "agent@" + name + ".service", socket: "agent@" + name + ".socket" } });
     let pending = [
         { id: "a-42", channel: "oob", action: "tools.call", server: "zypp", name: "install_patches",
           principal: { sub: "agent-patch-pilot", uid: 981, transport: "unix", client: { name: "custos/patch-pilot" } },
@@ -72,7 +75,8 @@
     };
     let enabled = { "agent-schedule@triage_morning-check.timer": true };
     // The agents' agent.yaml (root:agent-<name> 0640: root only).
-    const configs = { "patch-pilot": "version: 1\nname: patch-pilot\ndescription: Keeps the host patched.\n" +
+    const configs = { triage: "version: 1\nname: triage\nmodel: {provider: openai, name: m, endpoint: \"http://x\"}\n" +
+        "sandbox: {kind: openshell, openshell_gateway: openshell}\n", "patch-pilot": "version: 1\nname: patch-pilot\ndescription: Keeps the host patched.\n" +
         "model: {provider: openai, name: qwen3-32b, endpoint: \"http://127.0.0.1:8000/v1\"}\ngateway: {servers: [zypp]}\n" };
 
     // The journal: the agents' records (§10) and the gateway's (JSON in
@@ -242,6 +246,12 @@
                                      ? "agent-admin: the file is for another agent, not \"" + name + "\"" : null);
                                  if (why) return Promise.reject(new Error(why)).then(ok, bad);
                                  configs[name] = input;
+                                 // As agent-admin edit says it for an OpenShell agent whose
+                                 // credential's kind changed (§16a).
+                                 if (/oauth/.test(input)) {
+                                     return Promise.resolve("agent " + name + ": its gateway credential changed (gateway.oauth); it is stopped until: " +
+                                                            "agent-admin set-credential " + name + " gateway-client-secret\n").then(ok, bad);
+                                 }
                              }
                              if (cmd === "permissions") {
                                  if (!input.trim().startsWith("-")) return Promise.reject(new Error("agent-admin: permissions: want a YAML list")).then(ok, bad);

@@ -135,8 +135,11 @@ function deleteControl(a) {
 /* Editing an agent's configuration (agent.yaml, §14): read through the
  * root bridge (the file is root:agent-<name> 0640), checked as the person
  * (agent-admin check -), saved with agent-admin edit NAME --from -, which
- * restarts the agent if it runs. The editor is kept per agent across the
- * tab's refreshes. */
+ * applies it: a systemd agent is restarted if it runs; for an OpenShell
+ * agent, agent-admin recreates its sandbox when the change reaches it, and
+ * stops it until set-credential when the credential's kind changes
+ * (§16a). What agent-admin says is shown. The editor is kept per agent
+ * across the tab's refreshes. */
 const editors = new Map();
 
 const configPath = name => "/etc/custos/agents/" + name + "/agent.yaml";
@@ -148,12 +151,17 @@ function configEditor(a) {
     const note = el("span", { class: "muted" });
     const open = el("button", { class: "secondary" }, "Edit configuration");
     const check = el("button", { class: "secondary" }, "Check");
-    const save = el("button", null, "Save and restart");
+    const save = el("button", null, "Save and apply");
     const cancel = el("button", { class: "link" }, "Cancel");
     const say = (t, cls) => { note.className = cls || "muted"; note.textContent = t };
+    const openshell = a.status && a.status.lifecycle && a.status.lifecycle.kind === "openshell";
     const editing = el("div", { class: "config-edit", hidden: true },
-        el("p", { class: "muted" }, "Saving replaces " + configPath(a.name) + ", syncs its schedules and restarts the " +
-           "agent if it runs: activities in flight end. Its name stays " + a.name + "."),
+        el("p", { class: "muted" }, "Saving replaces " + configPath(a.name) + " and syncs its schedules. " + (openshell
+            ? "If the change reaches the agent's OpenShell sandbox (its configuration, the model endpoint, the gateway " +
+              "settings), the sandbox is recreated: its sessions and the activities in flight end. A change of the " +
+              "credential's kind (gateway.oauth) stops the agent until its credential is set again. The backend and the " +
+              "OpenShell gateway cannot be changed here."
+            : "The agent is restarted if it runs: activities in flight end.") + " Its name stays " + a.name + "."),
         text, el("div", { class: "actions" }, save, check, cancel, note));
     open.addEventListener("click", async () => {
         open.disabled = true;
@@ -184,10 +192,12 @@ function configEditor(a) {
         save.disabled = true;
         say("Saving " + a.name + "…");
         try {
-            await admin(["edit", a.name, "--from", "-"], text.value);
+            const out = String(await admin(["edit", a.name, "--from", "-"], text.value) || "").trim();
             editing.hidden = true;
             open.hidden = false;
-            say("Saved; " + a.name + " restarted if it was running.", "ok-text");
+            // agent-admin's own words, when it has any (an OpenShell agent
+            // without a sandbox yet, or one that needs its credential again).
+            say(out ? "Saved. " + out.replace(/^agent-admin: /gm, "") : "Saved and applied.", out ? "note-text" : "ok-text");
             showError(null);
             tabs.agents.refresh();
         } catch (ex) {
