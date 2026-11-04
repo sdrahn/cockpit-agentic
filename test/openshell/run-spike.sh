@@ -140,9 +140,9 @@ if grep -q '^\[openshell\.supervisor\.network\]' "$osh_toml"; then
 else
 	printf '\n[openshell.supervisor.network]\nadditional_ca_bundle = "%s"\n' "$osh_home/.config/openshell/mcp-gateway-ca.pem" >>"$osh_toml"
 fi
-check "OpenShell's configuration check takes it" runuser -u "$osh_user" -- openshell-gateway config preflight ||
+check "OpenShell's configuration check takes it" runuser -u "$osh_user" -- env HOME="$osh_home" XDG_CONFIG_HOME="$osh_home/.config" openshell-gateway config preflight ||
 	{
-		runuser -u "$osh_user" -- openshell-gateway config preflight 2>&1 | tail -n 15 | sed 's/^/    | preflight: /'
+		runuser -u "$osh_user" -- env HOME="$osh_home" XDG_CONFIG_HOME="$osh_home/.config" openshell-gateway config preflight 2>&1 | tail -n 15 | sed 's/^/    | preflight: /'
 		sed 's/^/    | gateway.toml: /' "$osh_toml"
 	}
 check "the OpenShell gateway restarts with the CA" systemctl --user --machine="$osh_user@" restart openshell-gateway ||
