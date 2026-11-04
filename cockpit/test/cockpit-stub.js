@@ -71,6 +71,9 @@
         control: { stopped: false },
     };
     let enabled = { "agent-schedule@triage_morning-check.timer": true };
+    // The agents' agent.yaml (root:agent-<name> 0640: root only).
+    const configs = { "patch-pilot": "version: 1\nname: patch-pilot\ndescription: Keeps the host patched.\n" +
+        "model: {provider: openai, name: qwen3-32b, endpoint: \"http://127.0.0.1:8000/v1\"}\ngateway: {servers: [zypp]}\n" };
 
     // The journal: the agents' records (§10) and the gateway's (JSON in
     // MESSAGE, "audit": true). a-17 was declined, a-9 approved and run,
@@ -194,6 +197,18 @@
                 },
             };
         },
+        file(path, opts) {
+            opts = opts || {};
+            return {
+                read() {
+                    log.push(["read", path, "", "", opts.superuser || ""]);
+                    const m = path.match(/^\/etc\/custos\/agents\/([^/]+)\/agent\.yaml$/);
+                    if (!m) return Promise.reject({ problem: "not-found" });
+                    if (opts.superuser !== "require") return Promise.reject({ problem: "access-denied" });
+                    return configs[m[1]] ? Promise.resolve(configs[m[1]]) : Promise.reject({ problem: "not-found" });
+                },
+            };
+        },
         spawn(args, opts) {
             opts = opts || {};
             log.push(["spawn", args.join(" "), (opts.environ || []).join(" "), "", opts.superuser || ""]);
@@ -222,6 +237,12 @@
                                  if (cmd === "create") posture.agents[name] = { mode: "supervised", paused: false, permissions: [] };
                              }
                              if (cmd === "delete") delete posture.agents[name];
+                             if (cmd === "edit") {
+                                 const why = invalid(input) || (!new RegExp("^name: " + name + "$", "m").test(input)
+                                     ? "agent-admin: the file is for another agent, not \"" + name + "\"" : null);
+                                 if (why) return Promise.reject(new Error(why)).then(ok, bad);
+                                 configs[name] = input;
+                             }
                              if (cmd === "permissions") {
                                  if (!input.trim().startsWith("-")) return Promise.reject(new Error("agent-admin: permissions: want a YAML list")).then(ok, bad);
                                  d.permissions = input.trim().split("\n").map(l => JSON.parse(l.replace(/^- /, "")));

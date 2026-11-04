@@ -126,6 +126,6 @@ curl --unix-socket /tmp/pp.sock http://agent/v1/status
 | SELinux module | written, not yet built or run on SLES 16 / Leap 16 |
 | OBS packaging | spec and services written, with the `-tests` subpackage; first OBS build to do |
 | Functional tests (`custos-tests`, openQA) | written; not yet run on SLES 16 / Leap 16 |
-| Cockpit page (`custos-cockpit`) | Activity, Approvals, Agents and Policy tabs implemented, smoke-tested against a stub of Cockpit; the emergency stop, the Audit tab, chat, and creating and deleting agents too; a test against a real Cockpit to do |
+| Cockpit page (`custos-cockpit`) | Activity, Approvals, Agents and Policy tabs implemented, smoke-tested against a stub of Cockpit; the emergency stop, the Audit tab, chat, and creating, editing and deleting agents too; a test against a real Cockpit to do |
 
 See [packaging/suse/README.md](packaging/suse/README.md) for building on OBS.

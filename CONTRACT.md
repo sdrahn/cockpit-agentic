@@ -716,5 +716,6 @@ tests, for openQA).
   with an agent over AG-UI, in the agent's view, with its tool calls and
   pending approvals linked to the Approvals tab), and creating and deleting
   agents (`agent-admin create --from -` after `check -`, and `delete`
-  after typing the agent's name). Still open: editing an agent's
-  configuration, and a test against a real Cockpit.
+  after typing the agent's name), and editing an agent's configuration
+  (read through the root bridge, `check -`, then `agent-admin edit
+  --from -`). Still open: a test against a real Cockpit.

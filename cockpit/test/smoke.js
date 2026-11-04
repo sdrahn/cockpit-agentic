@@ -280,6 +280,37 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(deleted.length === 1 && deleted[0][4] === "require", "delete runs agent-admin delete --keep-state through the root bridge");
     check(cockpit_path(await page.url()) === "agents", "after deleting, the list is shown");
 
+    // Editing an agent's configuration.
+    await page.goto(url + "?edit#/agents/patch-pilot");
+    await page.waitForSelector("#config-patch-pilot button:has-text('Edit configuration')");
+    await page.click("#config-patch-pilot button:has-text('Edit configuration')");
+    await page.waitForSelector("#config-patch-pilot .config-yaml");
+    const read = (await calls()).find(c => c[0] === "read" && c[1] === "/etc/custos/agents/patch-pilot/agent.yaml");
+    check(read && read[4] === "require", "the configuration is read through the root bridge (root:agent-<name> 0640)");
+    check((await page.inputValue("#config-patch-pilot .config-yaml")).includes("description: Keeps the host patched."),
+          "the editor has the agent's configuration");
+    await page.fill("#config-patch-pilot .config-yaml",
+                    (await page.inputValue("#config-patch-pilot .config-yaml")).replace("name: patch-pilot", "name: other"));
+    await page.click("#config-patch-pilot button:has-text('Save and restart')");
+    await page.waitForFunction(() => document.querySelector("#config-patch-pilot").textContent.includes("another agent"));
+    check(await page.isVisible("#config-patch-pilot .config-yaml"), "a configuration for another agent is refused, the editor stays");
+    await page.fill("#config-patch-pilot .config-yaml",
+                    (await page.inputValue("#config-patch-pilot .config-yaml")).replace("name: other", "name: patch-pilot")
+                        .replace("Keeps the host patched.", "Keeps the host patched, gently."));
+    await page.waitForTimeout(5500); // a refresh keeps what is being edited
+    check((await page.inputValue("#config-patch-pilot .config-yaml")).includes("gently"), "a refresh keeps the edit");
+    await page.click("#config-patch-pilot button:has-text('Check')");
+    await page.waitForFunction(() => document.querySelector("#config-patch-pilot").textContent.includes("valid"));
+    await page.click("#config-patch-pilot button:has-text('Save and restart')");
+    await page.waitForFunction(() => document.querySelector("#config-patch-pilot").textContent.includes("Saved"));
+    const edits = await spawned("agent-admin edit patch-pilot --from -");
+    check(edits.length === 2 && edits.every(e => e[4] === "require" && e[2] === "SUDO_USER=carol"),
+          "save runs agent-admin edit --from - through the root bridge, naming the person");
+    check(!(await page.isVisible("#config-patch-pilot .config-yaml")), "the editor closes after saving");
+    await page.click("#config-patch-pilot button:has-text('Edit configuration')");
+    await page.waitForSelector("#config-patch-pilot .config-yaml");
+    check((await page.inputValue("#config-patch-pilot .config-yaml")).includes("gently"), "reopened, it has the saved configuration");
+
     // Audit tab: each state-changing action's history, and the records.
     await page.goto(url + "?audit#/audit");
     await page.waitForSelector("#action-a-17");
