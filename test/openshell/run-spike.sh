@@ -132,12 +132,19 @@ osh_home=$(getent passwd "$osh_user" | cut -d: -f6)
 osh_toml=$osh_home/.config/openshell/gateway.toml
 check "the OpenShell gateway's user is known (OPENSHELL_GATEWAY_USER)" test -n "$osh_user" -a -d "$osh_home/.config/openshell"
 install -m 0644 -o "$osh_user" "$work/tls/ca.pem" "$osh_home/.config/openshell/mcp-gateway-ca.pem"
-[ -e "$osh_toml" ] || install -m 0644 -o "$osh_user" /dev/null "$osh_toml"
+# A gateway.toml must say its format (OpenShell 0.1.7: version 2); the
+# package does not ship one for a local gateway.
+[ -s "$osh_toml" ] || { printf '[openshell]\nversion = 2\n' >"$osh_toml" && chown "$osh_user" "$osh_toml"; }
 if grep -q '^\[openshell\.supervisor\.network\]' "$osh_toml"; then
 	sed -i "/^\[openshell\.supervisor\.network\]/a additional_ca_bundle = \"$osh_home/.config/openshell/mcp-gateway-ca.pem\"" "$osh_toml"
 else
 	printf '\n[openshell.supervisor.network]\nadditional_ca_bundle = "%s"\n' "$osh_home/.config/openshell/mcp-gateway-ca.pem" >>"$osh_toml"
 fi
+check "OpenShell's configuration check takes it" runuser -u "$osh_user" -- openshell-gateway config preflight ||
+	{
+		runuser -u "$osh_user" -- openshell-gateway config preflight 2>&1 | tail -n 15 | sed 's/^/    | preflight: /'
+		sed 's/^/    | gateway.toml: /' "$osh_toml"
+	}
 check "the OpenShell gateway restarts with the CA" systemctl --user --machine="$osh_user@" restart openshell-gateway ||
 	systemctl --user --machine="$osh_user@" status --no-pager openshell-gateway 2>&1 | tail -n 15 | sed 's/^/    | /'
 check "the OpenShell gateway answers again" eventually 90 osh status
