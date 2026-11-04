@@ -712,3 +712,32 @@ func TestEditOpenShellWaitsForDeletion(t *testing.T) {
 		t.Errorf("created over the old sandbox:\n%s", all)
 	}
 }
+
+// agent-admin's stdout is its own words (Cockpit shows them after an
+// edit); the programs it runs print to its stderr.
+func TestProgramsPrintToStderr(t *testing.T) {
+	dir := t.TempDir()
+	out, _ := os.Create(filepath.Join(dir, "out"))
+	errf, _ := os.Create(filepath.Join(dir, "err"))
+	oldOut, oldErr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = out, errf
+	a := New()
+	runErr := a.Run(nil, "sh", "-c", "echo run-out; echo run-err >&2")
+	envErr := a.RunEnv([]string{"X=env-out"}, "sh", "-c", "echo $X")
+	os.Stdout, os.Stderr = oldOut, oldErr
+	out.Close()
+	errf.Close()
+	if runErr != nil || envErr != nil {
+		t.Fatal(runErr, envErr)
+	}
+	o, _ := os.ReadFile(filepath.Join(dir, "out"))
+	e, _ := os.ReadFile(filepath.Join(dir, "err"))
+	if len(o) != 0 {
+		t.Errorf("stdout has the programs' output: %q", o)
+	}
+	for _, w := range []string{"run-out", "run-err", "env-out"} {
+		if !strings.Contains(string(e), w) {
+			t.Errorf("stderr lacks %q: %q", w, e)
+		}
+	}
+}

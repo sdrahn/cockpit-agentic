@@ -399,7 +399,11 @@ if [ -n "$relay_ok" ]; then
 	# A limit is in the configuration the sandbox was created with: edit
 	# recreates the sandbox (same provider and token) and the relay (§16a).
 	sed 's/max_invocation_seconds: 300/max_invocation_seconds: 301/' "$work/sb.yaml" >"$work/sb-edited.yaml"
-	check "agent-admin edit sb (a limit)" agent-admin edit sb --from "$work/sb-edited.yaml"
+	check "agent-admin edit sb (a limit)" bash -c "agent-admin edit sb --from '$work/sb-edited.yaml' >'$work/edit.out'"
+	# Cockpit shows what edit prints on stdout: agent-admin's words only,
+	# openshell's progress (✓ Sandbox …, Created sandbox) on stderr.
+	check "agent-admin edit prints nothing of openshell's on stdout" not grep -qiE 'sandbox agent-sb|created sandbox|CUSTOS_RELAY_SECRET' "$work/edit.out" ||
+		sed 's/^/    | /' "$work/edit.out"
 	check "the relay runs again" systemctl is-active -q agent-openshell@sb.socket
 	check "the agent answers with the new limit (the sandbox was recreated)" eventually 180 bash -c \
 		"curl -sf --max-time 10 --unix-socket /run/agents/sb/api.sock http://agent/v1/status | jq -e '.limits.max_invocation_seconds == 301' >/dev/null"

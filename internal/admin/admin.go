@@ -67,11 +67,14 @@ type Admin struct {
 	SandboxGone time.Duration
 }
 
+// New is agent-admin on a host. Its standard output is its own messages
+// (Out), which a control plane shows; what the programs it runs print
+// (systemctl, openshell, …) goes to standard error (CONTRACT.md §17).
 func New() *Admin {
 	return &Admin{
 		Run: func(stdin io.Reader, name string, args ...string) error {
 			c := exec.Command(name, args...)
-			c.Stdin, c.Stdout, c.Stderr = stdin, os.Stdout, os.Stderr
+			c.Stdin, c.Stdout, c.Stderr = stdin, os.Stderr, os.Stderr
 			return c.Run()
 		},
 		Out: os.Stdout, In: os.Stdin, Now: time.Now,
@@ -80,7 +83,7 @@ func New() *Admin {
 		RunEnv: func(env []string, name string, args ...string) error {
 			c := exec.Command(name, args...)
 			c.Env = append(os.Environ(), env...)
-			c.Stdout, c.Stderr = os.Stdout, os.Stderr
+			c.Stdout, c.Stderr = os.Stderr, os.Stderr
 			return c.Run()
 		},
 		Image:         envOr("CUSTOS_OPENSHELL_IMAGE", "localhost/custos-agent:latest"),

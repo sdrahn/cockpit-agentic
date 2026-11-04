@@ -592,7 +592,11 @@ the sandbox from them.
 
 ## 17. `agent-admin`
 
-Run as root, by hand or by Cockpit with administrative access:
+Run as root, by hand or by Cockpit with administrative access. Its
+standard output is its own messages (and `list`'s and `show`'s
+results), which a control plane may show; what the programs it runs
+print (`systemctl`, `systemd-sysusers`, `openshell`, …) goes to
+standard error:
 
 | Command | Does |
 |---|---|
