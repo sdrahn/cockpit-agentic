@@ -123,7 +123,9 @@ jobs:
       - name: Prepare sources (tarball and vendor.tar.gz, as the OBS services do)
         run: |
           version=$(rpmspec -q --srpm --qf '%{version}' packaging/suse/custos.spec)
-          git archive --prefix="custos-$version/" -o ~/rpmbuild/SOURCES/custos-$version.tar.gz HEAD
+          # As _service makes it for OBS: without .git and .github, so that
+          # %check runs on what OBS builds.
+          git archive --prefix="custos-$version/" -o ~/rpmbuild/SOURCES/custos-$version.tar.gz HEAD -- . ':!.github'
           go mod vendor && tar czf ~/rpmbuild/SOURCES/vendor.tar.gz vendor && rm -rf vendor
           cp packaging/suse/custos-rpmlintrc ~/rpmbuild/SOURCES/
       - name: rpmbuild (with %check)
