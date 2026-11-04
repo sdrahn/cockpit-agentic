@@ -80,6 +80,7 @@ spec, `_service` and the rpmlintrc again whenever they change here.
 | `custos-selinux` | the `custos` module; pulled in where `selinux-policy-targeted` is installed |
 | `custos-tests` | the functional tests for openQA and other test systems (`/usr/libexec/custos/tests/run-tests.sh --disposable --results DIR`: TAP and JUnit), with a scripted model server and an MCP test server; they change the system for good, so only for test systems ([test/openqa](../../test/openqa/README.md)) |
 | `custos-cockpit` | the Cockpit page: the agents' activities, approvals (decided as the logged-in person), agents and their posture, audit, chat and the emergency stop; requires `cockpit-bridge` |
+| `custos-docs` | the user guide and the contract (`/usr/share/custos/docs`) and the mcp-docs collection file `/usr/share/mcp-docs/collections.d/custos.yaml`; installed with mcp-docs (it supplements `custos and mcp-docs`), mcp-docs serves them as the collection `custos` |
 
 `custos-cockpit` is the Cockpit page (`/usr/share/cockpit/custos`), the
 control plane built on CONTRACT.md Part I; see `docs/screenshots`.
@@ -130,6 +131,9 @@ osc commit
 ```
 
 ## After installation
+
+The user guide (`custos-docs`, `/usr/share/custos/docs/user-guide/`)
+walks through it in full: chapters 2 to 4. In short:
 
 ```bash
 usermod -aG agent-clients <admin>              # who may supervise agents

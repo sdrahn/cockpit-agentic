@@ -1,0 +1,198 @@
+---
+title: "12. Troubleshooting"
+description: Symptoms with their causes and fixes - installation, configuration errors, agents that do not start, the gateway connection, tools not offered or denied, models, approvals, schedules, Cockpit, OpenShell and tokens, SELinux - and a table of error messages.
+tags: [troubleshooting, errors, problems, faq, debugging]
+---
+
+# 12. Troubleshooting
+
+Each section starts from what you see and gives the cause and the fix.
+The table of [error messages](#error-messages) maps each message, as
+the programs print it, to its section. Two commands tell most of the
+story:
+
+```bash
+journalctl -u agent@NAME.service -t agent-NAME --since -30min     # the agent: its unit and its records
+journalctl -u mcp-gateway.service --since -30min                 # the gateway: decisions and refusals
+```
+
+## Installation problems {#installation}
+
+| You see | Cause | Fix |
+|---|---|---|
+| `semodule -l` has no `custos` | `custos-selinux` not installed, or installed before `mcp-gateway-selinux` | `zypper install custos-selinux`; or `zypper install -f custos-selinux` |
+| `getent group agent-clients` prints nothing | sysusers not applied | `systemd-sysusers /usr/lib/sysusers.d/custos.conf` |
+| `/run/mcp-gateway/mcp.sock` missing | mcp-gateway not running | `systemctl enable --now mcp-gateway.service`; `mcp-gateway-admin doctor` |
+| labels of `/run/agents`, `/var/lib/agents` or `/etc/custos` are generic (`var_run_t`, `etc_t`) | created before the module was loaded | `restorecon -R /run/agents /var/lib/agents /etc/custos /usr/libexec/custos` |
+
+## Configuration errors {#configuration-errors}
+
+`agent-admin check` and `create` print every problem at once:
+
+| Message | Fix |
+|---|---|
+| `version: N: this launcher implements version 1` | `version: 1` |
+| `name: "…": want lower-case letters, digits and '-', 2-32 characters, starting with a letter` | rename the agent |
+| `name "…" does not match the directory "…"`, `the file is for agent "…", not "…"` | the file's `name` must be the `NAME` given to `agent-admin` |
+| `model.provider: missing`, `model.provider: "…": want gemini, vertex or openai` | set the provider ([chapter 5](05-configuration.md#models)) |
+| `model.endpoint: "…": want an http(s) URL` | a full URL, `http://127.0.0.1:8000/v1` |
+| `model.endpoint: only for provider openai` | remove it for `gemini` and `vertex` |
+| `model.credential: provider gemini needs an API key credential` | `set-credential NAME model-key` and `model.credential: model-key` |
+| `instruction and instruction_file: set one of them` | keep one |
+| `gateway.servers: name at least one gateway server` | list the servers the model uses |
+| `gateway.tools: "…": want <server>__<tool>`, `… server "…" is not in gateway.servers` | fix the tool name, or add its server |
+| `gateway: set socket or url, not both` | `url` for OpenShell agents, `socket` (or nothing) otherwise |
+| `gateway.url: "…": want an https URL (http only on the host's loopback, for tests)` | `https://host.openshell.internal:8443/mcp` |
+| `gateway.url: an openshell agent reaches the gateway over HTTPS (CONTRACT.md §3a)` | add `gateway.url` |
+| `gateway.oauth: only with sandbox kind openshell (OpenShell's gateway mints the tokens)` | remove `oauth`, or use the `openshell` backend |
+| `schedules[N].name: "…": want a unique lower-case name` | rename the schedule |
+| `schedules[N].on_calendar: want a systemd calendar expression (systemd.time(7))` | test it with `systemd-analyze calendar '…'` |
+| `client_tools: "…": want deny or {allow: [...]}` | `client_tools: deny` |
+| `sandbox.kind: "…": want systemd or openshell` | fix the kind |
+| an unknown key (`field … not found`) | remove or correct the key: unknown keys are errors |
+
+## An agent does not start or answer {#agent-start}
+
+- **`curl` to its socket hangs or fails, the unit failed.**
+  `systemctl status agent@NAME.service` and its journal name the error.
+  `config.invalid` in the journal means the installed configuration is
+  wrong: `agent-admin check NAME`.
+- **`model.credential "…": no credentials directory`** or
+  **`model.credential: open …`**: the credential is not set or has another
+  name. `agent-admin set-credential NAME <cred> < secret`, then
+  `systemctl restart agent@NAME.service`.
+- **`connect: permission denied` from a member of `agent-clients`**:
+  the session predates the group membership. Log in again.
+- **The agent answers `409` to a new activity**: it is paused
+  (`agent-admin show NAME`); `agent-admin resume NAME`.
+
+## The agent cannot reach the gateway {#gateway}
+
+`/v1/status` says `"reachable": false`, or the agent's answers say its
+tools failed:
+
+- mcp-gateway is not running: `systemctl status mcp-gateway.service`.
+- The socket is not the gateway's (`gateway.socket`), or the agent's
+  user lost `mcp-users`: `id agent-NAME`.
+- The gateway was restarted: the agent reconnects at its next call.
+
+## A tool is not offered or always denied {#tool-denied}
+
+The gateway hides what an agent may not call, and denies what it calls
+anyway. Check in this order:
+
+1. The server is registered with the gateway
+   ([chapter 3](03-gateway.md#servers)) and named in the agent's
+   `gateway.servers`.
+2. A permission names the tool (`agent-admin show NAME`). In Cockpit,
+   *Policy*, **What would the gateway decide?**
+3. The mode allows it: `advisory` denies every change
+   ([chapter 6](06-permissions-and-modes.md#modes)).
+4. The agent is not paused and the emergency stop is off
+   (`agent-admin show`).
+5. No gateway role is bound to `agent-NAME` or a group it is in: that
+   denies the agent everything. Check the role data
+   (`mcp-gateway-admin policy show`).
+6. The gateway's audit says why: `journalctl -u mcp-gateway.service -o cat | grep '"sub":"agent-NAME"' | grep deny`.
+
+## The model is not reached {#model}
+
+- **`connect: permission denied` to the model's port**: SELinux allows
+  `agent_t` only HTTP ports. Label the port, or turn on
+  `agent_connect_any` ([chapter 5](05-configuration.md#selinux-and-the-models-port)).
+- **`connection refused`**: the server is not listening on that address.
+  For an OpenShell agent, the host's server must listen where the
+  sandbox reaches it (`host.openshell.internal`).
+- **`401` or `403` from the model's API**: the key is wrong or missing
+  (`model.credential`).
+
+## Approvals {#approvals}
+
+| You see | Cause | Fix |
+|---|---|---|
+| a change is denied instead of waiting | the agent is in `advisory` mode, or no permission names the tool | `agent-admin mode NAME supervised`; add the permission |
+| a change runs without an approval | the permission says `read_only: true`, or `autonomous: true` in `bounded` mode, or a grant covers it | correct the permission; revoke the grant ([chapter 7](07-approvals.md#grants)) |
+| an approval in the list, but the agent's activity ended | the call waited longer than `approval_timeout` | approving it lets the agent's next identical call through; or decline it |
+| `You may not decide approval …: the gateway's approver rules do not name you.` | not an approver for that server | add yourself to the approver rules ([chapter 3](03-gateway.md#approvers)) |
+| the decision is recorded as root's | decided as root | decide as yourself ([chapter 7](07-approvals.md#who-is-recorded)) |
+
+## Schedules do not run {#schedules}
+
+- `systemctl list-timers 'agent-schedule@*'`: the timer is missing or
+  disabled. `systemctl enable --now agent-schedule@NAME_SCHED.timer`.
+- After `stop-all`, timers stay stopped until `release-all`.
+- `agent-admin trigger NAME_SCHED` runs it by hand and prints why it
+  fails (`agent … has no schedule "…"`: the schedule's name in
+  `agent.yaml` differs).
+
+## Cockpit problems {#cockpit}
+
+| You see | Cause | Fix |
+|---|---|---|
+| no *Custos* in Cockpit's menu | `custos-cockpit` not installed | `zypper install custos-cockpit`, then reload the browser page |
+| `…: no access to its socket (members of agent-clients have it)` | the person is not in `agent-clients` | `usermod -aG agent-clients USER`, log in again |
+| `This needs administrative access (turn it on in Cockpit's top bar).` | an administrative action without it | turn on *Administrative access* (sudo) |
+| `Reading the journal needs access to it (systemd-journal or wheel).` | no journal access | add the person to `systemd-journal` |
+| *The gateway's records are not readable here* (Audit) | no access to the gateway's journal | as above |
+| `Approving your own request needs your password: …` | the approval is the person's own, which only `self` allows | use mcp-gateway's page or its command line, which ask for the password |
+| an agent shows *unreachable* | its socket refused the person, or the agent failed | the row says why; see [above](#agent-start) |
+
+## OpenShell agents and tokens {#openshell}
+
+| You see | Cause | Fix |
+|---|---|---|
+| `importing the provider profile: …`, or `Unknown gateway` from `openshell` | OpenShell's gateway is not registered for root, or has another name | copy the registration to `/root/.config/openshell` ([chapter 11](11-openshell.md#install-openshell)); `sandbox.openshell_gateway` |
+| `minting the first token (the issuer refused the client?): …` | wrong client id or secret, or the client lacks the client credentials grant | fix the client at the identity provider; `set-credential` again |
+| a certificate error from the agent's calls | OpenShell does not trust the gateway's CA | `additional_ca_bundle` ([chapter 11](11-openshell.md#trust)) |
+| `401 invalid token` in the gateway's journal (`token rejected`) | wrong issuer or audience, expired, bad signature | the token's `iss` and `aud` must be `http.issuer` and `http.audience`; check with `mcp-gateway-admin setup http --token` |
+| `403 insufficient scope` | the token lacks a scope of `http.scopes` | add the scope to the client (as *Default* in Keycloak) and to `gateway.oauth.scopes` |
+| every call denied, the audit shows the agent's subject | its issuer is not in `_http.yaml`, or `sub` is not `agent-NAME` | [chapter 11](11-openshell.md#issuers), [step 5](11-openshell.md#idp) |
+| the agent's records missing from the host's journal | the relay cannot read the sandbox's container: `CUSTOS_OPENSHELL_USER` not set at `create` for rootless Podman | `journalctl -u agent-openshell@NAME.service` names it (`agent-openshell-logs: …`); recreate the agent with the variable set |
+| sandboxes fail to start with rootless Podman (`memory.swap.max`) | cgroup controllers not delegated to the user | the `user@.service` drop-in, then restart the user's manager ([chapter 11](11-openshell.md#install-openshell)) |
+| brief `500` errors around a token renewal | OpenShell's proxy while it renews | none: the agent retries and reconnects |
+| `agent-openshell-start: sandbox agent-NAME is not Ready after 120s: …` in `journalctl -u agent-openshell@NAME.service`; the agent's socket does not answer | OpenShell did not get the sandbox *Ready* within 2 minutes. The text after the colon says why: `sandbox agent-NAME is Stopping` (a stop that does not finish), OpenShell's refusal of the start (`previous driver operation is still pending`, `sandbox must be Stopped…`), or `openshell does not know sandbox agent-NAME` | the unit tries again after 5 seconds (`Restart=on-failure`). If it keeps failing: `openshell sandbox get agent-NAME` and `openshell logs agent-NAME`. A sandbox OpenShell no longer knows is made again by `agent-admin set-credential` |
+| `sandbox … is still there … after its deletion` (edit) | OpenShell did not delete the old sandbox in 2 minutes | `openshell sandbox list`; delete it by hand, then `agent-admin edit` again |
+
+## agent-admin says the gateway's policy did not load the change {#policy-not-loaded}
+
+`the gateway's policy did not load the change within 20s` means
+mcp-gateway's policy engine did not read the agent's data in time. Check
+`systemctl status mcp-opa.service` and its journal: a YAML error in a
+file of `/etc/mcp-gateway/policy/agents/` stops it from loading.
+`mcp-gateway's OPA is not running; the change is in force when it loads …`
+is a warning: the file is written, and the engine reads it at its start.
+
+## SELinux denials {#selinux}
+
+```bash
+ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agents_t'
+```
+
+| Denial | Cause | Fix |
+|---|---|---|
+| `agent_t` → `name_connect` on a port | the model's port is not an HTTP port | [chapter 5](05-configuration.md#selinux-and-the-models-port) |
+| `agent_t` → files of a generic type | files restored or created before the module | `restorecon -R /etc/custos /var/lib/agents /run/agents` |
+| anything else in these domains | unexpected | report it with the `ausearch` output |
+
+## Error messages {#error-messages}
+
+| Message (as printed) | Section |
+|---|---|
+| any `version:`, `name:`, `model.`, `gateway.`, `schedules[…]`, `client_tools:`, `sandbox.kind:` message | [Configuration errors](#configuration-errors) |
+| `agent … exists` | the agent exists: `edit`, or `delete` first |
+| `"…" is not a valid agent name` | [Configuration errors](#configuration-errors) |
+| `no configuration on stdin` | `--from -` with nothing piped in |
+| `mode "…": want advisory, supervised or bounded` | [chapter 6](06-permissions-and-modes.md#modes) |
+| `permissions[N]: server missing`, `permissions[N]: unknown key "…"` | [chapter 6](06-permissions-and-modes.md#permissions) |
+| `…: no data for agent …` | the agent has no gateway data: recreate it, or `agent-admin delete` and `create` |
+| `the gateway's policy did not load the change within 20s` | [The gateway's policy does not take a change](#policy-not-loaded) |
+| `agent … reaches the gateway by its socket; … is for OpenShell agents` | `gateway-token` and `gateway-client-secret` are for OpenShell agents |
+| `agent … has an OAuth client (gateway.oauth): set gateway-client-secret, OpenShell mints its tokens` | use `gateway-client-secret` |
+| `agent … has no OAuth client (gateway.oauth): set gateway-token` | use `gateway-token`, or add `gateway.oauth` |
+| `sandbox.kind: agent … runs with …, not …; delete and create it to change the backend` | the backend is fixed at `create` |
+| `CUSTOS_OPENSHELL_USER: …` | the variable names no user ([chapter 11](11-openshell.md#install-openshell)) |
+| `importing the provider profile`, `creating the provider`, `minting the first token`, `creating the sandbox` | [OpenShell agents and tokens](#openshell) |
+| `model.credential "…": no credentials directory` | [An agent does not start](#agent-start) |
+| `401 invalid token`, `403 insufficient scope` | [OpenShell agents and tokens](#openshell) |
+| `agent-openshell-start: sandbox … is not Ready after 120s` | [OpenShell agents and tokens](#openshell) |
+| Cockpit: `no access to its socket`, `This needs administrative access`, `Reading the journal needs access`, `You may not decide approval` | [Cockpit problems](#cockpit) |

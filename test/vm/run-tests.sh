@@ -229,6 +229,22 @@ for d in /run/agents /var/lib/agents /etc/custos; do
 	fi
 done
 
+section Documentation
+if rpm -q custos-docs >/dev/null 2>&1; then
+	check "the user guide is installed" test -f /usr/share/custos/docs/user-guide/README.md
+	check "the contract is installed beside it" test -f /usr/share/custos/docs/CONTRACT.md
+	check "the mcp-docs collection file names the guide" \
+		grep -qx 'root: /usr/share/custos/docs' /usr/share/mcp-docs/collections.d/custos.yaml
+	if command -v mcp-docs >/dev/null; then
+		check "mcp-docs serves the collection custos" bash -c \
+			"timeout 10 mcp-docs </dev/null 2>&1 >/dev/null | grep -q 'serving .*custos=/usr/share/custos/docs'"
+	else
+		skip "mcp-docs serves the collection custos (mcp-docs is not installed)"
+	fi
+else
+	skip "the user guide is installed (custos-docs is not installed)"
+fi
+
 section Setup
 systemctl stop custos-fakemodel.service >/dev/null 2>&1
 systemd-run --unit=custos-fakemodel --property=DynamicUser=yes "$dir/fakemodel" --listen 127.0.0.1:8008 >/dev/null 2>&1
