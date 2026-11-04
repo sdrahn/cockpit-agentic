@@ -128,7 +128,7 @@ func run(a *admin.Admin, args []string) error {
 	case "stop-all":
 		return a.StopAll(by())
 	case "release-all":
-		return a.ReleaseAll()
+		return a.ReleaseAll(by())
 	case "-h", "--help", "help":
 		fmt.Println(usage)
 		return nil

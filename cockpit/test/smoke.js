@@ -165,6 +165,34 @@ function site() {
     check(!pp[5].includes("self"), "posture: self is not an agent's approver");
     if (shots) await page.screenshot({ path: path.join(shots, "policy.png"), fullPage: true });
 
+    // The emergency stop: confirmed, through the root bridge, naming the
+    // person; the banner, then Release.
+    await page.goto(url + "?stop#/activity");
+    await page.waitForSelector("#activities .activity");
+    check(!(await page.isVisible("#stop-confirm")) && !(await page.isVisible("#stopped")), "no stop and no confirmation at first");
+    await page.click("header #stop-all");
+    check(await page.isVisible("#stop-confirm"), "Stop all agents asks first");
+    check((await spawned("agent-admin stop-all")).length === 0, "nothing is stopped before the confirmation");
+    await page.click("#stop-cancel");
+    check(!(await page.isVisible("#stop-confirm")), "Cancel closes the confirmation");
+    await page.click("header #stop-all");
+    await page.click("#stop-go");
+    await page.waitForSelector("#stopped:not([hidden])");
+    const stop = await spawned("agent-admin stop-all");
+    check(stop.length === 1 && stop[0][4] === "require" && stop[0][2] === "SUDO_USER=carol",
+          "stop-all runs through the root bridge, naming the person");
+    check((await page.textContent("#stopped")).includes("All agents stopped by carol"), "the banner says who stopped them");
+    check(await page.$eval("#stop-all", b => b.disabled), "Stop all agents is off while stopped");
+    if (shots) await page.screenshot({ path: path.join(shots, "stopped.png") });
+    await page.click("#stopped button:has-text('Release…')");
+    check((await page.textContent("#stopped")).includes("Paused agents stay paused"), "Release says what it does first");
+    check((await spawned("agent-admin release-all")).length === 0, "nothing is released before the confirmation");
+    await page.click("#stopped button:has-text('Release all agents')");
+    await page.waitForSelector("#stopped", { state: "hidden" });
+    const rel = await spawned("agent-admin release-all");
+    check(rel.length === 1 && rel[0][4] === "require" && rel[0][2] === "SUDO_USER=carol", "release-all names the person too");
+    check(!(await page.$eval("#stop-all", b => b.disabled)), "Stop all agents is back");
+
     check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join("; ") : ""));
     await browser.close();
 })().catch(e => { console.error(e); process.exit(1); });

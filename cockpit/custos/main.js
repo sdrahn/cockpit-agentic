@@ -45,6 +45,7 @@ function init() {
     for (const t of Object.values(tabs)) {
         if (t.init) t.init();
     }
+    initStop();
     const user = cockpit.user ? cockpit.user() : null;
     if (user) {
         Promise.resolve(user).then(u => {
