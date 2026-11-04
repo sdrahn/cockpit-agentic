@@ -13,12 +13,16 @@ env:
   # its packages for the VM test and its policy for the policy tests.
   GATEWAY_REPO: sdrahn/mcp-gateway
   GATEWAY_REF: main
+  # mcp-docs, which serves custos-docs's guide to agents.
+  MCP_DOCS_MODULE: github.com/sdrahn/mcp-docs/cmd/mcp-docs@main
 
 jobs:
   go:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Sources only (no binaries, nothing over 1 MiB)
+        run: tools/check-tree
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -142,6 +146,12 @@ jobs:
           # The labels the module gives the programs.
           matchpathcon /usr/libexec/custos/agent-launcher | grep -q agent_exec_t
           matchpathcon /usr/libexec/custos/agent-delegate | grep -q mcpsrv_agents_exec_t
+      - name: custos-docs served by mcp-docs
+        run: |
+          test -f /usr/share/custos/docs/user-guide/README.md
+          test -f /usr/share/mcp-docs/collections.d/custos.yaml
+          GOBIN=/usr/local/bin go install "$MCP_DOCS_MODULE"
+          test/docs/mcp-docs-smoke.sh /usr/local/bin/mcp-docs
       - name: Collect the packages for the VM test
         run: cp ~/rpmbuild/RPMS/*/custos*.rpm rpms/ && ls rpms
       - uses: actions/upload-artifact@v4
