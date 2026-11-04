@@ -186,7 +186,11 @@ func newModel(ctx context.Context, cfg *config.Config, creds string) (model.LLM,
 func openSessions(dir string) (session.Service, *gorm.DB, error) {
 	dsn := "file::memory:?cache=shared"
 	if dir != "" {
-		dsn = filepath.Join(dir, "sessions.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+		// _txlock=immediate: a transaction takes the write lock when it
+		// begins, waiting busy_timeout for it. A deferred one that reads
+		// first fails at once with SQLITE_BUSY when another run writes
+		// (a schedule's and an AG-UI client's runs at the same time).
+		dsn = filepath.Join(dir, "sessions.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_txlock=immediate"
 	}
 	dial := sqlite.Open(dsn)
 	svc, err := database.NewSessionService(dial, &gorm.Config{Logger: logger.Discard})

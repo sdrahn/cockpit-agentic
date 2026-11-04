@@ -490,8 +490,10 @@ runs `agent-launcher serve` with:
 
 The launcher exits after 10 minutes without requests or running
 activities, and the socket starts it again. `agent-schedule@<name>_<schedule>.timer`
-runs `agent-launcher trigger <name>:<schedule>`, which posts the
-schedule's prompt as root with `origin.kind: schedule`.
+runs `agent-admin trigger <name>_<schedule>`, which posts the
+schedule's prompt as root with `origin.kind: schedule`. (Not
+`agent-launcher`: systemd would run its program in `agent_t`, which may
+not reach agents' sockets.)
 
 ## 16. The launcher
 
@@ -525,6 +527,7 @@ Run as root, by hand or by Cockpit with administrative access:
 | `pause NAME`, `resume NAME` | §8 (gateway data and `/v1/pause`) |
 | `stop-all`, `release-all` | the emergency stop (§8) and its end |
 | `delete NAME [--keep-state]` | disables and stops units; removes configuration, gateway data, credentials, drop-ins, timers and, unless kept, state. The user stays, since uids are not reused while files may still belong to them |
+| `trigger NAME_SCHEDULE` | starts the schedule's activity (run by `agent-schedule@.service`) |
 | `list` | the agents |
 
 ## 18. SELinux (`cockpit_agentic` module)

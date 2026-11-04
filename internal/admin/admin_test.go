@@ -24,6 +24,11 @@ func newAdmin(t *testing.T) (*Admin, *rec) {
 			r.cmds = append(r.cmds, "POST "+sock+path)
 			return nil
 		},
+		Start: func(sock string, body map[string]any) error {
+			o := body["origin"].(map[string]any)
+			r.cmds = append(r.cmds, "START "+sock+" "+body["prompt"].(string)+" "+o["kind"].(string)+" "+o["schedule"].(string)+" "+o["by"].(string))
+			return nil
+		},
 	}
 	return a, r
 }
@@ -165,4 +170,25 @@ func testHas(s string, subs ...string) bool {
 		}
 	}
 	return true
+}
+
+func TestTrigger(t *testing.T) {
+	a, r := newAdmin(t)
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(yml), 0o644)
+	if err := a.Create("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	r.cmds = nil
+	if err := a.Trigger("patch-pilot_compliance"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "START /run/agents/patch-pilot/api.sock Run the compliance check. schedule compliance agent-schedule@patch-pilot_compliance.timer"; len(r.cmds) != 1 || r.cmds[0] != want {
+		t.Errorf("got %v\nwant %s", r.cmds, want)
+	}
+	for _, bad := range []string{"patch-pilot_nope", "patch-pilot", "../x_y"} {
+		if err := a.Trigger(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
 }

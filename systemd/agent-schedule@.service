@@ -1,12 +1,14 @@
 # A scheduled activity: %i is <agent>_<schedule> (neither has a "_") (CONTRACT.md §4, §11).
-# It asks the agent, as root, to start the schedule's activity.
+# It asks the agent, as root, to start the schedule's activity. It runs
+# agent-admin, not agent-launcher: systemd would run the launcher's
+# program in the agents' SELinux domain, which may not reach their sockets.
 [Unit]
 Description=Scheduled activity %i
 Documentation=https://github.com/sdrahn/cockpit-agentic/blob/main/CONTRACT.md
 
 [Service]
 Type=oneshot
-ExecStart=/usr/libexec/cockpit-agentic/agent-launcher trigger %i
+ExecStart=/usr/sbin/agent-admin trigger %i
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
