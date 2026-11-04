@@ -58,6 +58,9 @@
           scopes: ["once", "1h"], expires: new Date(Date.now() + 30000).toISOString(), waiting: true },
     ];
 
+    const WEEK = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+    const today = () => WEEK[new Date().getUTCDay()];
+    const otherDay = () => WEEK[(new Date().getUTCDay() + 3) % 7];
     // The gateway data (agent-admin show): old-agent has data but no
     // socket (stopped).
     let posture = {
@@ -68,7 +71,18 @@
                 { server: "systemd", tool: "restart_unit", autonomous: true, args: { unit: "^nginx\\.service$" } }] },
             triage: { mode: "advisory", paused: false, permissions: [{ server: "zypp", tool: "list_*", read_only: true },
                 { server: "agents", tool: "delegate", read_only: true }, { server: "zypp", tool: "install_patches" }] },
-            "disk-watch": { mode: "bounded", paused: false, permissions: [] },
+            // Task categories (§6a): one promoted for the whole of today (UTC),
+            // one promoted for another day, one supervised.
+            "disk-watch": { mode: "bounded", paused: false, permissions: [
+                { server: "snapper", tool: "delete_snapshots", category: "config-lifecycle" },
+                { server: "zypp", tool: "patch", category: "patch-errata" },
+                { server: "firewalld", tool: "block", category: "security-response" }],
+                categories: {
+                    "config-lifecycle": { mode: "bounded", promoted_by: "carol 2026-11-03T09:00:00Z", promotion: "p-1",
+                        envelope: { windows: [{ days: [today()], from: "00:00", to: "23:59" }] } },
+                    "patch-errata": { mode: "bounded", promoted_by: "carol 2026-11-03T09:00:00Z", promotion: "p-2",
+                        envelope: { windows: [{ days: [otherDay()], from: "02:00", to: "04:00", tz: "Europe/Berlin" }] } },
+                } },
             "old-agent": { mode: "supervised", paused: false, permissions: [] },
         },
         control: { stopped: false },

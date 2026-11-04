@@ -156,6 +156,22 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.waitForTimeout(300);
     check((await spawned("systemctl start agent@old-agent.socket")).length === 1, "a stopped agent is started by its socket");
 
+    // Task categories (§6a): a promoted category runs without approval
+    // only within its window; the others need one.
+    await page.click("#agent-row-disk-watch button");
+    await page.waitForSelector("#categories");
+    const lastMinute = new Date().getUTCHours() === 23 && new Date().getUTCMinutes() === 59;
+    if (!lastMinute) {
+        check(await effect("snapper__delete_snapshots") === "allowed, no approval (in its window)",
+              "a promoted category within its window runs without approval");
+    }
+    check(await effect("zypp__patch") === "needs approval (outside its window)", "a promoted category outside its window needs approval");
+    check(await effect("firewalld__block") === "needs approval", "a category not promoted needs approval, on a bounded agent too");
+    check((await page.textContent("#boundaries")).includes("changes · patch-errata"), "a permission shows its category");
+    const catRow = await page.$eval("#category-patch-errata", r => [...r.cells].map(c => c.textContent));
+    check(catRow[1] === "bounded (promoted)" && catRow[2].includes("02:00–04:00 Europe/Berlin") && catRow[3].startsWith("carol"),
+          "the categories: mode, windows and who promoted it");
+
     // Policy tab: the posture and the what-if, on fresh data.
     await page.goto(url + "?policy#/policy");
     await page.waitForSelector("#posture-patch-pilot");

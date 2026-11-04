@@ -9,6 +9,20 @@ removed.
 
 ### Added
 
+- Task categories (CONTRACT.md §6a): an agent's autonomy is promoted
+  per category, not for the whole agent. The catalog ships
+  `patch-errata`, `security-response` and `config-lifecycle`
+  (`/usr/share/custos/categories.d`, your own in
+  `/etc/custos/categories.d`; `agent-admin categories`). A permission
+  joins one with `category:`, and stays supervised until its category
+  is promoted.
+- `agent-admin promote NAME CATEGORY --envelope FILE` lets a category
+  act without approval within its envelope's time windows, which the
+  gateway's policy enforces; outside them its calls need an approval.
+  Until readiness is measured, it needs `--despite-readiness --reason
+  TEXT`. `agent-admin demote` takes it back. Both are recorded in the
+  journal (`custos-promotion`, `category.promoted`,
+  `category.demoted`), and `agent-admin show` lists the categories.
 - The Cockpit page: **Restart** and **Logs** for an agent. Restart
   restarts its service (an OpenShell agent's relay and sandbox); Logs
   opens Cockpit's journal for the agent's unit, with the unit's messages
@@ -21,6 +35,14 @@ removed.
   the sandbox was Ready and waited past the unit's start timeout.
   `agent-openshell-start` now bounds each start to 15 seconds, decides by
   the sandbox's phase, and counts its 120-second limit on the clock.
+- An OpenShell agent's activity could fail right after OpenShell renewed
+  its gateway token: the sandbox refused the connection for a moment
+  (`connect: permission denied`), or the proxy closed it without an
+  answer (`EOF`), and the agent did not try again. A refused connection
+  is now retried for every request (nothing was sent), with the same
+  backoff as the proxy's 500s; a dropped one only for a request that is
+  safe to repeat (listing tools, initialize, ping), never a `tools/call`,
+  which may have reached the gateway.
 
 ## v0.1.0 — 2026-11-04
 

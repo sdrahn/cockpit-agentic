@@ -137,6 +137,15 @@ anyway. Check in this order:
 | `Approving your own request needs your password: …` | the approval is the person's own, which only `self` allows | use mcp-gateway's page or its command line, which ask for the password |
 | an agent shows *unreachable* | its socket refused the person, or the agent failed | the row says why; see [above](#agent-start) |
 
+## A promoted category still asks for an approval {#promotion}
+
+| You see | Cause | Fix |
+|---|---|---|
+| the call waits for an approval although `show` says `bounded` | it is outside the envelope's windows: check `days`, `from`, `to`, and `tz` (without `tz` the window is UTC) | `agent-admin promote` again with the right window |
+| | the permission that matches the call has no `category`, or another one | `agent-admin show NAME`; give the permission the category |
+| every call of the agent is denied | a category's `mode` in its gateway data is neither `supervised` nor `bounded` (edited by hand) | `agent-admin demote`, or promote again |
+| `agent … is advisory, which caps every category` | advisory allows no change, promoted or not | `agent-admin mode NAME supervised`, then promote |
+
 ## OpenShell agents and tokens {#openshell}
 
 | You see | Cause | Fix |
@@ -149,7 +158,7 @@ anyway. Check in this order:
 | every call denied, the audit shows the agent's subject | its issuer is not in `_http.yaml`, or `sub` is not `agent-NAME` | [chapter 11](11-openshell.md#issuers), [step 5](11-openshell.md#idp) |
 | the agent's records missing from the host's journal | the relay cannot read the sandbox's container: `CUSTOS_OPENSHELL_USER` not set at `create` for rootless Podman | `journalctl -u agent-openshell@NAME.service` names it (`agent-openshell-logs: …`); recreate the agent with the variable set |
 | sandboxes fail to start with rootless Podman (`memory.swap.max`) | cgroup controllers not delegated to the user | the `user@.service` drop-in, then restart the user's manager ([chapter 11](11-openshell.md#install-openshell)) |
-| brief `500` errors around a token renewal | OpenShell's proxy while it renews | none: the agent retries and reconnects |
+| brief `500` errors, refused connections (`connect: permission denied`) or dropped ones (`EOF`) around a token renewal | OpenShell's proxy while it renews | none: the agent retries them, and reconnects; a dropped `tools/call` is not sent again (it may have run), so that activity fails and is started again |
 | `agent-openshell-start: sandbox agent-NAME is not Ready after 120s: …` in `journalctl -u agent-openshell@NAME.service`; the agent's socket does not answer | OpenShell did not get the sandbox *Ready* within 2 minutes. The text after the colon says why: `sandbox agent-NAME is Stopping` (a stop that does not finish), OpenShell's refusal of the start (`previous driver operation is still pending`, `sandbox must be Stopped…`), or `openshell does not know sandbox agent-NAME` | the unit tries again after 5 seconds (`Restart=on-failure`). If it keeps failing: `openshell sandbox get agent-NAME` and `openshell logs agent-NAME`. A sandbox OpenShell no longer knows is made again by `agent-admin set-credential` |
 | `sandbox … is still there … after its deletion` (edit) | OpenShell did not delete the old sandbox in 2 minutes | `openshell sandbox list`; delete it by hand, then `agent-admin edit` again |
 
@@ -179,6 +188,14 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | Message (as printed) | Section |
 |---|---|
 | any `version:`, `name:`, `model.`, `gateway.`, `schedules[…]`, `client_tools:`, `sandbox.kind:` message | [Configuration errors](#configuration-errors) |
+| `no task category "…" (the catalog has: …)` | the name is not in `agent-admin categories` ([chapter 6](06-permissions-and-modes.md#categories)) |
+| `readiness is not measured yet (CONTRACT.md O11): promote with --despite-readiness --reason TEXT` | add both ([chapter 6](06-permissions-and-modes.md#promote)) |
+| `agent … has no permission in category …` | give a permission `category:` first |
+| `agent … is advisory, which caps every category` | [A promoted category still asks](#promotion) |
+| `envelope: rate is not enforced by mcp-gateway yet`, `envelope: rollback needs the demotion evaluator`, `envelope: hosts needs the fleet`, `envelope: blast_radius needs the fleet` | leave the part out; only `windows` is enforced so far |
+| `envelope: no windows`, `envelope: windows[…]: …` | write at least one window: `days`, `from`, `to` (`HH:MM`, `from` before `to`), `tz` |
+| `permissions[…]: autonomous is for permissions without a category` | drop `autonomous`; promote the category instead |
+| `agent …: category … is not promoted` (demote) | it is supervised already |
 | `agent … exists` | the agent exists: `edit`, or `delete` first |
 | `"…" is not a valid agent name` | [Configuration errors](#configuration-errors) |
 | `no configuration on stdin` | `--from -` with nothing piped in |

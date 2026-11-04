@@ -15,6 +15,12 @@
 #       - {server: zypp, tool: install_patches}                   # changes the system
 #       - {server: systemd, tool: restart_unit, autonomous: true, args: {unit: '^nginx\.service$'}}
 #
+#       - {server: zypp, tool: patch, category: patch-errata}      # a task category (§6a)
+#     categories:             # written by agent-admin promote / demote
+#       patch-errata:
+#         mode: bounded       # supervised | bounded
+#         envelope: {windows: [{days: [sat], from: '02:00', to: '04:00', tz: Europe/Berlin}]}
+#
 # A permission is read-only only when it says so; everything else
 # changes the system (supervised by default). By mode:
 #
@@ -56,7 +62,7 @@ agent_data := data.mcp.agents[agent_name]
 
 agent_mode := object.get(agent_data, "mode", "supervised")
 
-agent_flags := ["read_only", "autonomous"]
+agent_flags := ["read_only", "autonomous", "category"]
 
 perms contains q if {
 	some p in agent_data.permissions
@@ -66,11 +72,63 @@ perms contains q if {
 agent_permission(p) := object.remove(p, agent_flags) if {
 	p.read_only == true
 } else := object.remove(p, agent_flags) if {
+	autonomous_now(p)
+} else := object.union(object.remove(p, agent_flags), {"require_approval": true, "approval_channel": "oob"}) if {
+	permission_mode(p) in {"supervised", "bounded"}
+}
+
+# Task categories (CONTRACT.md §6a). A permission with a category takes
+# its category's mode: bounded only once agent-admin promote has given
+# the category an entry, otherwise supervised. advisory on the agent
+# caps every category. A permission without one keeps the agent's mode,
+# with version 1's autonomous flag.
+agent_categories := object.get(agent_data, "categories", {})
+
+permission_mode(p) := "advisory" if {
+	agent_mode == "advisory"
+} else := object.get(object.get(agent_categories, p.category, {}), "mode", "supervised") if {
+	has_category(p)
+} else := agent_mode
+
+# A helper, so that "not has_category(p)" holds for a permission without
+# the key (not is_string(p.category) does not).
+has_category(p) if is_string(p.category)
+
+autonomous_now(p) if {
+	not has_category(p)
 	agent_mode == "bounded"
 	p.autonomous == true
-} else := object.union(object.remove(p, agent_flags), {"require_approval": true, "approval_channel": "oob"}) if {
-	agent_mode in {"supervised", "bounded"}
 }
+
+autonomous_now(p) if {
+	has_category(p)
+	permission_mode(p) == "bounded"
+	in_envelope(agent_categories[p.category])
+}
+
+# The envelope's windows (§6a): outside them a bounded category acts as
+# supervised. Each window: days (mon … sun; all if absent), from and to
+# ("HH:MM", from before to) in tz (an IANA zone; UTC if absent).
+in_envelope(c) if {
+	count(object.get(object.get(c, "envelope", {}), "windows", [])) == 0
+}
+
+in_envelope(c) if {
+	some w in c.envelope.windows
+	in_window(w, time.now_ns())
+}
+
+in_window(w, ns) if {
+	tz := object.get(w, "tz", "UTC")
+	day := lower(substring(time.weekday([ns, tz]), 0, 3))
+	day in object.get(w, "days", ["mon", "tue", "wed", "thu", "fri", "sat", "sun"])
+	[h, m, _] := time.clock([ns, tz])
+	now := (h * 60) + m
+	minutes(w.from) <= now
+	now < minutes(w.to)
+}
+
+minutes(hhmm) := (to_number(substring(hhmm, 0, 2)) * 60) + to_number(substring(hhmm, 3, 2))
 
 # The agent's only permissions are its agent data: a role bound to an
 # agent user would bypass its mode, so it denies everything instead.
@@ -98,6 +156,13 @@ denied if {
 denied if {
 	agent_principal
 	not agent_mode in {"advisory", "supervised", "bounded"}
+}
+
+# So does an unknown mode of a category.
+denied if {
+	agent_principal
+	some c in agent_categories
+	not c.mode in {"supervised", "bounded"}
 }
 
 # Pause and emergency stop. Discovery keeps the tools listed, so the

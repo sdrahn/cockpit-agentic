@@ -1,0 +1,298 @@
+package admin
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/journal"
+)
+
+// Task categories and the promotion path (CONTRACT.md §6a, O11).
+
+// The category catalog: the packages' entries, then the administrator's.
+// A file in /etc replaces the one of the same name in /usr; an empty
+// one disables it.
+const (
+	CategoriesVendor = "/usr/share/custos/categories.d"
+	CategoriesSite   = "/etc/custos/categories.d"
+)
+
+// Category is one entry of the catalog.
+type Category struct {
+	Title       string `yaml:"title" json:"title"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+}
+
+// CategoryState is a category's entry in the agent's gateway data
+// (data.mcp.agents.<name>.categories.<category>), as promote and demote
+// write it.
+type CategoryState struct {
+	Mode       string    `yaml:"mode" json:"mode"`
+	Envelope   *Envelope `yaml:"envelope,omitempty" json:"envelope,omitempty"`
+	PromotedBy string    `yaml:"promoted_by,omitempty" json:"promoted_by,omitempty"`
+	DemotedBy  string    `yaml:"demoted_by,omitempty" json:"demoted_by,omitempty"`
+	Promotion  string    `yaml:"promotion,omitempty" json:"promotion,omitempty"`
+}
+
+// Envelope is where, when and how much a promoted category acts without
+// an approval. This version enforces windows (in the gateway's policy);
+// the other parts of §6a are refused until something enforces them.
+type Envelope struct {
+	Windows []Window `yaml:"windows" json:"windows"`
+}
+
+// Window is a weekly time window.
+type Window struct {
+	Days []string `yaml:"days,omitempty" json:"days,omitempty"`
+	From string   `yaml:"from" json:"from"`
+	To   string   `yaml:"to" json:"to"`
+	TZ   string   `yaml:"tz,omitempty" json:"tz,omitempty"`
+}
+
+// Categories reads the catalog.
+func (a *Admin) Categories() (map[string]Category, error) {
+	files := map[string]string{} // base name → path; /etc replaces /usr
+	for _, dir := range []string{CategoriesVendor, CategoriesSite} {
+		m, err := filepath.Glob(a.p(filepath.Join(dir, "*.yaml")))
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range m {
+			files[filepath.Base(f)] = f
+		}
+	}
+	out := map[string]Category{}
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		var doc map[string]Category
+		if err := yaml.Unmarshal(b, &doc); err != nil {
+			return nil, fmt.Errorf("%s: %w", f, err)
+		}
+		for name, c := range doc {
+			if !config.ValidName(name) {
+				return nil, fmt.Errorf("%s: %q is not a valid category name", f, name)
+			}
+			if name == "uncategorized" {
+				return nil, fmt.Errorf("%s: uncategorized is not a category", f)
+			}
+			out[name] = c
+		}
+	}
+	return out, nil
+}
+
+func (a *Admin) checkCategory(cat string) error {
+	cats, err := a.Categories()
+	if err != nil {
+		return err
+	}
+	if _, ok := cats[cat]; !ok {
+		names := make([]string, 0, len(cats))
+		for n := range cats {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		return fmt.Errorf("no task category %q (the catalog has: %s)", cat, strings.Join(names, ", "))
+	}
+	return nil
+}
+
+var (
+	hhmm = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
+	days = map[string]bool{"mon": true, "tue": true, "wed": true, "thu": true, "fri": true, "sat": true, "sun": true}
+)
+
+// ParseEnvelope reads and checks an envelope. Parts of §6a that nothing
+// enforces yet are refused, never ignored.
+func ParseEnvelope(b []byte) (*Envelope, error) {
+	var raw map[string]any
+	if err := yaml.Unmarshal(b, &raw); err != nil {
+		return nil, fmt.Errorf("envelope: %w", err)
+	}
+	for k := range raw {
+		switch k {
+		case "windows":
+		case "rate":
+			return nil, errors.New("envelope: rate is not enforced by mcp-gateway yet (CONTRACT.md O12)")
+		case "rollback":
+			return nil, errors.New("envelope: rollback needs the demotion evaluator, not there yet (CONTRACT.md O11)")
+		case "hosts", "blast_radius":
+			return nil, fmt.Errorf("envelope: %s needs the fleet, which is parked (CONTRACT.md O13)", k)
+		default:
+			return nil, fmt.Errorf("envelope: unknown key %q", k)
+		}
+	}
+	var e Envelope
+	dec := yaml.NewDecoder(strings.NewReader(string(b)))
+	dec.KnownFields(true)
+	if err := dec.Decode(&e); err != nil {
+		return nil, fmt.Errorf("envelope: %w", err)
+	}
+	if len(e.Windows) == 0 {
+		return nil, errors.New("envelope: no windows: a promoted category acts without approval only within its windows")
+	}
+	for i, w := range e.Windows {
+		if !hhmm.MatchString(w.From) || !hhmm.MatchString(w.To) {
+			return nil, fmt.Errorf("envelope: windows[%d]: from and to are HH:MM", i)
+		}
+		if w.From >= w.To {
+			return nil, fmt.Errorf("envelope: windows[%d]: from %s is not before to %s (a window across midnight is two windows)", i, w.From, w.To)
+		}
+		for _, d := range w.Days {
+			if !days[d] {
+				return nil, fmt.Errorf("envelope: windows[%d]: day %q: want mon, tue, wed, thu, fri, sat or sun", i, d)
+			}
+		}
+		if w.TZ != "" {
+			if _, err := time.LoadLocation(w.TZ); err != nil {
+				return nil, fmt.Errorf("envelope: windows[%d]: tz %q: %v", i, w.TZ, err)
+			}
+		}
+	}
+	return &e, nil
+}
+
+// Promotion is promote's input.
+type Promotion struct {
+	Envelope []byte
+	// Reason is the person's; required with DespiteReadiness.
+	Reason string
+	// DespiteReadiness promotes although readiness is not met. Readiness
+	// is not measured yet (§6a, O11), so every promotion needs it for now.
+	DespiteReadiness bool
+}
+
+// Promote moves a category of an agent to bounded within an envelope.
+func (a *Admin) Promote(name, cat, by string, p Promotion) error {
+	if err := checkName(name); err != nil {
+		return err
+	}
+	if err := a.checkCategory(cat); err != nil {
+		return err
+	}
+	env, err := ParseEnvelope(p.Envelope)
+	if err != nil {
+		return err
+	}
+	if !p.DespiteReadiness {
+		return errors.New("readiness is not measured yet (CONTRACT.md O11): promote with --despite-readiness --reason TEXT")
+	}
+	if strings.TrimSpace(p.Reason) == "" {
+		return errors.New("--despite-readiness needs --reason TEXT")
+	}
+	d, err := a.readGateway(name)
+	if err != nil {
+		return err
+	}
+	if d.Mode == "advisory" {
+		return fmt.Errorf("agent %s is advisory, which caps every category: set its mode to supervised first", name)
+	}
+	if !hasCategory(d, cat) {
+		return fmt.Errorf("agent %s has no permission in category %s: give it one (permissions, category: %s) first", name, cat, cat)
+	}
+	from := "supervised"
+	if c := d.Categories[cat]; c != nil && c.Mode != "" {
+		from = c.Mode
+	}
+	if from == "bounded" && a.sameEnvelope(d.Categories[cat].Envelope, env) {
+		return fmt.Errorf("agent %s: category %s is already bounded with this envelope", name, cat)
+	}
+	id := "p-" + a.Secret()
+	if len(id) > 18 {
+		id = id[:18]
+	}
+	now := a.Now().UTC().Format(time.RFC3339)
+	if d.Categories == nil {
+		d.Categories = map[string]*CategoryState{}
+	}
+	d.Categories[cat] = &CategoryState{Mode: "bounded", Envelope: env, PromotedBy: by + " " + now, Promotion: id}
+	if err := a.writeGateway(name, d); err != nil {
+		return err
+	}
+	a.record(journal.CategoryPromoted, name, fmt.Sprintf("%s promoted %s of agent %s to bounded", by, cat, name), journal.Fields{
+		"CATEGORY": cat, "PROMOTION": id, "MODE_FROM": from, "MODE_TO": "bounded", "BY": by,
+		"REASON": p.Reason, "ENVELOPE_SHA256": envelopeHash(env), "READINESS": `{"measured":false}`,
+	})
+	fmt.Fprintf(a.Out, "agent %s: category %s is bounded within its envelope (promotion %s)\n", name, cat, id)
+	return nil
+}
+
+// Demote moves a category back to supervised; its envelope stays for a
+// later promotion.
+func (a *Admin) Demote(name, cat, by, reason string) error {
+	if err := checkName(name); err != nil {
+		return err
+	}
+	d, err := a.readGateway(name)
+	if err != nil {
+		return err
+	}
+	c := d.Categories[cat]
+	if c == nil || c.Mode != "bounded" {
+		return fmt.Errorf("agent %s: category %s is not promoted", name, cat)
+	}
+	c.Mode = "supervised"
+	c.DemotedBy = by + " " + a.Now().UTC().Format(time.RFC3339)
+	if err := a.writeGateway(name, d); err != nil {
+		return err
+	}
+	a.record(journal.CategoryDemoted, name, fmt.Sprintf("%s demoted %s of agent %s to supervised", by, cat, name), journal.Fields{
+		"CATEGORY": cat, "PROMOTION": c.Promotion, "MODE_FROM": "bounded", "MODE_TO": "supervised", "BY": by,
+		"REASON": reason, "ENVELOPE_SHA256": envelopeHash(c.Envelope),
+	})
+	fmt.Fprintf(a.Out, "agent %s: category %s is supervised\n", name, cat)
+	return nil
+}
+
+func hasCategory(d *GatewayData, cat string) bool {
+	for _, p := range d.Permissions {
+		if p["category"] == cat {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Admin) sameEnvelope(x, y *Envelope) bool { return envelopeHash(x) == envelopeHash(y) }
+
+// envelopeHash is the SHA-256 of the envelope's JSON with sorted keys
+// (§10, AGENT_ENVELOPE_SHA256).
+func envelopeHash(e *Envelope) string {
+	if e == nil {
+		return ""
+	}
+	b, _ := json.Marshal(e)
+	var v any
+	json.Unmarshal(b, &v)
+	b, _ = json.Marshal(v) // maps marshal with sorted keys
+	s := sha256.Sum256(b)
+	return hex.EncodeToString(s[:])
+}
+
+// record writes a promotion record (§10): SYSLOG_IDENTIFIER
+// custos-promotion, with AGENT_NAME the agent.
+func (a *Admin) record(event, name, msg string, f journal.Fields) {
+	l := a.Journal
+	if l == nil {
+		l = func(name string) journal.Logger { return journal.NewAs("custos-promotion", name, os.Stderr) }
+	}
+	l(name).Log(event, msg, f)
+}
+
+// ReadFrom reads a file, or In for "-" (an envelope from a control plane).
+func (a *Admin) ReadFrom(from string) ([]byte, error) { return a.readFrom(from) }

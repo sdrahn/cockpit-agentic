@@ -31,6 +31,11 @@ const (
 	AgentPaused      = "agent.paused"
 	AgentResumed     = "agent.resumed"
 	ActivityCancel   = "activity.cancel"
+
+	// Promotion records (§6a, §10), written by agent-admin.
+	CategoryPromoted = "category.promoted"
+	CategoryDemoted  = "category.demoted"
+	CategoryReview   = "category.review"
 )
 
 var MessageIDs = map[string]string{
@@ -49,6 +54,9 @@ var MessageIDs = map[string]string{
 	AgentPaused:      "6f3c0e1a9b2d4c58a7e1f2d3c4b5a604",
 	AgentResumed:     "6f3c0e1a9b2d4c58a7e1f2d3c4b5a605",
 	ActivityCancel:   "6f3c0e1a9b2d4c58a7e1f2d3c4b5a612",
+	CategoryPromoted: "6f3c0e1a9b2d4c58a7e1f2d3c4b5a660",
+	CategoryDemoted:  "6f3c0e1a9b2d4c58a7e1f2d3c4b5a661",
+	CategoryReview:   "6f3c0e1a9b2d4c58a7e1f2d3c4b5a662",
 }
 
 // Fields of a record, without the AGENT_ prefix: "SESSION", "TOOL", ….
@@ -65,13 +73,20 @@ const SocketPath = "/run/systemd/journal/socket"
 // New returns a logger for agent name: journald if its socket is there,
 // else JSON lines on w.
 func New(name string, w io.Writer) Logger {
+	return NewAs("agent-"+name, name, w)
+}
+
+// NewAs is New with another SYSLOG_IDENTIFIER: agent-admin's promotion
+// records are custos-promotion's (§10).
+func NewAs(ident, name string, w io.Writer) Logger {
 	if c, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: SocketPath, Net: "unixgram"}); err == nil {
-		return &native{name: name, conn: c, fallback: &JSON{Name: name, W: w}}
+		return &native{ident: ident, name: name, conn: c, fallback: &JSON{Name: name, W: w}}
 	}
 	return &JSON{Name: name, W: w}
 }
 
 type native struct {
+	ident    string
 	name     string
 	mu       sync.Mutex
 	conn     *net.UnixConn
@@ -94,7 +109,7 @@ func (n *native) Log(event, message string, f Fields) {
 	put("MESSAGE", message)
 	put("MESSAGE_ID", MessageIDs[event])
 	put("PRIORITY", priority(event))
-	put("SYSLOG_IDENTIFIER", "agent-"+n.name)
+	put("SYSLOG_IDENTIFIER", n.ident)
 	put("AGENT_CONTRACT", "1")
 	put("AGENT_NAME", n.name)
 	put("AGENT_EVENT", event)

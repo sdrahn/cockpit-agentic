@@ -197,6 +197,7 @@ done
 %{_tmpfilesdir}/%{name}.conf
 %dir %{_sysconfdir}/custos
 %dir %{_sysconfdir}/custos/agents
+%dir %{_sysconfdir}/custos/categories.d
 %dir %{_datadir}/mcp-gateway
 %dir %{_datadir}/mcp-gateway/policy
 %{_datadir}/mcp-gateway/policy/custos
@@ -206,6 +207,7 @@ done
 %config(noreplace) %{_sysconfdir}/mcp-gateway/policy/agents/_control.yaml
 %config(noreplace) %{_sysconfdir}/mcp-gateway/policy/agents/_http.yaml
 %dir %{_datadir}/custos
+%{_datadir}/custos/categories.d
 %{_datadir}/custos/examples
 %{_datadir}/custos/gateway
 %{_datadir}/custos/openshell

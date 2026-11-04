@@ -21,6 +21,10 @@ const usage = `usage: agent-admin COMMAND …
   set-credential NAME CRED               encrypt a secret read from stdin
   mode NAME advisory|supervised|bounded  set the autonomy mode (enforced by mcp-gateway)
   permissions NAME                       replace its gateway permissions (YAML list on stdin)
+  categories                             the task categories (CONTRACT.md §6a), as JSON
+  promote NAME CATEGORY --envelope FILE --despite-readiness --reason TEXT
+                                         let a category act without approval within its envelope (FILE -: stdin)
+  demote NAME CATEGORY [--reason TEXT]   back to supervised (the envelope is kept)
   pause NAME | resume NAME               hold an agent / let it go on
   trigger NAME_SCHEDULE                  start a schedule's activity (agent-schedule@.service)
   stop-all                               emergency stop: every agent, every schedule
@@ -54,6 +58,22 @@ func run(a *admin.Admin, args []string) error {
 			return fmt.Errorf("%s: missing arguments\n%s", cmd, usage)
 		}
 		return nil
+	}
+	flag := func(name string) (string, bool) {
+		for i, x := range args {
+			if x == name && i+1 < len(args) {
+				return args[i+1], true
+			}
+		}
+		return "", false
+	}
+	has := func(name string) bool {
+		for _, x := range args {
+			if x == name {
+				return true
+			}
+		}
+		return false
 	}
 	from := func() (string, error) {
 		for i, x := range args {
@@ -115,6 +135,34 @@ func run(a *admin.Admin, args []string) error {
 			return err
 		}
 		return a.SetPermissions(args[0], os.Stdin)
+	case "categories":
+		c, err := a.Categories()
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(c)
+	case "promote":
+		if err := need(2); err != nil {
+			return err
+		}
+		f, ok := flag("--envelope")
+		if !ok {
+			return fmt.Errorf("promote: --envelope FILE is needed")
+		}
+		reason, _ := flag("--reason")
+		b, err := a.ReadFrom(f)
+		if err != nil {
+			return err
+		}
+		return a.Promote(args[0], args[1], by(), admin.Promotion{Envelope: b, Reason: reason, DespiteReadiness: has("--despite-readiness")})
+	case "demote":
+		if err := need(2); err != nil {
+			return err
+		}
+		reason, _ := flag("--reason")
+		return a.Demote(args[0], args[1], by(), reason)
 	case "pause", "resume":
 		if err := need(1); err != nil {
 			return err

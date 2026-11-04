@@ -183,9 +183,29 @@ async function renderAgentDetail() {
             () => admin(["permissions", a.name], yaml.value)));
         bounds.append(table, el("details", null, el("summary", null, "Edit the permissions"),
             el("p", { class: "muted" }, "A YAML list of gateway permissions, with read_only: true for tools that only read and " +
-               "autonomous: true for changes bounded mode may make without asking (§6). agent-admin checks it, and returns " +
+               "autonomous: true for changes bounded mode may make without asking (§6), or category: NAME for a task category, which " +
+               "agent-admin promote lets act without asking within its windows (§6a). agent-admin checks it, and returns " +
                "once the gateway enforces it."),
             yaml, el("div", { class: "actions" }, save)));
+        const cats = Object.entries(data.categories || {});
+        if (cats.length > 0) {
+            const ct = el("table", { id: "categories" }, el("thead", null, el("tr", null,
+                el("th", null, "Task category"), el("th", null, "Mode"), el("th", null, "Windows"), el("th", null, "Changed by"))));
+            const cb = el("tbody");
+            for (const [name, c] of cats) {
+                const windows = ((c.envelope && c.envelope.windows) || []).map(w =>
+                    (w.days ? w.days.join(",") : "every day") + " " + w.from + "–" + w.to + " " + (w.tz || "UTC")).join("; ");
+                cb.append(el("tr", { id: "category-" + name }, el("td", { class: "mono" }, name),
+                    el("td", null, el("span", { class: "badge " + (c.mode === "bounded" ? "badge-ok" : "badge-waiting") },
+                        c.mode === "bounded" ? "bounded (promoted)" : c.mode)),
+                    el("td", { class: "muted" }, windows || "always"),
+                    el("td", { class: "muted" }, c.mode === "bounded" ? (c.promoted_by || "") : (c.demoted_by || ""))));
+            }
+            ct.append(cb);
+            bounds.append(el("h3", null, "Task categories"),
+                el("p", { class: "muted" }, "Promoted with agent-admin promote: within its windows a bounded category's changes run " +
+                   "without an approval (CONTRACT.md §6a)."), ct);
+        }
     }
 
     const scheds = (a.status && a.status.schedules) || [];
