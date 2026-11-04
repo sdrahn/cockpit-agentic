@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -89,5 +90,79 @@ func TestTokenWantsSubAndAud(t *testing.T) {
 	idp.ServeHTTP(rec, httptest.NewRequest("GET", "/token?sub=agent-sb", nil))
 	if rec.Code != 400 {
 		t.Errorf("without aud: %d", rec.Code)
+	}
+}
+
+// The client credentials grant, as OpenShell's gateway uses it.
+func TestClientCredentials(t *testing.T) {
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+	idp, _ := New(srv.URL)
+	idp.Clients = map[string]Client{"agent-sb": {Secret: "s3cret", Subject: "agent-sb", Audience: "https://gw/mcp"}}
+	idp.TTL = 90 * time.Second
+	srv.Config.Handler = idp
+
+	post := func(form url.Values, basic bool) (*http.Response, map[string]any) {
+		req, _ := http.NewRequest("POST", srv.URL+"/token", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if basic {
+			req.SetBasicAuth(form.Get("client_id"), form.Get("client_secret"))
+			form.Del("client_id")
+			form.Del("client_secret")
+			req.Body = io.NopCloser(strings.NewReader(form.Encode()))
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var m map[string]any
+		json.NewDecoder(res.Body).Decode(&m)
+		return res, m
+	}
+	ok := url.Values{"grant_type": {"client_credentials"}, "client_id": {"agent-sb"}, "client_secret": {"s3cret"}}
+	for _, basic := range []bool{false, true} {
+		f := url.Values{}
+		for k, v := range ok {
+			f[k] = append([]string(nil), v...)
+		}
+		res, m := post(f, basic)
+		if res.StatusCode != 200 || m["token_type"] != "Bearer" || m["expires_in"] != float64(90) || res.Header.Get("Cache-Control") != "no-store" {
+			t.Fatalf("basic=%v: %d %v", basic, res.StatusCode, m)
+		}
+		parts := strings.Split(m["access_token"].(string), ".")
+		b, _ := base64.RawURLEncoding.DecodeString(parts[1])
+		var c map[string]any
+		json.Unmarshal(b, &c)
+		if c["sub"] != "agent-sb" || c["aud"] != "https://gw/mcp" || c["iss"] != srv.URL {
+			t.Errorf("claims %v", c)
+		}
+	}
+	if n := idp.minted["agent-sb"]; n != 2 {
+		t.Errorf("minted %d", n)
+	}
+	for name, f := range map[string]url.Values{
+		"wrong secret":   {"grant_type": {"client_credentials"}, "client_id": {"agent-sb"}, "client_secret": {"nope"}},
+		"unknown client": {"grant_type": {"client_credentials"}, "client_id": {"x"}, "client_secret": {"s3cret"}},
+	} {
+		if res, m := post(f, false); res.StatusCode != 401 || m["error"] != "invalid_client" {
+			t.Errorf("%s: %d %v", name, res.StatusCode, m)
+		}
+	}
+	if res, m := post(url.Values{"grant_type": {"password"}}, false); res.StatusCode != 400 || m["error"] != "unsupported_grant_type" {
+		t.Errorf("password grant: %d %v", res.StatusCode, m)
+	}
+}
+
+func TestClientFlag(t *testing.T) {
+	var c clientFlags
+	if err := c.Set("agent-sb:s3cret:agent-sb:https://host.openshell.internal:18443/mcp"); err != nil {
+		t.Fatal(err)
+	}
+	if got := c["agent-sb"]; got.Audience != "https://host.openshell.internal:18443/mcp" || got.Subject != "agent-sb" {
+		t.Errorf("%+v", got)
+	}
+	if err := c.Set("only:two"); err == nil {
+		t.Error("accepted a short client")
 	}
 }

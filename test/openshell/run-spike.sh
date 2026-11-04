@@ -14,8 +14,10 @@
 # mcp-gateway runs in its development mode (no systemd, no SELinux; the
 # exec supervisor) with its own policy, cockpit-agentic's agents module
 # and the agents' data from agent-admin, as installed. Its HTTPS listener
-# trusts test/vm/testidp, which issues agent-sb's token (subject agent-sb,
-# no local-user claim); agents/_http.yaml lists that issuer for agents.
+# trusts test/vm/testidp; agents/_http.yaml lists that issuer for agents.
+# agent-sb is an OAuth client there: OpenShell's gateway mints its tokens
+# (subject agent-sb, no local-user claim, 90 s) with the client
+# credentials grant and renews them while the agent runs.
 set -u
 here=$(cd "$(dirname "$0")/../.." && pwd)
 disposable= results=
@@ -93,7 +95,10 @@ openssl x509 -req -in "$work/tls/req.pem" -CA "$work/tls/ca.pem" -CAkey "$work/t
 	-extfile "$work/tls/ext.cnf" -out "$work/tls/cert.pem" 2>/dev/null
 check "the gateway's certificate names host.openshell.internal" bash -c "openssl x509 -in '$work/tls/cert.pem' -noout -ext subjectAltName | grep -q DNS:host.openshell.internal"
 
-systemd-run --unit=osh-testidp /usr/libexec/cockpit-agentic/tests/testidp --listen 127.0.0.1:18445 >/dev/null
+# agent-sb's OAuth client; its tokens live 90 s, so the agent outlives one.
+head -c 24 /dev/urandom | base64 | tr -d '/+=' >"$work/client-secret"
+systemd-run --unit=osh-testidp /usr/libexec/cockpit-agentic/tests/testidp --listen 127.0.0.1:18445 --ttl 90 \
+	--client "agent-sb:$(cat "$work/client-secret"):agent-sb:$aud" >/dev/null
 check "the token issuer answers" eventually 20 curl -sf -o /dev/null "$issuer/.well-known/openid-configuration"
 # Its subjects agent-<name> are agents (agents/_http.yaml, CONTRACT.md §16a).
 printf '_http:\n  issuers: ["%s"]\n' "$issuer" >/etc/mcp-gateway/policy/agents/_http.yaml
@@ -119,8 +124,9 @@ check "the gateway's HTTPS listener refuses a request without a token (401)" eve
 	"curl -s -o /dev/null -w '%{http_code}' --cacert '$work/tls/ca.pem' --resolve host.openshell.internal:18443:127.0.0.1 -X POST $aud | grep -qx 401" ||
 	journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
 check "the gateway takes the test server" eventually 30 bash -c "curl -s --unix-socket '$work/gw/control.sock' http://localhost/v1/servers | grep -q agentic-test"
-curl -sf "$issuer/token?sub=agent-sb&aud=$aud&exp=7200" >"$work/token"
-check "the issuer gives agent-sb a token" test -s "$work/token"
+check "the issuer gives agent-sb's client a token" bash -c \
+	"curl -sf -X POST -d grant_type=client_credentials -d client_id=agent-sb --data-urlencode client_secret@'$work/client-secret' '$issuer/token' | jq -e '.access_token != null' >/dev/null"
+minted() { curl -s "$issuer/minted" | jq -r '."agent-sb" // 0'; }
 
 section "OpenShell trusts the gateway's CA"
 # OpenShell's proxy verifies the gateway in each sandbox's supervisor,
@@ -160,7 +166,10 @@ name: sb
 description: OpenShell spike agent
 model: {provider: openai, name: fake, endpoint: "http://127.0.0.1:8008/v1"}
 instruction: You are a test agent.
-gateway: {url: "$aud", servers: [agentic-test]}
+gateway:
+  url: "$aud"
+  servers: [agentic-test]
+  oauth: {token_url: "$issuer/token", client_id: agent-sb, refresh_before_seconds: 30}
 limits: {max_invocation_seconds: 300}
 interaction: {agui: true, client_tools: deny}
 sandbox: {kind: openshell, openshell_gateway: openshell}
@@ -172,7 +181,13 @@ printf '%s\n' '- {server: agentic-test, tool: probe, read_only: true}' '- {serve
 check "agent-admin permissions sb (supervised: change needs an approval)" agent-admin permissions sb <"$work/perms.yaml"
 check "the sandbox policy is written" test -s /etc/cockpit-agentic/agents/sb/openshell-policy.yaml
 check "the provider profile is imported" eventually 10 bash -c 'openshell -g openshell profile list -o json 2>/dev/null | grep -q cockpit-agentic-gateway-sb'
-check "agent-admin set-credential sb gateway-token (creates the sandbox)" agent-admin set-credential sb gateway-token <"$work/token"
+n0=$(minted)
+check "agent-admin set-credential sb gateway-client-secret (OpenShell mints the token, creates the sandbox)" \
+	agent-admin set-credential sb gateway-client-secret <"$work/client-secret"
+check "OpenShell's gateway minted agent-sb's first token" test "$(minted)" -gt "$n0"
+check "OpenShell renews it (oauth2_client_credentials)" bash -c "openshell -g openshell provider refresh status agent-sb-gateway 2>&1 | grep -qi client.credentials" ||
+	openshell -g openshell provider refresh status agent-sb-gateway 2>&1 | tail -n 10 | sed 's/^/    | /'
+t_first=$SECONDS
 check "the sandbox exists" eventually 120 bash -c 'openshell -g openshell sandbox get agent-sb >/dev/null 2>&1'
 check "the relay socket is active" systemctl is-active -q agent-openshell@sb.socket
 
@@ -232,7 +247,23 @@ if [ -n "$relay_ok" ]; then
 		journalctl -u osh-mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
 	check "and refused no request of the agent's (placeholder or no token)" not bash -c \
 		"journalctl -u osh-mcp-gateway.service -o cat --no-pager --since @$t0 | grep -iE 'invalid_token|missing bearer|no subject'"
-	check "the sandbox's environment has no real token" bash -c "! openshell -g openshell sandbox exec -n agent-sb -- env 2>/dev/null | grep -qF \"\$(cat $work/token)\""
+	check "the sandbox's environment has no client secret" bash -c "! openshell -g openshell sandbox exec -n agent-sb -- env 2>/dev/null | grep -qF \"\$(cat $work/client-secret)\""
+
+	section "Token renewal"
+	# The first token expires 90 s after it was minted; OpenShell renews
+	# 30 s before. A call after that runs on a renewed token, without
+	# restarting the agent.
+	m1=$(minted)
+	starts() { journalctl -o cat --no-pager --since "@$t0" AGENT_NAME=sb AGENT_EVENT=agent.start 2>/dev/null | wc -l; }
+	s1=$(starts)
+	check "OpenShell mints a new token before the first expires" eventually 120 bash -c "[ \$(curl -s $issuer/minted | jq -r '.\"agent-sb\" // 0') -gt $m1 ]"
+	while [ $((SECONDS - t_first)) -lt 95 ]; do sleep 5; done
+	a=$(run_activity PROBE)
+	check "a call after the first token expired runs (renewed token)" summary_has "$a" "probe ok" ||
+		echo "    | the agent answered: $(jq -c '{state, summary, reason}' <<<"$a" 2>/dev/null || head -c 300 <<<"$a")"
+	check "the agent was not restarted for it (no new agent.start)" test "$(starts)" -eq "$s1"
+	check "and the gateway refused none of its requests" not bash -c \
+		"journalctl -u osh-mcp-gateway.service -o cat --no-pager --since @$t0 | grep -iE 'invalid_token|token is expired|token_expired'"
 
 	section "Approval"
 	id=$(api /v1/activities -X POST -d '{"prompt":"CHANGE"}' | jq -r .id)

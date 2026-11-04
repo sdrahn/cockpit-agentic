@@ -287,3 +287,70 @@ func TestGatewayTokenOnlyForOpenShell(t *testing.T) {
 		t.Error("gateway-token accepted for a systemd agent")
 	}
 }
+
+const oshOAuthYml = `version: 1
+name: sb
+model: {provider: openai, name: m, endpoint: "http://127.0.0.1:8008/v1"}
+gateway:
+  url: "https://gw.example.com:8443/mcp"
+  servers: [zypp]
+  oauth: {token_url: "https://idp.example.com/token", client_id: agent-sb, scopes: [mcp]}
+sandbox: {kind: openshell}
+`
+
+// With an OAuth client, OpenShell's gateway mints and renews the token:
+// agent-admin hands it the client and mints the first token.
+func TestOpenShellAgentOAuth(t *testing.T) {
+	a, r := newAdmin(t)
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(oshOAuthYml), 0o644)
+	if err := a.Create("sb", f); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(a.agentDir("sb"), "openshell-profile.yaml"))
+	if !strings.Contains(string(b), "strategy: oauth2_client_credentials") || !strings.Contains(string(b), "token_url: https://idp.example.com/token") {
+		t.Errorf("profile without the refresh:\n%s", b)
+	}
+	if err := a.SetCredential("sb", "gateway-token", strings.NewReader("tok")); err == nil {
+		t.Error("a static token accepted for an agent with an OAuth client")
+	}
+
+	r.cmds = nil
+	if err := a.SetCredential("sb", "gateway-client-secret", strings.NewReader("s3cret-value\n")); err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(r.cmds, "\n")
+	want := []string{
+		"openshell -g openshell provider create --name agent-sb-gateway --type cockpit-agentic-gateway-sb --runtime-credentials",
+		"AGENTIC_GATEWAY_CLIENT_SECRET=s3cret-value openshell -g openshell provider refresh configure agent-sb-gateway --credential-key AGENT_GATEWAY_TOKEN --strategy oauth2-client-credentials --material client_id=agent-sb --secret-material-env client_secret=AGENTIC_GATEWAY_CLIENT_SECRET",
+		"openshell -g openshell provider refresh rotate agent-sb-gateway --credential-key AGENT_GATEWAY_TOKEN",
+		"openshell -g openshell sandbox create --name agent-sb",
+		"systemctl enable --now agent-openshell@sb.socket",
+	}
+	last := -1
+	for _, w := range want {
+		i := strings.Index(all, w)
+		if i < 0 {
+			t.Errorf("missing %q in\n%s", w, all)
+			continue
+		}
+		if i < last {
+			t.Errorf("%q out of order in\n%s", w, all)
+		}
+		last = i
+	}
+	// The secret only in the environment of the one command that needs it.
+	if n := strings.Count(all, "s3cret-value"); n != 1 || strings.Contains(all, "client_secret=s3cret") {
+		t.Errorf("the client secret is on a command line or repeated (%d):\n%s", n, all)
+	}
+}
+
+func TestClientSecretNeedsOAuth(t *testing.T) {
+	a, _ := newAdmin(t)
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(oshYml), 0o644)
+	a.Create("sb", f)
+	if err := a.SetCredential("sb", "gateway-client-secret", strings.NewReader("x")); err == nil || !strings.Contains(err.Error(), "gateway.oauth") {
+		t.Errorf("client secret without an OAuth client: %v", err)
+	}
+}

@@ -213,20 +213,59 @@ func (a *Admin) createOpenShell(cfg *config.Config) error {
 	if err := a.Run(nil, "openshell", "-g", cfg.Sandbox.OpenShellGateway, "profile", "import", "-f", filepath.Join(dir, "openshell-profile.yaml"), "--global"); err != nil {
 		return fmt.Errorf("importing the provider profile: %w", err)
 	}
-	fmt.Fprintf(a.Out, "agent %s: set its gateway token next: agent-admin set-credential %s gateway-token < token\n", cfg.Name, cfg.Name)
+	if cfg.Gateway.OAuth != nil {
+		fmt.Fprintf(a.Out, "agent %s: set its OAuth client's secret next: agent-admin set-credential %s gateway-client-secret < secret\n", cfg.Name, cfg.Name)
+	} else {
+		fmt.Fprintf(a.Out, "agent %s: set its gateway token next: agent-admin set-credential %s gateway-token < token\n", cfg.Name, cfg.Name)
+	}
 	return nil
 }
 
-// startOpenShell creates the provider with the token, the sandbox, and
-// starts the relay.
+// startOpenShell creates the provider with a static token, the sandbox,
+// and starts the relay.
 func (a *Admin) startOpenShell(cfg *config.Config, token string) error {
 	g := cfg.Sandbox.OpenShellGateway
-	dir := a.agentDir(cfg.Name)
 	a.Run(nil, "openshell", "-g", g, "provider", "delete", openshell.ProviderName(cfg.Name))
 	if err := a.RunEnv([]string{openshell.TokenEnv + "=" + token}, "openshell", "-g", g, "provider", "create",
 		"--name", openshell.ProviderName(cfg.Name), "--type", openshell.ProfileID(cfg.Name), "--credential", openshell.TokenEnv); err != nil {
 		return fmt.Errorf("creating the provider: %w", err)
 	}
+	return a.startSandbox(cfg)
+}
+
+// clientSecretEnv carries the OAuth client secret to openshell, which
+// reads it from its environment (--secret-material-env), never from its
+// command line.
+const clientSecretEnv = "AGENTIC_GATEWAY_CLIENT_SECRET"
+
+// startOpenShellOAuth creates the provider whose token OpenShell's
+// gateway mints and renews with the agent's OAuth client (gateway.oauth,
+// the profile's refresh), mints the first token, then the sandbox.
+func (a *Admin) startOpenShellOAuth(cfg *config.Config, secret string) error {
+	g := cfg.Sandbox.OpenShellGateway
+	p := openshell.ProviderName(cfg.Name)
+	a.Run(nil, "openshell", "-g", g, "provider", "delete", p)
+	if err := a.Run(nil, "openshell", "-g", g, "provider", "create", "--name", p, "--type", openshell.ProfileID(cfg.Name), "--runtime-credentials"); err != nil {
+		return fmt.Errorf("creating the provider: %w", err)
+	}
+	if err := a.RunEnv([]string{clientSecretEnv + "=" + secret}, "openshell", "-g", g, "provider", "refresh", "configure", p,
+		"--credential-key", openshell.TokenEnv, "--strategy", "oauth2-client-credentials",
+		"--material", "client_id="+cfg.Gateway.OAuth.ClientID, "--secret-material-env", "client_secret="+clientSecretEnv); err != nil {
+		return fmt.Errorf("configuring the token's renewal: %w", err)
+	}
+	// The first token now: a wrong secret or client fails here, not in
+	// the agent's first call.
+	if err := a.Run(nil, "openshell", "-g", g, "provider", "refresh", "rotate", p, "--credential-key", openshell.TokenEnv); err != nil {
+		return fmt.Errorf("minting the first token (the issuer refused the client?): %w", err)
+	}
+	return a.startSandbox(cfg)
+}
+
+// startSandbox creates the sandbox with the provider attached and starts
+// the relay.
+func (a *Admin) startSandbox(cfg *config.Config) error {
+	g := cfg.Sandbox.OpenShellGateway
+	dir := a.agentDir(cfg.Name)
 	secret, err := os.ReadFile(filepath.Join(dir, "relay.secret"))
 	if err != nil {
 		return err
@@ -316,23 +355,32 @@ func (a *Admin) SetCredential(name, cred string, secret io.Reader) error {
 	if !config.ValidCredential(cred) {
 		return fmt.Errorf("%q is not a valid credential name", cred)
 	}
-	if cred == "gateway-token" {
+	if cred == "gateway-token" || cred == "gateway-client-secret" {
 		cfg, err := config.Load(a.agentDir(name))
 		if err != nil {
 			return err
 		}
 		if cfg.Sandbox.Kind != "openshell" {
-			return fmt.Errorf("agent %s reaches the gateway by its socket; gateway-token is for OpenShell agents", name)
+			return fmt.Errorf("agent %s reaches the gateway by its socket; %s is for OpenShell agents", name, cred)
+		}
+		switch {
+		case cred == "gateway-token" && cfg.Gateway.OAuth != nil:
+			return fmt.Errorf("agent %s has an OAuth client (gateway.oauth): set gateway-client-secret, OpenShell mints its tokens", name)
+		case cred == "gateway-client-secret" && cfg.Gateway.OAuth == nil:
+			return fmt.Errorf("agent %s has no OAuth client (gateway.oauth): set gateway-token", name)
 		}
 		b, err := io.ReadAll(io.LimitReader(secret, 64<<10))
 		if err != nil {
 			return err
 		}
-		tok := strings.TrimSpace(string(b))
-		if tok == "" {
-			return errors.New("gateway-token: empty")
+		v := strings.TrimSpace(string(b))
+		if v == "" {
+			return fmt.Errorf("%s: empty", cred)
 		}
-		return a.startOpenShell(cfg, tok)
+		if cred == "gateway-client-secret" {
+			return a.startOpenShellOAuth(cfg, v)
+		}
+		return a.startOpenShell(cfg, v)
 	}
 	id := "agent-" + name + "." + cred
 	if err := os.MkdirAll(a.p(CredstoreDir), 0o700); err != nil {

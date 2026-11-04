@@ -463,6 +463,9 @@ gateway:
   socket: /run/mcp-gateway/mcp.sock   # default
   servers: [zypp, systemd]            # whose tools the model is shown
   tools: []                           # optional narrower list of <server>__<tool>
+  # OpenShell agents (§16a): url: https://host.openshell.internal:8443/mcp, and
+  # oauth: {token_url: https://idp/…/token, client_id: agent-<name>, scopes: [mcp],
+  #         refresh_before_seconds: 60}   # optional; without it a static token
 limits: {max_llm_calls: 25, max_tool_calls: 40, max_invocation_seconds: 900}
 interaction:
   agui: true
@@ -536,7 +539,7 @@ instead of `agent@.service`:
 | relay | `agent-openshell@<name>.socket` owns `/run/agents/<name>/api.sock`; `agent-openshell@<name>.service` starts the sandbox and `openshell forward`, and runs `agent-openshell-relay` (SELinux `agent_relay_t`): callers by `SO_PEERCRED`, passed on as `X-Agentic-Caller` with `X-Agentic-Relay-Secret` (the agent's `--listen-tcp` mode believes nothing else); and the agent's records from its container's output (`agent-openshell-logs`: `docker logs` or `podman logs` of the sandbox's container; `openshell logs` has only the supervisor's lines), written to the journal with their `AGENT_*` fields |
 | openshell CLI | `agent-admin` and the relay unit run it as root with `HOME=/root`: the OpenShell gateway named in `sandbox.openshell_gateway` is registered for root (`openshell gateway add ... --name <gateway>`), and the CLI keeps its forwards there |
 | gateway | mcp-gateway's HTTPS listener (`http:` in its configuration): the agent's `gateway.url` is its audience, e.g. `https://host.openshell.internal:8443/mcp`, since the sandbox reaches the host by that name. The certificate names that host. OpenShell's proxy terminates the agent's TLS (to inspect MCP and swap the token in) and verifies the gateway itself, in the sandbox's supervisor, not with the image's trust store: a CA no public root signs goes into the OpenShell gateway's configuration (`[openshell.supervisor.network] additional_ca_bundle = "<ca.pem>"` in its `gateway.toml`, OpenShell 0.1.7 or later), which hands it to every sandbox's supervisor |
-| token | `agent-admin set-credential <name> gateway-token < token` creates the provider and the sandbox; the token is an OAuth access token for the gateway's audience, subject `agent-<name>`, from an issuer in `_http.yaml` (§6). It carries no claim of the gateway's `local_user_claim`: the gateway maps a token to a local user only for accounts of persons (UID_MIN..UID_MAX) and refuses system accounts, which agents' users are, so the subject stays the principal |
+| token | With `gateway.oauth` (the agent is an OAuth client of the issuer): `agent-admin set-credential <name> gateway-client-secret < secret` creates the provider with runtime credentials, gives OpenShell's gateway the client (`openshell provider refresh configure … --strategy oauth2-client-credentials`, the secret through the environment, never a command line), mints the first token (`provider refresh rotate`; a refused client fails here) and creates the sandbox. OpenShell's gateway then renews the token before it expires (the profile's `refresh`: token URL, scopes, `refresh_before`); the sandbox's placeholder resolves to the current token per request, so renewals need no restart of the agent. The issuer's client configuration gives the tokens the subject `agent-<name>` and the gateway's audience (the grant sends no audience). Without `gateway.oauth`: `set-credential <name> gateway-token < token` with a static token, which OpenShell does not renew. Either way the token is an OAuth access token for the gateway's audience, subject `agent-<name>`, from an issuer in `_http.yaml` (§6). It carries no claim of the gateway's `local_user_claim`: the gateway maps a token to a local user only for accounts of persons (UID_MIN..UID_MAX) and refuses system accounts, which agents' users are, so the subject stays the principal |
 
 `stop-all` stops the relay units and every OpenShell agent's sandbox by
 name; the gateway's `agents_control` flag denies them like any agent.
@@ -551,7 +554,7 @@ Run as root, by hand or by Cockpit with administrative access:
 | `edit NAME --from FILE` | validates, replaces `agent.yaml`, syncs schedules, `try-restart` |
 | `check NAME\|FILE` | validates only |
 | `mode NAME MODE`, `permissions NAME < list.yaml` | the gateway agent data (§6). Like `pause`, `resume`, `stop-all` and `release-all`, it returns once the gateway's OPA has loaded the change (it reads it back on `/run/mcp-gateway/opa.sock`, for up to 20 s), so the change is in force when the command returns |
-| `set-credential NAME CRED < secret` | `systemd-creds encrypt` |
+| `set-credential NAME CRED < secret` | `systemd-creds encrypt`; for OpenShell agents `gateway-client-secret` or `gateway-token` (§16a) |
 | `pause NAME`, `resume NAME` | §8 (gateway data and `/v1/pause`) |
 | `stop-all`, `release-all` | the emergency stop (§8) and its end |
 | `delete NAME [--keep-state]` | disables and stops units; removes configuration, gateway data, credentials, drop-ins, timers and, unless kept, state. The user stays, since uids are not reused while files may still belong to them |
@@ -645,10 +648,13 @@ is installed). There is no Cockpit page package yet.
   the relay's bridge, from the sandbox container's output (OpenShell's
   own log stream has only the supervisor's lines); the agent is
   `agent-<name>` over HTTPS too, with its mode and approvals. Still open:
-  - the issuer of the agents' tokens in production (the site's IdP with
-    a client per agent and a subject mapper, or a local issuer), and
-    their renewal: OpenShell's provider holds one token, while access
-    tokens live minutes (a host-side refresh that updates the provider);
+  - the issuer of the agents' tokens in production: the site's IdP with
+    a client per agent whose tokens have the subject `agent-<name>` and
+    the gateway's audience (in Keycloak a service-account client with
+    mappers), or a local issuer. Their renewal is settled: OpenShell's
+    gateway mints and renews them with the client credentials grant, and
+    the spike sees a call succeed on a renewed token after the first
+    expired, without restarting the agent;
   - SLES 16 / Leap 16 with Podman and SELinux enforcing: the containers'
     domain (`container_t` with MCS) and `agent_relay_t`, which CI builds
     but has not yet run enforcing;
