@@ -77,7 +77,7 @@ install: build
 	install -d $(DESTDIR)$(UNITDIR)
 	install -m 0644 systemd/agent@.service systemd/agent@.socket systemd/agent-schedule@.service systemd/agent-schedule@.timer \
 		systemd/agent-openshell@.service systemd/agent-openshell@.socket $(DESTDIR)$(UNITDIR)/
-	install -m 0755 packaging/openshell/agent-openshell-logs $(DESTDIR)$(LIBEXECDIR)/custos/agent-openshell-logs
+	install -m 0755 packaging/openshell/agent-openshell-logs packaging/openshell/agent-openshell-start $(DESTDIR)$(LIBEXECDIR)/custos/
 	install -D -m 0644 packaging/openshell/Containerfile $(DESTDIR)$(DATADIR)/custos/openshell/Containerfile
 	install -D -m 0644 packaging/sysusers/custos.conf $(DESTDIR)$(SYSUSERSDIR)/custos.conf
 	install -D -m 0644 packaging/tmpfiles/custos.conf $(DESTDIR)$(TMPFILESDIR)/custos.conf

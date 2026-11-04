@@ -59,6 +59,13 @@ gw() { local p=$1; shift; curl -sS --max-time 30 --unix-socket "$gw_ctl" "http:/
 # gw_audit_has <jq condition>: the gateway's audit records since the start.
 gw_audit_has() { journalctl -u "$gw_unit" -o cat --no-pager --since "@$t0" | grep '"audit":true' | jq -e "select($1)" >/dev/null 2>&1; }
 activity() { api "/v1/activities/$1"; }
+# On a failed check of the sandbox: its phase, the forwards, and what the
+# relay unit logged (agent-openshell-start's refusals among them).
+sandbox_state() {
+	echo "    | sandbox: $(openshell -g openshell sandbox get agent-sb -o json 2>&1 | grep -oE '"phase": *"[A-Za-z]*"' | tr '\n' ' ')"
+	openshell -g openshell forward list 2>&1 | tail -n 5 | sed 's/^/    | forward: /'
+	journalctl -u agent-openshell@sb.service --since -5min --no-pager -o cat 2>&1 | tail -n 25 | sed 's/^/    | unit: /'
+}
 run_activity() { api /v1/activities -X POST -d "$(jq -nc --arg p "$1" '{prompt: $p, wait: true}')"; }
 summary_has() { grep -qF -- "$2" <<<"$(jq -r .summary <<<"$1")"; }
 journal_has() { journalctl -o json --no-pager --since "@$t0" AGENT_NAME=sb "AGENT_EVENT=$1" 2>/dev/null | jq -e "select($2)" >/dev/null 2>&1; }
@@ -116,6 +123,7 @@ fi
 check "agent-admin is installed" command -v agent-admin
 check "the relay is installed" test -x /usr/libexec/custos/agent-openshell-relay
 check "its log source is installed" test -x /usr/libexec/custos/agent-openshell-logs
+check "its sandbox starter is installed" test -x /usr/libexec/custos/agent-openshell-start
 
 section "Model on the host"
 systemd-run --unit=osh-fakemodel /usr/libexec/custos/tests/fakemodel --listen 0.0.0.0:8008 >/dev/null
@@ -406,12 +414,14 @@ if [ -n "$relay_ok" ]; then
 		sed 's/^/    | /' "$work/edit.out"
 	check "the relay runs again" systemctl is-active -q agent-openshell@sb.socket
 	check "the agent answers with the new limit (the sandbox was recreated)" eventually 180 bash -c \
-		"curl -sf --max-time 10 --unix-socket /run/agents/sb/api.sock http://agent/v1/status | jq -e '.limits.max_invocation_seconds == 301' >/dev/null"
+		"curl -sf --max-time 10 --unix-socket /run/agents/sb/api.sock http://agent/v1/status | jq -e '.limits.max_invocation_seconds == 301' >/dev/null" ||
+		sandbox_state
 	a=$(run_activity PROBE)
 	check "a read-only call runs after the edit (the provider stayed)" summary_has "$a" "probe ok"
 	check "the same file again leaves the sandbox's configuration (try-restart only)" agent-admin edit sb --from "$work/sb-edited.yaml"
 	check "and the agent answers again" eventually 180 bash -c \
-		"curl -sf --max-time 10 --unix-socket /run/agents/sb/api.sock http://agent/v1/status | jq -e '.limits.max_invocation_seconds == 301' >/dev/null"
+		"curl -sf --max-time 10 --unix-socket /run/agents/sb/api.sock http://agent/v1/status | jq -e '.limits.max_invocation_seconds == 301' >/dev/null" ||
+		sandbox_state
 
 else
 	skip "the checks through the relay (the agent did not answer through it)"
