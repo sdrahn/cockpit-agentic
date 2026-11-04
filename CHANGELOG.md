@@ -5,9 +5,19 @@ All notable changes to Custos. Versions follow
 (CONTRACT.md), names, paths and fields are added, never renamed or
 removed.
 
-## Unreleased
+## v0.1.1 — 2026-11-04
 
-Changes for 0.1.1, collected on release-0.1.
+Fixes from testing 0.1.0. The package builds on OBS. The Cockpit page
+shows Start for a stopped agent, stops OpenShell agents for good, and
+gains Restart and Logs. OpenShell agents get through a token renewal,
+and their unit no longer fails to start when OpenShell misses that the
+sandbox is ready.
+
+Upgrading from 0.1.0 needs nothing: no configuration, gateway data or
+contract changes. Running agents keep the old launcher until they exit
+on idle or are restarted (`systemctl restart agent@NAME.service`, or
+the page's Restart); OpenShell agents pick up the relay unit's change
+at their next start.
 
 ### Added
 
