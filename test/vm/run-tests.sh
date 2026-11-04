@@ -264,6 +264,16 @@ check "the gateway data says supervised" grep -q "mode: supervised" /etc/mcp-gat
 check "the gateway data grants nothing" grep -q "permissions: \[\]" /etc/mcp-gateway/policy/agents/t1.yaml
 check "the schedule's timer is enabled" systemctl is-enabled -q 'agent-schedule@t1_check.timer'
 check "agent-admin list names t1" bash -c 'agent-admin list | grep -qx t1'
+# Editing, as the Cockpit page does: the new configuration on stdin.
+sed -e 's/^description: .*/description: edited test agent t1/' -e 's/03:00/04:00/' "$f" >"$work/t1-edited.yaml"
+check "agent-admin edit t1 --from - (stdin)" bash -c "agent-admin edit t1 --from - <'$work/t1-edited.yaml'"
+check "the edited configuration is installed" grep -q 'description: edited test agent t1' /etc/custos/agents/t1/agent.yaml
+check "it is still root:agent-t1 0640" stat_is /etc/custos/agents/t1/agent.yaml root:agent-t1:640
+check "the schedule's timer has the new calendar" grep -q 'OnCalendar=\*-\*-\* 04:00' /etc/systemd/system/agent-schedule@t1_check.timer.d/schedule.conf
+check "agent-admin edit refuses a configuration for another agent" \
+	not bash -c "sed 's/^name: t1/name: t9/' '$f' | agent-admin edit t1 --from -"
+check "the socket unit is still active" systemctl is-active -q agent@t1.socket
+agent-admin edit t1 --from "$f" >/dev/null
 
 section Discovery
 st=$(api t1 /v1/status)

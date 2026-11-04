@@ -170,6 +170,7 @@ td.details { overflow-wrap: anywhere; }
 #create-agent { margin-top: 1rem; }
 #create-agent .inline { display: flex; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
 .ok-text { color: var(--ok); }
+.note-text { color: var(--warn); }
 .error-text { color: var(--danger); }
 button.danger-text { color: var(--danger); }
 .confirm-delete { margin-top: 0.75rem; }

@@ -194,7 +194,7 @@ async function renderAgentDetail() {
             toggle), el("div", { class: "muted" }, "“" + s.prompt + "”")));
     }
 
-    box.replaceChildren(head, mode, bounds, schedules, chatSection(a));
+    box.replaceChildren(head, mode, bounds, schedules, configEditor(a), chatSection(a));
 }
 
 tabs.agents = {
@@ -205,7 +205,7 @@ tabs.agents = {
         renderAgentList();
         // Not while someone edits the permissions or types a message.
         const f = document.activeElement;
-        const editing = f && (f.id === "permissions-yaml" || f.closest(".chat") || f.closest(".confirm-delete"));
+        const editing = f && (f.id === "permissions-yaml" || f.closest(".chat") || f.closest(".confirm-delete") || f.closest(".config-edit"));
         if (!editing) await renderAgentDetail();
     },
 };

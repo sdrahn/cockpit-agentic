@@ -280,6 +280,55 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(deleted.length === 1 && deleted[0][4] === "require", "delete runs agent-admin delete --keep-state through the root bridge");
     check(cockpit_path(await page.url()) === "agents", "after deleting, the list is shown");
 
+    // Editing an agent's configuration.
+    await page.goto(url + "?edit#/agents/patch-pilot");
+    await page.waitForSelector("#config-patch-pilot button:has-text('Edit configuration')");
+    await page.click("#config-patch-pilot button:has-text('Edit configuration')");
+    await page.waitForSelector("#config-patch-pilot .config-yaml");
+    const read = (await calls()).find(c => c[0] === "read" && c[1] === "/etc/custos/agents/patch-pilot/agent.yaml");
+    check(read && read[4] === "require", "the configuration is read through the root bridge (root:agent-<name> 0640)");
+    check((await page.inputValue("#config-patch-pilot .config-yaml")).includes("description: Keeps the host patched."),
+          "the editor has the agent's configuration");
+    await page.fill("#config-patch-pilot .config-yaml",
+                    (await page.inputValue("#config-patch-pilot .config-yaml")).replace("name: patch-pilot", "name: other"));
+    await page.click("#config-patch-pilot button:has-text('Save and apply')");
+    await page.waitForFunction(() => document.querySelector("#config-patch-pilot").textContent.includes("another agent"));
+    check(await page.isVisible("#config-patch-pilot .config-yaml"), "a configuration for another agent is refused, the editor stays");
+    await page.fill("#config-patch-pilot .config-yaml",
+                    (await page.inputValue("#config-patch-pilot .config-yaml")).replace("name: other", "name: patch-pilot")
+                        .replace("Keeps the host patched.", "Keeps the host patched, gently."));
+    await page.waitForTimeout(5500); // a refresh keeps what is being edited
+    check((await page.inputValue("#config-patch-pilot .config-yaml")).includes("gently"), "a refresh keeps the edit");
+    await page.click("#config-patch-pilot button:has-text('Check')");
+    await page.waitForFunction(() => document.querySelector("#config-patch-pilot").textContent.includes("valid"));
+    await page.click("#config-patch-pilot button:has-text('Save and apply')");
+    await page.waitForFunction(() => document.querySelector("#config-patch-pilot").textContent.includes("Saved"));
+    const edits = await spawned("agent-admin edit patch-pilot --from -");
+    check(edits.length === 2 && edits.every(e => e[4] === "require" && e[2] === "SUDO_USER=carol"),
+          "save runs agent-admin edit --from - through the root bridge, naming the person");
+    check(!(await page.isVisible("#config-patch-pilot .config-yaml")), "the editor closes after saving");
+    await page.click("#config-patch-pilot button:has-text('Edit configuration')");
+    await page.waitForSelector("#config-patch-pilot .config-yaml");
+    check((await page.inputValue("#config-patch-pilot .config-yaml")).includes("gently"), "reopened, it has the saved configuration");
+    check((await page.textContent("#config-patch-pilot")).includes("restarted if it runs") &&
+          !(await page.textContent("#config-patch-pilot")).includes("sandbox"), "a systemd agent's editor says it restarts");
+
+    // An OpenShell agent: what an edit does to its sandbox, and what
+    // agent-admin says about it.
+    await page.goto(url + "?editosh#/agents/triage");
+    await page.waitForSelector("#config-triage button:has-text('Edit configuration')");
+    await page.click("#config-triage button:has-text('Edit configuration')");
+    await page.waitForSelector("#config-triage .config-yaml");
+    const osh = await page.textContent("#config-triage");
+    check(osh.includes("the sandbox is recreated") && osh.includes("until its credential is set again") &&
+          osh.includes("cannot be changed here"), "an OpenShell agent's editor says what an edit does to its sandbox");
+    await page.fill("#config-triage .config-yaml", (await page.inputValue("#config-triage .config-yaml")) +
+                    "gateway: {oauth: {token_url: \"https://idp/token\", client_id: agent-triage}}\n");
+    await page.click("#config-triage button:has-text('Save and apply')");
+    await page.waitForFunction(() => document.querySelector("#config-triage").textContent.includes("Saved."));
+    check((await page.textContent("#config-triage")).includes("stopped until: agent-admin set-credential triage gateway-client-secret"),
+          "agent-admin's message after the edit is shown");
+
     // Audit tab: each state-changing action's history, and the records.
     await page.goto(url + "?audit#/audit");
     await page.waitForSelector("#action-a-17");
