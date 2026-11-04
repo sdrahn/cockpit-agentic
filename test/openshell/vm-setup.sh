@@ -12,6 +12,13 @@ log "Podman"
 zypper -n in --no-recommends podman curl jq audit >/tmp/zypper-osh.log 2>&1 ||
 	{ tail -n 30 /tmp/zypper-osh.log; exit 1; }
 
+log "cgroup controllers for user sessions (rootless Podman sets memory and swap limits)"
+# Rootless Podman needs the controllers delegated to the user's systemd;
+# OpenShell's sandboxes get memory limits (memory.max, memory.swap.max).
+mkdir -p /etc/systemd/system/user@.service.d
+printf '[Service]\nDelegate=cpu cpuset io memory pids\n' >/etc/systemd/system/user@.service.d/delegate.conf
+systemctl daemon-reload
+
 log "user $user (rootless Podman, lingering)"
 id "$user" >/dev/null 2>&1 || useradd -m "$user"
 grep -q "^$user:" /etc/subuid || usermod --add-subuids 200000-265535 --add-subgids 200000-265535 "$user"
@@ -19,6 +26,11 @@ loginctl enable-linger "$user"
 uid=$(id -u "$user")
 for _ in $(seq 60); do [ -d "/run/user/$uid" ] && break; sleep 1; done
 [ -d "/run/user/$uid" ] || { echo "no user manager for $user" >&2; exit 1; }
+# A user manager started before the drop-in runs without the delegation.
+systemctl restart "user@$uid.service"
+sleep 2
+d=/sys/fs/cgroup/user.slice/user-$uid.slice/user@$uid.service
+log "controllers for $user: $(cat "$d/cgroup.controllers" 2>&1); swap limit: $([ -e "$d/memory.swap.max" ] && echo yes || echo no)"
 
 log "OpenShell (its installer, for $user)"
 curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh -o /tmp/openshell-install.sh

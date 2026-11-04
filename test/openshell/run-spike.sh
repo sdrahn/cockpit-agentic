@@ -94,6 +94,8 @@ if [ -n "$system" ]; then
 	gw_bin=/usr/bin/mcp-gateway
 	gw_policy=/usr/share/mcp-gateway/policy
 	check "the packages are installed" rpm -q custos custos-tests mcp-gateway
+	# As the functional tests do; mcp-gateway.service brings mcp-opa.service.
+	check "the system's mcp-gateway and OPA run" systemctl enable --now mcp-opa.service mcp-gateway.service
 	check "SELinux is enforcing" bash -c '[ "$(getenforce)" = Enforcing ]'
 else
 	gw_bin=${MCPGW_SRC:-}/bin/mcp-gateway
