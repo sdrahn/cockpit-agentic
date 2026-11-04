@@ -7,6 +7,14 @@ removed.
 
 ## Unreleased
 
+### Fixed
+
+- An OpenShell agent's unit could fail to start after a restart (a
+  no-op `agent-admin edit`, say): `openshell sandbox start` missed that
+  the sandbox was Ready and waited past the unit's start timeout.
+  `agent-openshell-start` now bounds each start to 15 seconds, decides by
+  the sandbox's phase, and counts its 120-second limit on the clock.
+
 ## v0.1.0 — 2026-11-04
 
 The first release: governed AI agents on SUSE Linux Enterprise Server 16

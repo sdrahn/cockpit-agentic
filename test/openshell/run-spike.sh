@@ -418,7 +418,8 @@ if [ -n "$relay_ok" ]; then
 		sandbox_state
 	a=$(run_activity PROBE)
 	check "a read-only call runs after the edit (the provider stayed)" summary_has "$a" "probe ok"
-	check "the same file again leaves the sandbox's configuration (try-restart only)" agent-admin edit sb --from "$work/sb-edited.yaml"
+	check "the same file again leaves the sandbox's configuration (try-restart only)" agent-admin edit sb --from "$work/sb-edited.yaml" ||
+		sandbox_state
 	check "and the agent answers again" eventually 180 bash -c \
 		"curl -sf --max-time 10 --unix-socket /run/agents/sb/api.sock http://agent/v1/status | jq -e '.limits.max_invocation_seconds == 301' >/dev/null" ||
 		sandbox_state
