@@ -13,6 +13,21 @@ Guidance for Claude Code (and other agents) working in this repository.
   `gateway/policy`, also run
   `make policy-test GATEWAY_POLICY=<mcp-gateway checkout>/policy`.
 
+## Tests
+
+- Everything implemented comes with tests in the same pull request.
+- Unit and end-to-end tests are Go tests (`make check`); they need no
+  network, no model and no running gateway.
+- Behaviour on a real system (systemd, mcp-gateway, OPA, SELinux) is
+  covered by the functional tests in `test/vm/run-tests.sh`. They are
+  shipped as the subpackage `custos-tests` and run by openQA
+  (`test/openqa/`). A new feature that shows on an installed system
+  gets a check there, too: `check <description> <command…>` in a
+  `section`, printing PASS, FAIL or SKIP, written as TAP and JUnit with
+  `--results DIR`.
+- The functional tests change the system they run on and refuse to
+  start without `--disposable`.
+
 ## Where things are
 
 - `CONTRACT.md` is the interface between all parts. Part I (the
