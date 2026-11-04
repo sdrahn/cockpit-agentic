@@ -295,6 +295,30 @@ func copyActivity(a *Activity) Activity {
 	return c
 }
 
+// Failed records that an activity's run ended in an error the runner
+// returned (the plugin's callbacks do not see those, e.g. a gateway that
+// cannot be reached): it is failed, with the error as its reason.
+func (g *Governor) Failed(id string, err error) {
+	if id == "" || err == nil {
+		return
+	}
+	g.mu.Lock()
+	var a *Activity
+	for _, e := range g.ended {
+		if e.ID == id {
+			a = e
+		}
+	}
+	if a == nil || a.State == StateCancelled || a.State == StateLimit {
+		g.mu.Unlock()
+		return
+	}
+	a.State, a.Reason = StateFailed, err.Error()
+	f := journal.Fields{"SESSION": a.Session, "INVOCATION": id, "USER": a.User, "OUTCOME": "error", "REASON": a.Reason}
+	g.mu.Unlock()
+	g.log.Log(journal.InvocationEnd, "Invocation "+id+" failed: "+a.Reason, f)
+}
+
 // Cancel ends a running activity (CONTRACT.md §8). It reports whether
 // the activity was running.
 func (g *Governor) Cancel(id, by string) bool {

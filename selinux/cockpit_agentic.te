@@ -90,3 +90,48 @@ allow mcpsrv_agents_t self:unix_stream_socket create_stream_socket_perms;
 list_dirs_pattern(unconfined_t, agent_runtime_t, agent_runtime_t)
 stream_connect_pattern(unconfined_t, agent_runtime_t, agent_sock_t, init_t)
 stream_connect_pattern(unconfined_t, agent_runtime_t, agent_sock_t, agent_t)
+
+# systemd creates the agents' sockets (agent@.socket, DirectoryMode=)
+# and tmpfiles /run/agents: with the right labels even before a relabel
+# (the package's tmpfiles run before this module is loaded).
+manage_dirs_pattern(init_t, agent_runtime_t, agent_runtime_t)
+manage_sock_files_pattern(init_t, agent_runtime_t, agent_sock_t)
+filetrans_pattern(init_t, agent_runtime_t, agent_sock_t, sock_file)
+files_pid_filetrans(init_t, agent_runtime_t, dir, "agents")
+allow init_t agent_sock_t:sock_file { relabelfrom relabelto };
+allow init_t agent_runtime_t:dir { relabelfrom relabelto };
+optional_policy(`
+	gen_require(`
+		type systemd_tmpfiles_t;
+	')
+	manage_dirs_pattern(systemd_tmpfiles_t, agent_runtime_t, agent_runtime_t)
+	files_pid_filetrans(systemd_tmpfiles_t, agent_runtime_t, dir, "agents")
+	allow systemd_tmpfiles_t { agent_runtime_t agent_var_lib_t agent_conf_t }:dir { getattr relabelfrom relabelto setattr };
+')
+
+# systemd sets up the agents' directories before starting them:
+# StateDirectory= creates /var/lib/agents/<name> and hands it to the
+# agent's user; ConfigurationDirectory= checks /etc/cockpit-agentic/...
+manage_dirs_pattern(init_t, agent_var_lib_t, agent_var_lib_t)
+manage_files_pattern(init_t, agent_var_lib_t, agent_var_lib_t)
+files_var_lib_filetrans(init_t, agent_var_lib_t, dir, "agents")
+allow init_t agent_var_lib_t:dir { relabelfrom relabelto };
+list_dirs_pattern(init_t, agent_conf_t, agent_conf_t)
+read_files_pattern(init_t, agent_conf_t, agent_conf_t)
+
+# The agents' unit hides the gateway's control socket and the other
+# agents' sockets (InaccessiblePaths=, TemporaryFileSystem=): systemd
+# mounts over them in the agent's namespace.
+gen_require(`
+	type mcpgw_ctl_sock_t;
+')
+allow init_t mcpgw_ctl_sock_t:sock_file { getattr mounton };
+allow init_t agent_runtime_t:dir mounton;
+
+# The agents' unit has NoNewPrivileges=yes: without nnp_transition the
+# kernel refuses systemd's transition to agent_t, and the launcher would
+# run in init_t (as the first VM run showed).
+gen_require(`
+	class process2 { nnp_transition nosuid_transition };
+')
+allow init_t agent_t:process2 { nnp_transition nosuid_transition };

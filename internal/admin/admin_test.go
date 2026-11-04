@@ -24,6 +24,11 @@ func newAdmin(t *testing.T) (*Admin, *rec) {
 			r.cmds = append(r.cmds, "POST "+sock+path)
 			return nil
 		},
+		Start: func(sock string, body map[string]any) error {
+			o := body["origin"].(map[string]any)
+			r.cmds = append(r.cmds, "START "+sock+" "+body["prompt"].(string)+" "+o["kind"].(string)+" "+o["schedule"].(string)+" "+o["by"].(string))
+			return nil
+		},
 	}
 	return a, r
 }
@@ -47,14 +52,14 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if s := read("/etc/sysusers.d/agent-patch-pilot.conf"); !strings.Contains(s, "u agent-patch-pilot -") || !strings.Contains(s, "m agent-patch-pilot mcp-users") {
 		t.Errorf("sysusers %q", s)
 	}
-	if s := read("/etc/mcp-gateway/policy/agents/patch-pilot/data.yaml"); !strings.Contains(s, "mode: supervised") || !strings.Contains(s, "permissions: []") {
+	if s := read("/etc/mcp-gateway/policy/agents/patch-pilot.yaml"); !strings.Contains(s, "patch-pilot:\n    mode: supervised") || !strings.Contains(s, "permissions: []") {
 		t.Errorf("gateway data %q", s)
 	}
-	if s := read("/etc/systemd/system/agent-schedule@patch-pilot:compliance.timer.d/schedule.conf"); !strings.Contains(s, "OnCalendar=Mon..Fri 06:00") {
+	if s := read("/etc/systemd/system/agent-schedule@patch-pilot_compliance.timer.d/schedule.conf"); !strings.Contains(s, "OnCalendar=Mon..Fri 06:00") {
 		t.Errorf("timer %q", s)
 	}
 	all := strings.Join(r.cmds, "\n")
-	for _, want := range []string{"systemd-sysusers", "systemctl enable --now agent@patch-pilot.socket", "systemctl enable --now agent-schedule@patch-pilot:compliance.timer"} {
+	for _, want := range []string{"systemd-sysusers", "systemctl enable --now agent@patch-pilot.socket", "systemctl enable --now agent-schedule@patch-pilot_compliance.timer"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("missing %q in\n%s", want, all)
 		}
@@ -77,7 +82,7 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if err := a.Pause("patch-pilot", "alice", true); err != nil {
 		t.Fatal(err)
 	}
-	s := read("/etc/mcp-gateway/policy/agents/patch-pilot/data.yaml")
+	s := read("/etc/mcp-gateway/policy/agents/patch-pilot.yaml")
 	if !testHas(s, "mode: bounded", "paused: true", "paused_by: alice 2026-11-03T12:00:00Z", "install_patches", "autonomous: true") {
 		t.Errorf("gateway data %q", s)
 	}
@@ -90,14 +95,14 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if err := a.StopAll("alice"); err != nil {
 		t.Fatal(err)
 	}
-	if s := read(GatewayStop); !strings.Contains(s, "stopped: true") {
+	if s := read(GatewayStop); !strings.Contains(s, "_control:\n  stopped: true") {
 		t.Errorf("stop file %q", s)
 	}
 	if err := a.ReleaseAll(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(a.p(GatewayStop)); !os.IsNotExist(err) {
-		t.Error("stop file stays")
+	if s := read(GatewayStop); !strings.Contains(s, "stopped: false") {
+		t.Errorf("after release-all: %q", s)
 	}
 	if err := a.Delete("patch-pilot", false); err != nil {
 		t.Fatal(err)
@@ -105,8 +110,44 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if _, err := os.Stat(a.agentDir("patch-pilot")); !os.IsNotExist(err) {
 		t.Error("config stays")
 	}
-	if _, err := os.Stat(a.p("/etc/mcp-gateway/policy/agents/patch-pilot")); !os.IsNotExist(err) {
+	if _, err := os.Stat(a.p("/etc/mcp-gateway/policy/agents/patch-pilot.yaml")); !os.IsNotExist(err) {
 		t.Error("gateway data stays")
+	}
+}
+
+// agent-admin returns when the gateway's OPA has the change (here an OPA
+// that lags behind), and says so when OPA never gets it.
+func TestWaitsForThePolicy(t *testing.T) {
+	a, _ := newAdmin(t)
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	a.Now = func() time.Time { now = now.Add(100 * time.Millisecond); return now }
+	a.PolicyWait = 5 * time.Second
+	reads := 0
+	a.OPAData = func(path string) (any, error) {
+		reads++
+		if path == "mcp/agents/_control/stopped" {
+			return reads > 3, nil // loaded on the fourth read
+		}
+		return nil, nil
+	}
+	if err := a.StopAll("alice"); err != nil || reads != 4 {
+		t.Errorf("stop-all: %v after %d reads", err, reads)
+	}
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(yml), 0o644)
+	a.OPAData = func(string) (any, error) { return nil, nil } // never loads
+	if err := a.Create("patch-pilot", f); err == nil || !strings.Contains(err.Error(), "did not load the change") {
+		t.Errorf("create with a stale gateway: %v", err)
+	}
+	a.OPAData = func(string) (any, error) { return nil, errNoOPA }
+	if err := a.SetMode("patch-pilot", "advisory"); err != nil {
+		t.Errorf("without the gateway's OPA: %v", err)
+	}
+	a.OPAData = func(string) (any, error) {
+		return map[string]any{"mode": "bounded", "paused": false, "permissions": []any{}}, nil
+	}
+	if err := a.SetMode("patch-pilot", "bounded"); err != nil {
+		t.Errorf("loaded at once: %v", err)
 	}
 }
 
@@ -129,4 +170,25 @@ func testHas(s string, subs ...string) bool {
 		}
 	}
 	return true
+}
+
+func TestTrigger(t *testing.T) {
+	a, r := newAdmin(t)
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(yml), 0o644)
+	if err := a.Create("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	r.cmds = nil
+	if err := a.Trigger("patch-pilot_compliance"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "START /run/agents/patch-pilot/api.sock Run the compliance check. schedule compliance agent-schedule@patch-pilot_compliance.timer"; len(r.cmds) != 1 || r.cmds[0] != want {
+		t.Errorf("got %v\nwant %s", r.cmds, want)
+	}
+	for _, bad := range []string{"patch-pilot_nope", "patch-pilot", "../x_y"} {
+		if err := a.Trigger(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
 }

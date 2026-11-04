@@ -4,14 +4,16 @@
 #
 # An agent's principal is its user agent-<name>. Its permissions come
 # only from data.mcp.agents.<name>, which agent-admin writes to
-# /etc/mcp-gateway/policy/agents/<name>/data.yaml:
+# /etc/mcp-gateway/policy/agents/<name>.yaml (one directory, which OPA
+# watches from its start: it does not watch directories made later):
 #
-#   mode: supervised          # advisory | supervised | bounded (default supervised)
-#   paused: false             # true: every call is denied (Intervene)
-#   permissions:              # gateway permissions, plus two flags:
-#     - {server: zypp, tool: list_*, read_only: true}
-#     - {server: zypp, tool: install_patches}                   # changes the system
-#     - {server: systemd, tool: restart_unit, autonomous: true, args: {unit: '^nginx\.service$'}}
+#   <name>:
+#     mode: supervised        # advisory | supervised | bounded (default supervised)
+#     paused: false           # true: every call is denied (Intervene)
+#     permissions:            # gateway permissions, plus two flags:
+#       - {server: zypp, tool: list_*, read_only: true}
+#       - {server: zypp, tool: install_patches}                   # changes the system
+#       - {server: systemd, tool: restart_unit, autonomous: true, args: {unit: '^nginx\.service$'}}
 #
 # A permission is read-only only when it says so; everything else
 # changes the system (supervised by default). By mode:
@@ -22,8 +24,9 @@
 #               others need an approval
 #
 # Tool annotations (readOnlyHint) are untrusted and never used here.
-# data.mcp.agents_control.stopped (agent-admin stop-all) denies every
-# agent everything: the emergency stop.
+# data.mcp.agents._control.stopped (agents/_control.yaml, agent-admin
+# stop-all) denies every agent everything: the emergency stop. Agent
+# names start with a letter, so _control is no agent's.
 package mcp.authz
 
 import rego.v1
@@ -86,5 +89,5 @@ denied if {
 denied if {
 	agent_principal
 	not input.discovery
-	data.mcp.agents_control.stopped == true
+	data.mcp.agents._control.stopped == true
 }

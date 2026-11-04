@@ -1,5 +1,5 @@
 # The schedule's OnCalendar= comes from a drop-in agent-admin writes
-# (agent-schedule@<agent>:<schedule>.timer.d/schedule.conf).
+# (agent-schedule@<agent>_<schedule>.timer.d/schedule.conf).
 [Unit]
 Description=Schedule %i
 Documentation=https://github.com/sdrahn/cockpit-agentic/blob/main/CONTRACT.md

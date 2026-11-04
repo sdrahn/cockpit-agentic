@@ -6,9 +6,12 @@ package admin
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +34,12 @@ type Admin struct {
 	Now func() time.Time
 	// Control posts to an agent's control API (pause, resume).
 	Control func(sock, path string) error
+	// Start starts an activity on an agent's socket (schedules).
+	Start func(sock string, body map[string]any) error
+	// OPAData reads a document of the gateway's OPA (GET /v1/data/<path>);
+	// nil: changes are not waited for. PolicyWait bounds the wait.
+	OPAData    func(path string) (any, error)
+	PolicyWait time.Duration
 }
 
 func New() *Admin {
@@ -41,7 +50,10 @@ func New() *Admin {
 			return c.Run()
 		},
 		Out: os.Stdout, Now: time.Now,
-		Control: func(sock, path string) error { return delegate.Post(context.Background(), sock, path) },
+		Control:    func(sock, path string) error { return delegate.Post(context.Background(), sock, path) },
+		Start:      func(sock string, body map[string]any) error { return delegate.Start(context.Background(), sock, body) },
+		OPAData:    opaData,
+		PolicyWait: 20 * time.Second,
 	}
 }
 
@@ -53,11 +65,15 @@ func (a *Admin) agentDir(name string) string {
 
 // Paths of the contract (§3, §6).
 const (
-	SysusersDir   = "/etc/sysusers.d"
-	CredstoreDir  = "/etc/credstore.encrypted"
-	UnitDir       = "/etc/systemd/system"
+	SysusersDir  = "/etc/sysusers.d"
+	CredstoreDir = "/etc/credstore.encrypted"
+	UnitDir      = "/etc/systemd/system"
+	// One directory for every agent's gateway data and the emergency
+	// stop: OPA (--watch) watches only directories it loaded a file from
+	// when it started, so nothing goes into directories made later. The
+	// package ships _control.yaml there.
 	GatewayAgents = "/etc/mcp-gateway/policy/agents"
-	GatewayStop   = "/etc/mcp-gateway/policy/agents_control/data.yaml"
+	GatewayStop   = "/etc/mcp-gateway/policy/agents/_control.yaml"
 	SocketDir     = "/run/agents"
 )
 
@@ -174,10 +190,10 @@ func (a *Admin) Delete(name string, keepState bool) error {
 		}
 	}
 	a.Run(nil, "systemctl", append([]string{"disable", "--now"}, units...)...)
-	rm := []string{a.agentDir(name), a.p(filepath.Join(GatewayAgents, name)), a.p(filepath.Join(UnitDir, "agent@"+name+".service.d"))}
+	rm := []string{a.agentDir(name), a.gatewayFile(name), a.p(filepath.Join(UnitDir, "agent@"+name+".service.d"))}
 	matches, _ := filepath.Glob(a.p(filepath.Join(CredstoreDir, "agent-"+name+".*")))
 	rm = append(rm, matches...)
-	timers, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "agent-schedule@"+name+":*")))
+	timers, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "agent-schedule@"+name+"_*")))
 	rm = append(rm, timers...)
 	if !keepState {
 		rm = append(rm, a.p("/var/lib/agents/"+name))
@@ -213,8 +229,10 @@ type GatewayData struct {
 	Permissions []map[string]any `yaml:"permissions" json:"permissions"`
 }
 
+// gatewayFile is the agent's file in GatewayAgents: <name>.yaml, whose
+// top-level key is the name (data.mcp.agents.<name>).
 func (a *Admin) gatewayFile(name string) string {
-	return a.p(filepath.Join(GatewayAgents, name, "data.yaml"))
+	return a.p(filepath.Join(GatewayAgents, name+".yaml"))
 }
 
 func (a *Admin) readGateway(name string) (*GatewayData, error) {
@@ -222,23 +240,34 @@ func (a *Admin) readGateway(name string) (*GatewayData, error) {
 	if err != nil {
 		return nil, err
 	}
-	var d GatewayData
-	if err := yaml.Unmarshal(b, &d); err != nil {
+	var doc map[string]*GatewayData
+	if err := yaml.Unmarshal(b, &doc); err != nil {
 		return nil, fmt.Errorf("%s: %w", a.gatewayFile(name), err)
 	}
-	return &d, nil
+	if doc[name] == nil {
+		return nil, fmt.Errorf("%s: no data for agent %s", a.gatewayFile(name), name)
+	}
+	return doc[name], nil
 }
 
 func (a *Admin) writeGateway(name string, d *GatewayData) error {
 	if d.Permissions == nil {
 		d.Permissions = []map[string]any{}
 	}
-	b, err := yaml.Marshal(d)
+	b, err := yaml.Marshal(map[string]*GatewayData{name: d})
 	if err != nil {
 		return err
 	}
 	head := "# Written by agent-admin: the autonomy mode and permissions of agent " + name + "\n# (cockpit-agentic CONTRACT.md §6). mcp-gateway's OPA reloads it by itself.\n"
-	return writeFile(a.gatewayFile(name), append([]byte(head), b...), 0o644)
+	if err := writeFile(a.gatewayFile(name), append([]byte(head), b...), 0o644); err != nil {
+		return err
+	}
+	return a.waitPolicy("mcp/agents/"+name, func(v any) bool {
+		m, _ := v.(map[string]any)
+		perms, _ := m["permissions"].([]any)
+		paused, _ := m["paused"].(bool)
+		return m != nil && m["mode"] == d.Mode && paused == d.Paused && len(perms) == len(d.Permissions)
+	})
 }
 
 // SetMode sets the autonomy mode, enforced by the gateway.
@@ -323,16 +352,82 @@ func (a *Admin) Pause(name, by string, on bool) error {
 // StopAll is the emergency stop: the gateway denies every agent
 // everything, and every agent unit and schedule stops.
 func (a *Admin) StopAll(by string) error {
-	b := fmt.Sprintf("# Emergency stop (agent-admin stop-all). Remove with agent-admin release-all.\nstopped: true\nby: %q\nat: %q\n", by, a.Now().UTC().Format(time.RFC3339))
-	if err := writeFile(a.p(GatewayStop), []byte(b), 0o644); err != nil {
+	if err := a.writeStop(true, by); err != nil {
 		return err
 	}
 	return a.Run(nil, "systemctl", "stop", "agent-schedule@*.timer", "agent@*.socket", "agent@*.service")
 }
 
+// writeStop writes the emergency stop's flag (data.mcp.agents._control).
+func (a *Admin) writeStop(stopped bool, by string) error {
+	b := fmt.Sprintf("# The emergency stop of every agent (agent-admin stop-all, release-all;\n# cockpit-agentic CONTRACT.md §8).\n_control:\n  stopped: %t\n  by: %q\n  at: %q\n",
+		stopped, by, a.Now().UTC().Format(time.RFC3339))
+	if err := writeFile(a.p(GatewayStop), []byte(b), 0o644); err != nil {
+		return err
+	}
+	return a.waitPolicy("mcp/agents/_control/stopped", func(v any) bool { return v == stopped })
+}
+
+// waitPolicy waits until the gateway's OPA has loaded what was just
+// written, so that a mode, a pause or the emergency stop is in force when
+// agent-admin returns. Without the gateway's OPA it only says so.
+func (a *Admin) waitPolicy(path string, loaded func(any) bool) error {
+	if a.OPAData == nil {
+		return nil
+	}
+	deadline := a.Now().Add(a.PolicyWait)
+	var last error
+	for {
+		v, err := a.OPAData(path)
+		if err == nil && loaded(v) {
+			return nil
+		}
+		if err != nil {
+			last = err
+			if errors.Is(err, errNoOPA) {
+				fmt.Fprintf(a.Out, "agent-admin: mcp-gateway's OPA is not running; the change is in force when it loads %s\n", GatewayAgents)
+				return nil
+			}
+		}
+		if !a.Now().Before(deadline) {
+			if last != nil {
+				return fmt.Errorf("the gateway's policy did not load the change within %s: %w", a.PolicyWait, last)
+			}
+			return fmt.Errorf("the gateway's policy did not load the change within %s (%s)", a.PolicyWait, path)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+// OPASocket is mcp-gateway's OPA (mcp-opa.service).
+const OPASocket = "/run/mcp-gateway/opa.sock"
+
+var errNoOPA = errors.New("mcp-gateway's OPA is not running")
+
+func opaData(path string) (any, error) {
+	if _, err := os.Stat(OPASocket); err != nil {
+		return nil, errNoOPA
+	}
+	c := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", OPASocket)
+	}}}
+	res, err := c.Get("http://opa/v1/data/" + path)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	var out struct {
+		Result any `json:"result"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out.Result, nil
+}
+
 // ReleaseAll undoes StopAll: sockets and timers that are enabled start again.
 func (a *Admin) ReleaseAll() error {
-	if err := os.Remove(a.p(GatewayStop)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := a.writeStop(false, "release-all"); err != nil {
 		return err
 	}
 	names, err := a.List()
@@ -354,6 +449,31 @@ func (a *Admin) ReleaseAll() error {
 	return a.Run(nil, "systemctl", append([]string{"start"}, units...)...)
 }
 
+// Trigger starts a schedule's activity on the agent's socket, as root
+// with origin schedule (CONTRACT.md §4). agent-schedule@<name>_<schedule>.service
+// (instance NAME_SCHEDULE) runs it; it is here and not in agent-launcher because systemd would
+// run the launcher's program in agent_t, which may not reach agents'
+// sockets (§13 of the contract, SELinux).
+func (a *Admin) Trigger(instance string) error {
+	name, sched, ok := strings.Cut(instance, "_")
+	if !ok || checkName(name) != nil {
+		return fmt.Errorf("%q: want NAME_SCHEDULE", instance)
+	}
+	cfg, err := config.Load(a.agentDir(name))
+	if err != nil {
+		return err
+	}
+	for _, s := range cfg.Schedules {
+		if s.Name == sched {
+			return a.Start(filepath.Join(SocketDir, name, "api.sock"), map[string]any{
+				"prompt": s.Prompt,
+				"origin": map[string]any{"kind": "schedule", "by": "agent-schedule@" + instance + ".timer", "schedule": sched},
+			})
+		}
+	}
+	return fmt.Errorf("agent %s has no schedule %q", name, sched)
+}
+
 // List returns the agents' names (§11: an agent exists when its agent.yaml does).
 func (a *Admin) List() ([]string, error) {
 	m, err := filepath.Glob(a.p(filepath.Join(config.ConfigRoot, "*", "agent.yaml")))
@@ -370,7 +490,7 @@ func (a *Admin) List() ([]string, error) {
 	return out, nil
 }
 
-func scheduleUnit(agent, sched string) string { return "agent-schedule@" + agent + ":" + sched }
+func scheduleUnit(agent, sched string) string { return "agent-schedule@" + agent + "_" + sched }
 
 // syncSchedules writes a timer drop-in per schedule and removes the
 // ones of schedules that are gone.
@@ -384,7 +504,7 @@ func (a *Admin) syncSchedules(cfg *config.Config) error {
 			return err
 		}
 	}
-	old, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "agent-schedule@"+cfg.Name+":*.timer.d")))
+	old, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "agent-schedule@"+cfg.Name+"_*.timer.d")))
 	for _, d := range old {
 		unit := strings.TrimSuffix(filepath.Base(d), ".timer.d")
 		if !want[unit] {

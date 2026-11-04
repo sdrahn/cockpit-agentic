@@ -278,7 +278,7 @@ func TestScheduledActivityAndSessionsGuard(t *testing.T) {
 		t.Errorf("non-root could set its origin: %+v", a.Origin)
 	}
 
-	res, b = e.do("POST", "/v1/activities", "0:root", map[string]any{"prompt": "Run the compliance check.", "origin": map[string]any{"kind": "schedule", "by": "agent-schedule@patch-pilot:compliance.timer", "schedule": "compliance"}, "wait": true})
+	res, b = e.do("POST", "/v1/activities", "0:root", map[string]any{"prompt": "Run the compliance check.", "origin": map[string]any{"kind": "schedule", "by": "agent-schedule@patch-pilot_compliance.timer", "schedule": "compliance"}, "wait": true})
 	if res.StatusCode != 200 {
 		t.Fatalf("%d %s", res.StatusCode, b)
 	}
@@ -456,4 +456,22 @@ func waitFor(t *testing.T, f func() bool) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("timed out")
+}
+
+// A run that ends in an error the runner returns (here: the gateway's
+// tools cannot be listed) is a failed activity with the error as reason,
+// not a finished one.
+func TestRunErrorIsFailedActivity(t *testing.T) {
+	e := newEnv(t, testutil.Text("unused"))
+	os.Remove(e.gw.Socket) // the gateway is gone
+	_, b := e.do("POST", "/v1/activities", "0:root", map[string]any{"prompt": "PROBE", "wait": true})
+	var a governance.Activity
+	json.Unmarshal(b, &a)
+	if a.State != governance.StateFailed || !strings.Contains(a.Reason, "mcp-gateway") {
+		t.Errorf("activity %s", b)
+	}
+	end := e.log.Events(journal.InvocationEnd)
+	if last := end[len(end)-1]; last.Fields["OUTCOME"] != "error" || !strings.Contains(last.Fields["REASON"], "mcp-gateway") {
+		t.Errorf("journal %+v", last)
+	}
 }

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/glebarez/sqlite"
@@ -185,7 +186,11 @@ func newModel(ctx context.Context, cfg *config.Config, creds string) (model.LLM,
 func openSessions(dir string) (session.Service, *gorm.DB, error) {
 	dsn := "file::memory:?cache=shared"
 	if dir != "" {
-		dsn = filepath.Join(dir, "sessions.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+		// _txlock=immediate: a transaction takes the write lock when it
+		// begins, waiting busy_timeout for it. A deferred one that reads
+		// first fails at once with SQLITE_BUSY when another run writes
+		// (a schedule's and an AG-UI client's runs at the same time).
+		dsn = filepath.Join(dir, "sessions.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_txlock=immediate"
 	}
 	dial := sqlite.Open(dsn)
 	svc, err := database.NewSessionService(dial, &gorm.Config{Logger: logger.Discard})
@@ -425,7 +430,8 @@ func (l *Launcher) startActivity(w http.ResponseWriter, r *http.Request) {
 	runCtx, cancel := context.WithTimeout(ctx, l.cfg.Limits.MaxInvocation())
 	st.Cancel = cancel
 	started := make(chan string, 1)
-	st.Started = func(id string) { started <- id }
+	var startedID atomicString
+	st.Started = func(id string) { startedID.Store(id); started <- id }
 	l.Governor.Expect(sid, st)
 	done := make(chan error, 1)
 	l.runs.Add(1)
@@ -433,10 +439,17 @@ func (l *Launcher) startActivity(w http.ResponseWriter, r *http.Request) {
 		defer l.runs.Done()
 		defer cancel()
 		var runErr error
-		for _, err := range l.Runner.Run(runCtx, user, sid, genai.NewContentFromText(req.Prompt, genai.RoleUser), agent.RunConfig{}) {
+		var id string
+		for ev, err := range l.Runner.Run(runCtx, user, sid, genai.NewContentFromText(req.Prompt, genai.RoleUser), agent.RunConfig{}) {
+			if ev != nil && id == "" {
+				id = ev.InvocationID
+			}
 			if err != nil {
 				runErr = err
 			}
+		}
+		if runErr != nil {
+			l.Governor.Failed(firstNonEmpty(id, startedID.Load()), runErr)
 		}
 		done <- runErr
 	}()
@@ -509,6 +522,23 @@ func nonNil[T any](s []T) []T {
 		return []T{}
 	}
 	return s
+}
+
+type atomicString struct{ v atomic.Value }
+
+func (a *atomicString) Store(s string) { a.v.Store(s) }
+func (a *atomicString) Load() string {
+	s, _ := a.v.Load().(string)
+	return s
+}
+
+func firstNonEmpty(a ...string) string {
+	for _, s := range a {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // peekJSON decodes the body into v and returns the request with the

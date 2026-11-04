@@ -57,18 +57,42 @@ pass() { echo "PASS: $*"; record pass "$*"; }
 fail() { echo "FAIL: $*"; failed=1; record fail "$*"; fail_context; }
 skip() { echo "SKIP: $*"; record skip "$*"; }
 fail_context() {
+	# What the agent answered last, when a check compared it.
+	if [ -n "${last_answer:-}" ]; then
+		echo "    | the agent answered: $(jq -c '{state, summary, reason, calls: [.calls[]? | {tool, state, reason}]}' <<<"$last_answer" 2>/dev/null || head -c 300 <<<"$last_answer")"
+		last_answer=
+	fi
 	journalctl --since -20s --no-pager -o short-precise 2>/dev/null |
 		grep -E 'agent-|agent@|mcp-gateway' | grep -iE 'error|fail|denied|status=[0-9]' |
-		tail -10 | sed 's/^/    | /'
+		tail -6 | sed 's/^/    | /'
+	# The SELinux denials behind a "Permission denied", in the log itself.
+	# (ausearch when auditd runs, the kernel log when it does not).
+	{
+		ausearch -m AVC,USER_AVC,SELINUX_ERR -ts recent 2>/dev/null | grep -E '^type=(AVC|USER_AVC|SELINUX_ERR)'
+		journalctl -k --since -30s --no-pager -o cat 2>/dev/null | grep -E 'avc: +denied'
+	} | sed -E 's/^type=[A-Z_]+ msg=audit\([^)]*\): //; s/^.*(avc: +denied)/\1/' | sort -u | tail -6 | sed 's/^/    | avc: /'
 }
 check() { # check <description> <command...>
 	local desc=$1
 	shift
+	# Without a running agent, the checks that need one are skipped: they
+	# would only wait for their timeouts (no_agent is set by Discovery).
+	if [ -n "${no_agent:-}" ] && needs_agent; then
+		skip "$desc (no agent is running: see Discovery)"
+		return
+	fi
 	if "$@"; then pass "$desc"; else fail "$desc"; fi
+}
+needs_agent() {
+	case $current_section in
+	"Supervised by default" | Approval:* | "Autonomy modes" | Pause | Cancel | Schedules | AG-UI | "Access to the socket" | Delegation) return 0 ;;
+	esac
+	return 1
 }
 section() {
 	printf '\n=== %s\n' "$*"
 	current_section=$*
+	last_answer=
 }
 eventually() { # eventually <seconds> <command...>
 	local deadline=$((SECONDS + $1))
@@ -130,7 +154,7 @@ write_results() {
 # --- helpers -----------------------------------------------------------------
 
 # api <agent> <path> [curl args...]: the agent's socket, as root.
-api() { local a=$1 p=$2; shift 2; curl -sS --max-time 120 --unix-socket "/run/agents/$a/api.sock" "http://agent$p" "$@"; }
+api() { local a=$1 p=$2; shift 2; curl -sS --max-time 60 --unix-socket "/run/agents/$a/api.sock" "http://agent$p" "$@"; }
 # gw <path> [curl args...]: the gateway's control API, as root.
 gw() { local p=$1; shift; curl -sS --max-time 30 --unix-socket /run/mcp-gateway/control.sock "http://localhost$p" "$@"; }
 # run_activity <agent> <prompt>: starts an activity and waits; prints it.
@@ -151,7 +175,10 @@ label() { ps -o label= -p "$1" 2>/dev/null | tr -d ' '; }
 main_pid() { systemctl show -p MainPID --value "agent@$1.service"; }
 summary_has() { grep -qF -- "$2" <<<"$(jq -r .summary <<<"$1")"; }
 # runs_with <agent> <prompt> <text>: an activity whose summary has <text>.
-runs_with() { summary_has "$(run_activity "$1" "$2")" "$3"; }
+runs_with() {
+	last_answer=$(run_activity "$1" "$2")
+	summary_has "$last_answer" "$3"
+}
 not() { ! "$@"; }
 json_ok() { jq -e "$2" >/dev/null 2>&1 <<<"$1"; }
 # code_is <status> <command...>: the HTTP status of a curl-based helper.
@@ -190,6 +217,15 @@ check "the gateway is running" eventually 30 test -S /run/mcp-gateway/mcp.sock
 check "the agents' policy module is installed for the gateway" test -f /usr/share/mcp-gateway/policy/cockpit-agentic/agents.rego
 check "group agent-clients exists" getent group agent-clients
 
+section Labels
+for d in /run/agents /var/lib/agents /etc/cockpit-agentic; do
+	if enforcing; then
+		check "$d has the module's label" grep -qE 'agent_(runtime|var_lib|conf)_t' <<<"$(stat -c %C "$d" 2>/dev/null)"
+	else
+		skip "$d has the module's label (SELinux is not enforcing)"
+	fi
+done
+
 section Setup
 systemctl stop agentic-fakemodel.service >/dev/null 2>&1
 systemd-run --unit=agentic-fakemodel --property=DynamicUser=yes "$dir/fakemodel" --listen 127.0.0.1:8008 >/dev/null 2>&1
@@ -218,20 +254,29 @@ check "agent-t1 is in mcp-users" in_group agent-t1 mcp-users
 check "agent-t1 is in agent-clients" in_group agent-t1 agent-clients
 check "the configuration is root:agent-t1 0640" stat_is /etc/cockpit-agentic/agents/t1/agent.yaml root:agent-t1:640
 check "the socket unit is active" systemctl is-active -q agent@t1.socket
-check "the gateway data says supervised" grep -q "mode: supervised" /etc/mcp-gateway/policy/agents/t1/data.yaml
-check "the gateway data grants nothing" grep -q "permissions: \[\]" /etc/mcp-gateway/policy/agents/t1/data.yaml
-check "the schedule's timer is enabled" systemctl is-enabled -q 'agent-schedule@t1:check.timer'
+check "the gateway data says supervised" grep -q "mode: supervised" /etc/mcp-gateway/policy/agents/t1.yaml
+check "the gateway data grants nothing" grep -q "permissions: \[\]" /etc/mcp-gateway/policy/agents/t1.yaml
+check "the schedule's timer is enabled" systemctl is-enabled -q 'agent-schedule@t1_check.timer'
 check "agent-admin list names t1" bash -c 'agent-admin list | grep -qx t1'
 
 section Discovery
 st=$(api t1 /v1/status)
-check "GET /v1/status answers contract 1 (starts the agent)" json_ok "$st" '.contract == 1 and .name == "t1"'
+if json_ok "$st" '.contract == 1 and .name == "t1"'; then
+	pass "GET /v1/status answers contract 1 (starts the agent)"
+else
+	fail "GET /v1/status answers contract 1 (starts the agent)"
+	no_agent=1
+	systemctl status --no-pager agent@t1.service 2>&1 | tail -n 15 | sed 's/^/    | /'
+fi
 check "status names the units" json_ok "$st" '.units.service == "agent@t1.service"'
 check "status says the lifecycle is systemd" json_ok "$st" '.lifecycle.kind == "systemd" and .lifecycle.socket == "agent@t1.socket"'
 check "the socket is root:agent-clients 0660" stat_is /run/agents/t1/api.sock root:agent-clients:660
 check "the agent runs as agent-t1" user_is "$(main_pid t1)" agent-t1
 if enforcing; then
 	check "the agent runs in agent_t" grep -q ':agent_t:' <<<"$(label "$(main_pid t1)")"
+	grep -q ':agent_t:' <<<"$(label "$(main_pid t1)")" ||
+		echo "    | domain $(label "$(main_pid t1)"), program $(stat -c %C /usr/libexec/cockpit-agentic/agent-launcher)"
+	check "the launcher is labelled agent_exec_t" grep -q ':agent_exec_t:' <<<"$(stat -c %C /usr/libexec/cockpit-agentic/agent-launcher)"
 else
 	skip "the agent runs in agent_t (SELinux is not enforcing)"
 fi
@@ -239,7 +284,9 @@ check "journal: agent.start" eventually 10 journal_has t1 agent.start 'true'
 
 section Sandbox
 pid=$(main_pid t1)
-check "the agent cannot see the gateway's control socket" not nsenter -t "$pid" -m test -e /run/mcp-gateway/control.sock
+# InaccessiblePaths= leaves the name and takes the access away.
+check "the agent cannot reach the gateway's control socket" not nsenter -t "$pid" -m \
+	curl -s --max-time 5 --unix-socket /run/mcp-gateway/control.sock -o /dev/null http://localhost/v1/whoami
 check "the agent sees no agents' sockets" test -z "$(nsenter -t "$pid" -m ls -A /run/agents 2>/dev/null)"
 check "the agent cannot write /etc" not nsenter -t "$pid" -m -S "$(id -u agent-t1)" -G "$(id -g agent-t1)" touch /etc/agentic-test
 for p in NoNewPrivileges=yes ProtectSystem=strict ProtectHome=yes PrivateTmp=yes; do
@@ -250,6 +297,7 @@ done
 
 section "Supervised by default"
 a=$(run_activity t1 PROBE)
+last_answer=$a
 check "without permissions, the gateway shows the agent no tools" summary_has "$a" "not offered: agentic-test__probe"
 printf '%s\n' '- {server: agentic-test, tool: probe, read_only: true}' '- {server: agentic-test, tool: change}' | agent-admin permissions t1
 check "with probe read-only, PROBE runs without an approval" eventually 30 runs_with t1 PROBE 'probe ok'
@@ -295,7 +343,7 @@ printf '%s\n' '- {server: agentic-test, tool: probe, read_only: true}' '- {serve
 
 section Pause
 agent-admin pause t1
-check "the gateway data says paused" grep -q 'paused: true' /etc/mcp-gateway/policy/agents/t1/data.yaml
+check "the gateway data says paused" grep -q 'paused: true' /etc/mcp-gateway/policy/agents/t1.yaml
 check "status says paused" json_ok "$(api t1 /v1/status)" '.paused == true'
 check "a new activity is refused (409)" code_is 409 api t1 /v1/activities -X POST -d '{"prompt":"PROBE"}'
 check "journal: agent.paused" eventually 10 journal_has t1 agent.paused 'true'
@@ -312,7 +360,9 @@ check "journal: activity.cancel" eventually 10 journal_has t1 activity.cancel ".
 [ -n "$aid" ] && gw "/v1/approvals/$aid" -X POST -d '{"decision":"deny","scope":"once"}' >/dev/null 2>&1
 
 section Schedules
-systemctl start 'agent-schedule@t1:check.service'
+if ! systemctl start 'agent-schedule@t1_check.service'; then
+	journalctl --no-pager -o cat --since "@$t0" -u 'agent-schedule@t1_check.service' 2>&1 | tail -n 15 | sed 's/^/    | /'
+fi
 check "the schedule's run is an activity of origin schedule" eventually 30 journal_has t1 invocation.start '.AGENT_ORIGIN == "schedule" and .AGENT_SCHEDULE == "check" and .AGENT_USER == "system:schedule"'
 
 section AG-UI
@@ -349,8 +399,8 @@ check "the gateway audited the denial" eventually 10 gw_audit_has '.sub == "agen
 
 section "Emergency stop"
 check "agent-admin stop-all" agent-admin stop-all
-check "the gateway's agents_control says stopped" grep -q 'stopped: true' /etc/mcp-gateway/policy/agents_control/data.yaml
-for u in agent@t1.socket agent@t1.service agent@t2.socket agent@t2.service agent-schedule@t1:check.timer; do
+check "the gateway's emergency stop flag is set" grep -q 'stopped: true' /etc/mcp-gateway/policy/agents/_control.yaml
+for u in agent@t1.socket agent@t1.service agent@t2.socket agent@t2.service agent-schedule@t1_check.timer; do
 	check "$u is stopped" not systemctl is-active -q "$u"
 done
 systemctl start agent@t1.socket
@@ -361,9 +411,13 @@ check "and calls are allowed again" eventually 30 runs_with t1 PROBE 'probe ok'
 
 section SELinux
 if enforcing; then
-	avc=$(ausearch -m AVC,USER_AVC -ts "$(date -d "@$t0" '+%m/%d/%Y %H:%M:%S')" 2>/dev/null | grep -E 'agent_t|mcpsrv_agents_t|agent_sock_t|agent_var_lib_t|agent_conf_t')
+	# Every denial that names our domains or types, our programs or our
+	# paths, whatever the other side's type (a directory labelled before
+	# the module was loaded has a generic one).
+	avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$t0" '+%m/%d/%Y %H:%M:%S')" 2>/dev/null |
+		grep -E 'agent_|mcpsrv_agents_t|comm="agent-|name="(agents|api\.sock|t1|t2)"|/run/agents|/var/lib/agents|cockpit-agentic')
 	check "no SELinux denials for the agents" test -z "$avc"
-	[ -n "$avc" ] && sed 's/^/    | /' <<<"$avc" | head -20
+	[ -n "$avc" ] && sed 's/^/    | /' <<<"$avc" | head -30
 else
 	skip "no SELinux denials (SELinux is not enforcing)"
 fi
@@ -372,15 +426,19 @@ section Removing
 check "agent-admin delete t2" agent-admin delete t2
 check "agent-admin delete t1" agent-admin delete t1
 check "t1's configuration is gone" not test -e /etc/cockpit-agentic/agents/t1
-check "t1's gateway data is gone" not test -e /etc/mcp-gateway/policy/agents/t1
+check "t1's gateway data is gone" not test -e /etc/mcp-gateway/policy/agents/t1.yaml
 check "t1's state is gone" not test -e /var/lib/agents/t1
-check "t1's schedule is gone" not systemctl is-enabled -q 'agent-schedule@t1:check.timer'
+check "t1's schedule is gone" not systemctl is-enabled -q 'agent-schedule@t1_check.timer'
 rm -f /etc/mcp-gateway/servers.d/agentic-test.yaml /etc/mcp-gateway/servers.d/agents.yaml
 systemctl stop agentic-fakemodel.service >/dev/null 2>&1
 
 # --- results --------------------------------------------------------------------
 
-[ -n "$results" ] && write_results "$results"
+if [ -n "$results" ]; then
+	write_results "$results"
+	ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$t0" '+%m/%d/%Y %H:%M:%S')" >"$results/avc.txt" 2>&1
+	journalctl --no-pager --since "@$t0" -o short-precise >"$results/journal.txt" 2>&1
+fi
 n_fail=$(printf '%s\n' "${results_list[@]}" | awk -F'\t' '$2 == "fail"' | wc -l)
 n_skip=$(printf '%s\n' "${results_list[@]}" | awk -F'\t' '$2 == "skip"' | wc -l)
 printf '\n%d checks, %d failed, %d skipped\n' "${#results_list[@]}" "$n_fail" "$n_skip"
