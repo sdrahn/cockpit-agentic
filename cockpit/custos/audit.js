@@ -93,7 +93,7 @@ function renderActions(list) {
             : null;
         return el("div", { class: "action", id: "action-" + a.id },
             el("div", { class: "head" }, el("span", { class: "mono" }, a.tool || "?"),
-               el("span", { class: "muted" }, (a.agent || "?") + " · approval " + a.id + (a.user ? " · for " + a.user : ""))),
+               el("span", { class: "muted", title: a.id }, (a.agent || "?") + " · approval " + shortApproval(a.id) + (a.user ? " · for " + a.user : ""))),
             a.proposed ? step("proposed", "badge-running", a.rationale ? "“" + a.rationale + "” (the agent's)" : "", a.proposed) : null,
             decided, executed);
     }));

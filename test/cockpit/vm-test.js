@@ -130,7 +130,7 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
         check(t.includes("custos-test__change") && t.includes("agent-patch-pilot") && t.includes("self-asserted") &&
               t.includes("Writing the test marker"), "the approval item joins the gateway's call and the agent's account", t.slice(0, 300));
         await frame().locator("#decided .decided").first().waitFor({ timeout: 30000 });
-        check((await frame().locator("#decided").textContent()).includes(declined), "today's decline is listed (the journal, as " + user + ")");
+        check((await frame().locator("#decided").textContent()).includes(declined.slice(0, 10)), "today's decline is listed (the journal, as " + user + ")");
         await shot("approvals");
         await item.locator("button:has-text('Approve once')").click();
         await frame().locator("#approvals").getByText("not pending").waitFor({ timeout: 30000 });

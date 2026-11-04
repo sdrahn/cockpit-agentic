@@ -366,6 +366,10 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check((await calls()).some(c => c[0] === "spawn" && c[1].includes("AGENT_CONTRACT=1") && c[4] === ""),
           "the journal is read as the person");
 
+    // The gateway's real approval ids are long: shown short, the full one in the title.
+    check(await page.evaluate(() => shortApproval("a-6c88df4c32d09c66eb46bc8941b53745") === "a-6c88df4c…" && shortApproval("a-42") === "a-42"),
+          "long approval ids are shown short");
+
     check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join("; ") : ""));
     await browser.close();
 })().catch(e => { console.error(e); process.exit(1); });

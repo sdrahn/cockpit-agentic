@@ -121,7 +121,7 @@ function renderApprovals(pending) {
             el("div", { class: "head" },
                el("span", { class: "badge badge-waiting" }, since ? "Waiting " + relative(since).replace(/ ago$/, "") : "Waiting"),
                el("span", { class: "mono" }, p.server + "__" + p.name),
-               el("span", { class: "muted" }, agent + " · approval " + p.id +
+               el("span", { class: "muted", title: p.id }, agent + " · approval " + shortApproval(p.id) +
                   (p.expires ? " · times out at " + new Date(p.expires).toLocaleTimeString() : ""))),
             el("div", { class: "halves" }, gatewayHalf(p), agentHalf(p, found)),
             actions));
@@ -150,7 +150,7 @@ async function renderDecided() {
     box.replaceChildren(...(recs.length
         ? recs.map(r => el("div", { class: "decided" },
             stateBadge(r.AGENT_OUTCOME), el("span", { class: "mono" }, r.AGENT_TOOL),
-            el("span", { class: "muted" }, r.AGENT_NAME + " · approval " + r.AGENT_APPROVAL_ID + " · " +
+            el("span", { class: "muted", title: r.AGENT_APPROVAL_ID }, r.AGENT_NAME + " · approval " + shortApproval(r.AGENT_APPROVAL_ID) + " · " +
                when(new Date(Number(r.__REALTIME_TIMESTAMP) / 1000)) +
                (r.AGENT_OUTCOME === "declined" ? " · not executed" : ""))))
         : [el("p", { class: "muted" }, "Nothing decided today.")]));
