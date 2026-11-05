@@ -87,6 +87,11 @@ removed.
   page waited for it, skipping every refresh. A read of an agent's or
   the gateway's API now gives up after 8 seconds, and the agent is
   listed as not answering, pointing to its logs.
+- The demotion evaluator and the review counted records from the whole
+  second of a promotion, so a proposal declined in the same second just
+  before it counted against the new promotion, which could be demoted
+  at once for its override rate. `promoted_by` and `demoted_by` keep
+  the time to the fraction of the second.
 - Building the OpenShell agent image (`packaging/openshell/Containerfile`)
   failed while openSUSE's codec repository was unreachable; the image
   needs nothing from it and no longer refreshes it.
