@@ -987,8 +987,8 @@ the product and release process, tracked here so that nothing is lost.
 | Service identity; privilege only through existing surfaces; MCP | §2, §6, §17 | done |
 | Fleet control plane: audit aggregation, policy distribution, approvals; mandatory above `N` hosts | §12 | parked (O13) |
 | Integration with SLES identity, RBAC, audit, configuration management | §2, §10 | identity, RBAC, audit done per host; configuration management parked with the fleet (O13) |
-| Multiple inference backends, ordered on-premises → customer's cloud → vendor SaaS | §14 | `openai` (any OpenAI-compatible server: on-premises, or the customer's cloud) and `gemini`/`vertex` supported; the ladder in that order in the user guide and the field briefing open (O15) |
-| Zero required egress; each egress flow documented and disable-able | §14, §16a | agents need only the model and the gateway; the full list of flows open (O15) |
+| Multiple inference backends, ordered on-premises → customer's cloud → vendor SaaS | §14 | `openai` (any OpenAI-compatible server: on-premises, or the customer's cloud) and `gemini`/`vertex` supported; the ladder in that order in the user guide (chapter 14); the field briefing open (O15) |
+| Zero required egress; each egress flow documented and disable-able | §14, §16a | agents need only the model and the gateway; every flow, with its switch, in the user guide (chapter 14) |
 | Air-gapped as a release-gate test | §19 | CI runs without a model service (scripted model); a gate with a real local model and no network open (O15) |
 | Signed distro component, updated through the errata pipeline | §19 | OBS packaging done; signing and errata *outside* |
 | Model serving runtime, model artifacts through errata and offline mirrors | — | *outside* |
@@ -1111,7 +1111,7 @@ the product and release process, tracked here so that nothing is lost.
 - **O15 — on-premises reference and air-gapped gate.** A release-gate
   test that installs the packages and a tested open-weight model from an
   offline mirror on a VM without network, then runs the functional tests
-  against it. Also the documented list of egress flows (model updates,
-  opted-in telemetry, incident reports), each with its switch, and the
-  inference backends in the documentation in the order of §20a:
-  on-premises, the customer's own cloud account, vendor-hosted.
+  against it. Done: the egress flows, each with its switch (Custos has
+  no model updates, telemetry or incident reports of its own), and the
+  inference backends in the order of §20a (on-premises, the customer's
+  own cloud account, vendor-hosted), in the user guide's chapter 14.

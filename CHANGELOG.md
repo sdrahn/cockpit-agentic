@@ -7,6 +7,14 @@ removed.
 
 ## Unreleased
 
+### Added
+
+- User guide, chapter 14: where inference runs, in the order on-premises,
+  the customer's own cloud account, vendor-hosted; every network flow
+  that leaves a Custos host, each with its switch (Custos itself sends
+  no telemetry, model updates or incident reports); fencing a systemd
+  agent to its model; installing without a network.
+
 ## v0.2.0 — 2026-11-05
 
 Autonomy per task category, and agent templates. An agent's autonomy is
