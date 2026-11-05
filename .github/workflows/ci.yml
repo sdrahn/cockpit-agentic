@@ -141,7 +141,8 @@ jobs:
           rpmlint -r /tmp/rpmlintrc ~/rpmbuild/RPMS/*/custos*.rpm
       - name: Install and smoke-test
         run: |
-          rpm -ivh --nodeps ~/rpmbuild/RPMS/*/mcp-gateway-[0-9]*.rpm
+          # custos-diagnostics requires the exec server.
+          rpm -ivh --nodeps ~/rpmbuild/RPMS/*/mcp-gateway-[0-9]*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-exec-server-*.rpm
           zypper -n --gpg-auto-import-keys in --allow-unsigned-rpm ~/rpmbuild/RPMS/*/custos-*.rpm
           semodule -l | grep -x custos
           getent group agent-clients
@@ -150,6 +151,7 @@ jobs:
           test -f /usr/share/mcp-gateway/policy/custos/agents.rego
           test -x /usr/libexec/custos/tests/run-tests.sh
           test -f /usr/share/cockpit/custos/manifest.json
+          test -x /usr/sbin/custos-setup
           # The labels the module gives the programs.
           matchpathcon /usr/libexec/custos/agent-launcher | grep -q agent_exec_t
           matchpathcon /usr/libexec/custos/agent-delegate | grep -q mcpsrv_agents_exec_t
