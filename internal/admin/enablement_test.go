@@ -181,13 +181,14 @@ func TestEnableOnBroaderInstall(t *testing.T) {
 // show reports the state, and a state changed without its record.
 func TestShowEnablementTampered(t *testing.T) {
 	a, mem := diagnosticsHost(t)
+	var forged []string // records an agent wrote (its own _UID)
 	journalOf := func(...string) ([]byte, error) {
 		var out []string
 		for _, r := range records(mem, journal.CategoriesEnabled) {
-			b, _ := json.Marshal(map[string]string{"AGENT_ENABLEMENT": r.Fields["ENABLEMENT"], "AGENT_ENABLEMENT_SHA256": r.Fields["ENABLEMENT_SHA256"]})
+			b, _ := json.Marshal(map[string]string{"_UID": "0", "AGENT_ENABLEMENT": r.Fields["ENABLEMENT"], "AGENT_ENABLEMENT_SHA256": r.Fields["ENABLEMENT_SHA256"]})
 			out = append(out, string(b))
 		}
-		return []byte(strings.Join(out, "\n")), nil
+		return []byte(strings.Join(append(out, forged...), "\n")), nil
 	}
 	a.JournalJSON = journalOf
 	p, err := a.Show()
@@ -205,6 +206,14 @@ func TestShowEnablementTampered(t *testing.T) {
 	p, _ = a.Show()
 	if p.Enablement.State != SomeCategories || !strings.Contains(p.Enablement.Tampered, "differs from its record") {
 		t.Errorf("tampered: %+v", p.Enablement)
+	}
+	// An agent writes a record that matches the edited state: it is not
+	// root's, so the state is still tampered.
+	b2, _ := json.Marshal(map[string]string{"_UID": "981", "SYSLOG_IDENTIFIER": "custos-promotion", "AGENT_ENABLEMENT": p.Enablement.Record,
+		"AGENT_ENABLEMENT_SHA256": p.Enablement.Digest()})
+	forged = append(forged, string(b2))
+	if p, _ = a.Show(); !strings.Contains(p.Enablement.Tampered, "differs from its record") {
+		t.Errorf("an agent's record covered the edit: %+v", p.Enablement)
 	}
 	// Without a record id at all.
 	os.WriteFile(f, []byte("_enablement:\n  state: categories\n  enabled: [diagnostics, patch-errata]\n"), 0o644)

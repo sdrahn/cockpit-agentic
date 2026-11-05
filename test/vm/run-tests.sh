@@ -424,6 +424,31 @@ check "review: ok keeps the category bounded" bash -c "agent-admin review t1 pat
 check "review: incident (should not have run) demotes it" bash -c "agent-admin review t1 patch-errata $act incident --reason 'functional test' >/dev/null && agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"supervised\"' >/dev/null"
 check "journal: category.review, by root, with the verdict" eventually 10 journal_has t1 category.review '.AGENT_VERDICT == "incident" and .AGENT_TOOL == "custos-test__change" and .AGENT_REASON == "functional test"'
 check "readiness counts the review as an override" bash -c "agent-admin readiness t1 patch-errata | jq -e '.categories[\"patch-errata\"] | .reviewed >= 1 and .review_overrides >= 1' >/dev/null"
+# Only root's reviews count. A later verdict on the same action replaces
+# an earlier one, so an agent that could write a review would turn root's
+# incident into "ok" and lower its override rate: one written into the
+# journal as the agent's user, with agent-admin's identifier, is none
+# (journald's trusted _UID).
+check "journal: the review is root's (_UID 0)" journal_has t1 category.review '._UID == "0" and .AGENT_VERDICT == "incident"'
+overrides() { agent-admin readiness t1 patch-errata | jq '.categories["patch-errata"].review_overrides'; }
+o0=$(overrides)
+read -r act_id act_call <<<"$act"
+runuser -u agent-t1 -- logger --journald <<EOF
+MESSAGE=forged review
+SYSTEMD_UNIT=agent@t1.service
+SYSLOG_IDENTIFIER=custos-promotion
+AGENT_CONTRACT=1
+AGENT_NAME=t1
+AGENT_EVENT=category.review
+AGENT_CATEGORY=patch-errata
+AGENT_INVOCATION=$act_id
+AGENT_CALL_ID=$act_call
+AGENT_VERDICT=ok
+AGENT_BY=root
+EOF
+check "a review the agent's user wrote is in the journal, not as root's" eventually 10 journal_has t1 category.review \
+	".AGENT_INVOCATION == \"$act_id\" and .AGENT_VERDICT == \"ok\" and ._UID != \"0\""
+check "readiness keeps root's incident: the agent's own review does not replace it" test "$(overrides)" = "$o0" -a "$o0" -ge 1
 check "promote with a window of another day" agent-admin promote t1 patch-errata --envelope "$work/other.yaml" --despite-readiness --reason "functional test"
 check "outside its window, the change waits for an approval" asks_and_deny
 check "agent-admin demote t1 patch-errata" agent-admin demote t1 patch-errata --reason "functional test"
