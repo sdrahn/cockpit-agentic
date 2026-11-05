@@ -95,6 +95,22 @@ removed.
 - Building the OpenShell agent image (`packaging/openshell/Containerfile`)
   failed while openSUSE's codec repository was unreachable; the image
   needs nothing from it and no longer refreshes it.
+- An agent whose model credential was stored on a host with a TPM2 did
+  not start (`Failed to set up credentials: Protocol error`,
+  `243/CREDENTIALS`): `systemd-creds encrypt` seals the secret to the
+  TPM there, and `agent@.service`'s `PrivateDevices=yes` kept systemd
+  from reaching the TPM while it decrypted it. The unit allows
+  `/dev/tpmrm0` for that (`DeviceAllow=`); the agent's own `/dev` stays
+  private. It also says `ConfigurationDirectoryMode=0750`, as
+  `agent-admin create` makes the directory, so systemd no longer warns
+  at every start.
+- `agent-admin set-credential` left the encrypted credential readable
+  by everyone (0644, from `systemd-creds encrypt`'s umask); it is root's
+  alone now (0600). Decrypting it needs root's host key or the TPM.
+- An agent could not read its model credential under SELinux
+  (`model.credential: open /run/credentials/…: permission denied`): the
+  `custos` module did not let `agent_t` read the unit's credentials
+  (`init_var_run_t`), and the base policy does not log that denial.
 
 ## v0.1.1 — 2026-11-04
 

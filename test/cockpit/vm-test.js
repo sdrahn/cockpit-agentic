@@ -90,7 +90,11 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
         try {
             await fn();
         } catch (e) {
-            check(false, name, e.message.split("\n")[0]);
+            // The locator it waited for, and what the page said then.
+            const said = await frame().locator("#error, #defaults-note, #create-note, #agent-created, .config-edit .actions span")
+                .evaluateAll(ns => ns.filter(n => n.textContent.trim()).map(n => "#" + n.id + ": " + n.textContent.trim()).join("\n"))
+                .catch(() => "");
+            check(false, name, e.message.split("\n").filter(l => l.trim()).slice(0, 3).join("\n") + (said ? "\npage: " + said : ""));
             if (shots) await page.screenshot({ path: path.join(shots, "failed-" + name.replace(/\W+/g, "-") + ".png") }).catch(() => {});
         }
     };

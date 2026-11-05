@@ -575,6 +575,37 @@ check "tt1 keeps its model when the defaults go" grep -q 'name: fake-default' /e
 [ -e "$work/defaults.yaml.saved" ] && cp -a "$work/defaults.yaml.saved" /etc/custos/defaults.yaml
 check "agent-admin delete tt1 tt2" bash -c "agent-admin delete tt1 && agent-admin delete tt2"
 
+section "Model credentials"
+# A model credential, as agent-admin set-credential stores it: sealed to
+# the TPM as well where the host has one, which systemd needs while it
+# sets up the agent's credentials (DeviceAllow= in agent@.service).
+if systemd-analyze has-tpm2 -q 2>/dev/null; then tpm="sealed to the TPM"; else tpm="no TPM: the host key only"; fi
+agent-admin delete t3 >/dev/null 2>&1
+f=$(config t3 custos-test)
+sed -i 's|^model: .*|model: {provider: openai, name: fake, endpoint: "http://127.0.0.1:8008/v1", credential: model-key}|' "$f"
+check "agent-admin create t3 (its model needs credential model-key)" agent-admin create t3 --from "$f"
+check "without the credential, t3 says which is missing" eventually 30 bash -c \
+	"systemctl start agent@t3.service >/dev/null 2>&1; journalctl -u agent@t3.service --since '@$t0' -o cat --no-pager | grep -Eq 'model.credential.*(agent-t3.model-key|no credentials directory)'"
+check "agent-admin set-credential t3 model-key ($tpm)" bash -c "printf 'test-key' | agent-admin set-credential t3 model-key"
+echo "  credential: $(stat -c '%U:%G %a %C' /etc/credstore.encrypted/agent-t3.model-key 2>&1)"
+check "the credential is stored encrypted, root's and not readable by others" bash -c \
+	"[ \"\$(stat -c %U:%G /etc/credstore.encrypted/agent-t3.model-key)\" = root:root ] && [ \$(( 0\$(stat -c %a /etc/credstore.encrypted/agent-t3.model-key) & 077 )) -eq 0 ]"
+t3_t0=$(date +%s)
+systemctl reset-failed agent@t3.service >/dev/null 2>&1
+check "with it, t3 starts ($tpm)" bash -c "systemctl restart agent@t3.service && sleep 2 && systemctl is-active -q agent@t3.service"
+check "systemd set up t3's credentials (no CREDENTIALS failure)" not bash -c \
+	"journalctl -u agent@t3.service --since '@$t0' -o cat --no-pager | grep -q 'Failed to set up credentials'"
+check "t3 answers on its socket" bash -c "$(declare -f api); api t3 /v1/status | jq -e '.contract == 1' >/dev/null"
+check "no ConfigurationDirectory mode warning" not bash -c \
+	"journalctl -u agent@t3.service --since '@$t0' -o cat --no-pager | grep -q 'ConfigurationDirectory.*mode is different'"
+# SELinux on the credential (the SELinux section above ran before this
+# one). The base policy does not audit every denial here: that t3 starts
+# and answers is the real check.
+t3_avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$t3_t0" '+%x %T')" 2>/dev/null | grep -E 'denied|SELINUX_ERR' || true)
+[ -n "$t3_avc" ] && printf '  %s\n' "$t3_avc" | head -20
+check "no SELinux denial while t3 reads its credential" test -z "$t3_avc"
+check "agent-admin delete t3" agent-admin delete t3
+
 section Removing
 check "agent-admin delete t2" agent-admin delete t2
 check "agent-admin delete t1" agent-admin delete t1

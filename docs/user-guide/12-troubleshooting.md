@@ -63,6 +63,24 @@ journalctl -u mcp-gateway.service --since -30min                 # the gateway: 
   seconds, so the connection is never answered. Its **Logs**, or
   `journalctl -u agent@NAME.service`, say why: often one of the next
   two.
+- **`Failed to set up credentials: Protocol error`** and
+  **`status=243/CREDENTIALS`** in the unit's journal, on a host with a
+  TPM2 (`systemd-analyze has-tpm2`): `set-credential` sealed the secret
+  to the TPM, and before 0.2.0 the agent's unit (`PrivateDevices=yes`)
+  kept systemd from reaching it. Allow it in a drop-in:
+  `mkdir -p /etc/systemd/system/agent@NAME.service.d`,
+  `printf '[Service]\nDeviceAllow=/dev/tpmrm0 rw\n' > /etc/systemd/system/agent@NAME.service.d/60-tpm.conf`,
+  `systemctl daemon-reload`, `systemctl restart agent@NAME.service`.
+  Later units allow it themselves; remove the drop-in then.
+- **`model.credential: open /run/credentials/agent@NAME.service/…:
+  permission denied`**, with SELinux enforcing and nothing in the audit
+  log: before 0.2.0 the `custos` module did not let agents read their
+  unit's credentials (`init_var_run_t`), and the base policy does not
+  log that denial. Add the permission in a local module:
+  `printf '(allow agent_t init_var_run_t (dir (getattr search open read)))\n(allow agent_t init_var_run_t (file (getattr open read)))\n' > /root/custos-credentials.cil`,
+  `semodule -i /root/custos-credentials.cil`,
+  `systemctl restart agent@NAME.service`. Remove it once 0.2.0 is
+  installed: `semodule -r custos-credentials`.
 - **`model.credential "…": no credentials directory`** or
   **`model.credential: open …`**: the credential is not set or has another
   name. `agent-admin set-credential NAME <cred> < secret`, then

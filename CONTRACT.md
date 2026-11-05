@@ -799,8 +799,11 @@ holds no secret.
 runs `agent-launcher serve` with:
 
 - `User=agent-%i`, `SupplementaryGroups=mcp-users`;
-- `ConfigurationDirectory=custos/agents/%i`, `StateDirectory=agents/%i`;
-- `ImportCredential=agent-%i.*`;
+- `ConfigurationDirectory=custos/agents/%i` (`ConfigurationDirectoryMode=0750`,
+  as `agent-admin create` makes it), `StateDirectory=agents/%i`;
+- `ImportCredential=agent-%i.*`, with `DeviceAllow=/dev/tpmrm0 rw`: systemd
+  decrypts the credentials under the unit's device policy, and on a host
+  with a TPM2 `systemd-creds encrypt` seals them to it;
 - `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`,
   `PrivateDevices=yes`, `NoNewPrivileges=yes`, `CapabilityBoundingSet=`,
   `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`,
@@ -928,7 +931,9 @@ enforcing; they fail on any denial for the module's types.
 `agent_var_lib_t`, `agent_runtime_t` and `agent_sock_t`. `agent_t` gets
 `mcp_gateway_client` (the MCP socket) but not
 `mcp_gateway_control_client`. It may connect to HTTP ports for models
-(boolean `agent_connect_any` for others). It cannot connect to
+(boolean `agent_connect_any` for others). It reads its own credentials
+in `/run/credentials/<unit>` (`init_var_run_t`, as mcp-gateway's
+server domains do). It cannot connect to
 `agent_sock_t`. `mcpsrv_agents_t` (from the gateway's backend template)
 may connect to `agent_sock_t`, and so may Cockpit's bridge
 (`unconfined_t`).
