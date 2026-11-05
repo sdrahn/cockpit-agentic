@@ -80,6 +80,7 @@ envelope for promoting them. Templates are in
 
 | Template | Systems | Mode | Does | Changes, and what they need |
 |---|---|---|---|---|
+| `health-check` | any | supervised | the bundled diagnostics agent: runs the diagnostic playbooks ([below](#playbooks)) daily (failed units, disk pressure, journal errors) and weekly (update status), and any of them on request; reports findings, likely causes with its confidence and the output they rest on, and a remediation plan for you | none: read-only permissions in `diagnostics`, so it also runs on a diagnostics-only host ([chapter 6](06-permissions-and-modes.md#diagnostics-only)) |
 | `triage` | any | advisory | looks into a problem you describe: failed units and their logs, disk space, updates, snapshots, the firewall; reports the likely cause and next steps | none |
 | `exposure-watch` | any | advisory | reports the firewall's zones, the services they allow and the running services, weekly | none |
 | `service-doctor` | any | supervised | finds failed or flapping units, works out why from their logs, restarts or reloads them; hourly report | start, restart, reload: `config-lifecycle`; stop, disable: an approval every time |

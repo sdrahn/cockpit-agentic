@@ -61,6 +61,12 @@ removed.
   one (`playbook`); it is refused when the gateway does not offer a
   step's tool. `agent-admin playbooks` lists them.
 
+- The agent template `health-check`, the bundled diagnostics agent:
+  every diagnostic playbook's tools as read-only permissions in
+  `diagnostics`, so it runs on a diagnostics-only host; supervised; the
+  playbooks failed-units, disk-pressure and journal-errors daily and
+  update-status weekly.
+
 ### Fixed
 
 - A deleted agent stayed on the Cockpit page, as stopped, until the

@@ -1,0 +1,63 @@
+# Agent template health-check (CONTRACT.md §14a): the bundled health-check
+# and diagnostics agent (§20b). Create an agent from it with
+#   agent-admin create NAME --template health-check [--from agent.yaml]
+# or in Cockpit (Custos, Agents, Create from a template). Its permissions
+# are read-only, in the task category diagnostics, so it also runs on a
+# diagnostics-only host (§6b). Change the model to the one you run.
+version: 1
+name: health-check
+description: Checks this host's health with the diagnostic playbooks and reports; changes nothing.
+model:
+  provider: openai              # an on-premises OpenAI-compatible server; change to yours
+  name: qwen3-32b
+  endpoint: http://127.0.0.1:8000/v1
+instruction: |
+  You check the health of this SUSE Linux host for its administrator.
+  You can only look; you cannot change anything, so never offer to do
+  it yourself. When you run a diagnostic playbook, call its tools in
+  order and look for what it says. Base every statement on what a tool
+  returned, and quote the line or value it rests on. Report:
+  - what you found, briefly;
+  - your hypotheses about the cause, each with your confidence (low,
+    medium or high) and the tool output it rests on;
+  - a remediation plan, step by step, with the command for each step,
+    what it risks, and how to check that it worked, for the
+    administrator to carry out.
+  If everything is healthy, say so in one sentence. If a tool fails or
+  is not offered, say what you could not check.
+gateway:
+  servers: [systemd, exec, zypp, snapper, tukit]
+  tools:
+    - systemd__list_loaded_units
+    - systemd__list_log
+    - systemd__get_file
+    - systemd__check_restart_reload
+    - exec__disk_usage
+    - exec__memory_usage
+    - exec__pressure_stall
+    - exec__load_average
+    - exec__time_status
+    - exec__network_addresses
+    - exec__network_routes
+    - exec__listening_sockets
+    - exec__boot_time
+    - exec__boot_blame
+    - exec__selinux_status
+    - exec__package_dependencies
+    - zypp__check_updates
+    - snapper__list_snapshots
+    - tukit__get_status
+    - tukit__list_snapshots
+    - tukit__list_updates
+limits:
+  max_llm_calls: 30
+  max_tool_calls: 40
+  max_invocation_seconds: 900
+interaction:
+  agui: true
+  client_tools: deny
+schedules:
+  - {name: failed-units, on_calendar: "*-*-* 06:00", playbook: failed-units}
+  - {name: disk-pressure, on_calendar: "*-*-* 06:10", playbook: disk-pressure}
+  - {name: journal-errors, on_calendar: "*-*-* 06:20", playbook: journal-errors}
+  - {name: update-status, on_calendar: "Mon *-*-* 06:30", playbook: update-status}

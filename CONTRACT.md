@@ -1178,6 +1178,10 @@ the installer what happened. Without `--diagnostics-only` nothing is
 written: the broader install has all categories, and no agent until an
 administrator creates one.
 
+The agent is supervised: its permissions are read-only and need no
+approval, and a category enabled later starts supervised for it as for
+any agent (§6b), which an `advisory` agent would cap.
+
 The four backends, in the documented order (§14, user guide chapter 14):
 `on-host` (a model server on this host), `local-network` (one on the
 local network), `customer-cloud` (the customer's own cloud account) and
@@ -1291,7 +1295,8 @@ inherited, not specified again.
 | Enabling more categories: one documented, authenticated, logged action; the result identical to a broader install with them | §6b, §17 | done: `agent-admin enable`, `categories.enabled`; the gate compares the gateway's decisions with a host without enablement state |
 | Enabled categories start supervised | §6a, §6b | done (§6a); nothing new needed |
 | The diagnostics history as trust evidence for promotion | §4a, §6b | design (O16): reports and feedback in the readiness view |
-| Diagnostics: read host state, logs and metrics; correlate and summarize; root-cause hypotheses; written remediation plans for the administrator | §4a, §6b | design (O16): the `diagnostics` category (read-only), the report |
+| The bundled health-check and diagnostics agent | §14a, §20b | the template `health-check`: every playbook's tools, read-only in `diagnostics`, supervised, with daily and weekly playbook schedules; created on a diagnostics-only host in the release gate. Its install by `custos-setup` open (O16) |
+| Diagnostics: read host state, logs and metrics; correlate and summarize; root-cause hypotheses; written remediation plans for the administrator | §4a, §6b | the `diagnostics` category (read-only) and the playbooks done; the structured report open (O16) |
 | The published diagnostic playbook set | §14c | done: eleven playbooks and their read-only `exec` commands; an activity or a schedule runs one, refused when the gateway does not offer a step's tool |
 | Confidence indicator | §4a | design (O16): the model's confidence, labelled as such, next to the host-verified evidence; the Cockpit view open |
 | Recommendation provenance ("because of log line X and metric Y") | §4a | design (O16): evidence quotes verified against the tool results by the host |
@@ -1425,8 +1430,8 @@ inherited, not specified again.
   and records, the tamper check, and the gate's checks in the functional
   tests (section "Diagnostics-only (release gate)", so also in the
   air-gapped gate); the playbooks (§14c), run by an activity or a
-  schedule, and their `exec` commands. Next: the `health-check`
-  template; the report with verified evidence; the Cockpit report view
+  schedule, and their `exec` commands; the `health-check` template.
+  Next: the report with verified evidence; the Cockpit report view
   with confidence, provenance and feedback, and the diagnostics evidence
   in readiness; `custos-setup` and the `custos-diagnostics` package. Open
   beyond that: sealing the enablement state against root (the TPM, say);
