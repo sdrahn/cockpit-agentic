@@ -219,6 +219,8 @@ tabs.agents = {
     async refresh() {
         await refreshState();
         renderAgentList();
+        const fe = document.activeElement;
+        if (!(fe && fe.closest(".enablement-edit"))) renderEnablement();
         // Not while someone edits the permissions or types a message.
         const f = document.activeElement;
         const editing = f && (f.id === "permissions-yaml" || f.id === "owners-input" || f.closest(".chat") || f.closest(".confirm-delete") || f.closest(".config-edit") ||
@@ -284,7 +286,8 @@ function categoriesSection(a, data) {
     const reason = el("input", { id: "category-reason", type: "text", placeholder: "Reason (recorded)", "aria-label": "Reason" });
     const env = el("textarea", { id: "category-envelope", rows: "5", spellcheck: "false", "aria-label": "Envelope (YAML)" });
     const despite = el("input", { id: "category-despite", type: "checkbox" });
-    const which = el("select", { id: "category-select", "aria-label": "Category" }, ...names.map(n => el("option", { value: n }, n)));
+    const which = el("select", { id: "category-select", "aria-label": "Category" },
+        ...names.filter(n => categoryUsable(n) && n !== "diagnostics").map(n => el("option", { value: n }, n)));
     const fillEnvelope = () => {
         const c = states[which.value];
         env.value = c && c.envelope ? JSON.stringify(c.envelope, null, 2) + "\n" : ENVELOPE_TEMPLATE;
@@ -295,11 +298,15 @@ function categoriesSection(a, data) {
     for (const n of names) {
         const c = states[n] || { mode: "supervised" };
         const bounded = c.mode === "bounded";
+        const usable = categoryUsable(n);
         const demote = el("button", { class: "secondary" }, "Demote");
         demote.hidden = !bounded;
         demote.addEventListener("click", () => act(demote, "Demoting " + n,
             () => admin(["demote", a.name, n, "--reason", reason.value.trim() || "demoted in Cockpit"])));
         const promote = el("button", { class: "secondary" }, bounded ? "Change envelope…" : "Promote…");
+        // A disabled category is denied whatever its mode (§6b), and
+        // diagnostics needs no promotion: it only reads.
+        promote.hidden = !usable || n === "diagnostics";
         promote.addEventListener("click", () => {
             which.value = n;
             fillEnvelope();
@@ -308,7 +315,10 @@ function categoriesSection(a, data) {
         });
         cells[n] = { ready: el("td", { class: "muted" }, "…"), over: el("td", { class: "muted" }), inc: el("td", { class: "muted" }), props: el("td", { class: "muted" }) };
         tbody.append(el("tr", { id: "category-" + n }, el("td", { class: "mono" }, n),
-            el("td", null, el("span", { class: "badge " + (bounded ? "badge-ok" : "badge-waiting") }, bounded ? "bounded (promoted)" : c.mode)),
+            el("td", null, usable
+                ? el("span", { class: "badge " + (bounded ? "badge-ok" : "badge-waiting") }, bounded ? "bounded (promoted)" : c.mode)
+                : el("span", { class: "badge badge-bad", title: "Not enabled on this host: the gateway denies its calls (agent-admin enable)" },
+                     "disabled on this host")),
             el("td", { class: "muted" }, bounded ? (windowsText(c) || "always") : "–"),
             cells[n].ready, cells[n].over, cells[n].inc, cells[n].props,
             el("td", null, el("span", { class: "actions" }, promote, demote)),
@@ -400,4 +410,89 @@ function ownersEditor(a, data) {
             : "No owners: the servers' approvers decide this agent's calls. Owners (user:NAME, group:NAME, role:NAME, remote-user:SUB, " +
               "remote-group:NAME) may approve them too."),
         el("div", { class: "actions" }, input, save));
+}
+
+/* The host's enablement state (CONTRACT.md §6b): which task categories it
+ * may use, from agent-admin show; Enable… runs agent-admin enable through
+ * the root bridge. Only on a host that has a state: one installed with the
+ * full capability uses every category. */
+let catalog = null; // agent-admin categories, once read
+
+async function loadCatalog() {
+    if (catalog) return catalog;
+    try {
+        catalog = JSON.parse(await cockpit.spawn(["agent-admin", "categories"], { err: "message" }));
+    } catch {
+        catalog = {};
+    }
+    return catalog;
+}
+
+let enableForm = null; // kept across the tab's refreshes
+
+function renderEnablement() {
+    const box = document.getElementById("enablement");
+    const e = state.posture && state.posture.enablement;
+    box.hidden = !e;
+    if (!e) return;
+    loadCatalog().then(cat => {
+        const names = Object.keys(cat).sort();
+        const disabled = names.filter(n => !categoryUsable(n));
+        const what = e.state === "diagnostics-only"
+            ? "This host is diagnostics-only: only the diagnostics category is usable. The other task categories are installed but disabled; the gateway denies their calls and does not show their tools."
+            : "This host started diagnostics-only; these task categories are enabled. The others are disabled: the gateway denies their calls.";
+        const list = el("ul", { class: "enablement-list" }, names.map(n => el("li", { id: "enabled-" + n },
+            el("span", { class: "badge " + (categoryUsable(n) ? "badge-ok" : "badge-bad") }, categoryUsable(n) ? "enabled" : "disabled"),
+            " ", el("span", { class: "mono" }, n), el("span", { class: "muted" }, " " + ((cat[n] && cat[n].title) || "")))));
+        const open = el("button", { class: "secondary" }, "Enable…");
+        open.hidden = disabled.length === 0;
+        if (!enableForm || enableForm.dataset.for !== disabled.join(",")) enableForm = enablementForm(disabled);
+        open.addEventListener("click", () => { enableForm.hidden = false });
+        box.replaceChildren(...nodes([
+            el("div", { class: "toolbar" }, el("h2", null, "Task categories on this host"), el("span", { class: "actions" }, open)),
+            el("p", null, what),
+            e.tampered ? el("p", { class: "error-text", id: "enablement-tampered" },
+                "The state was changed outside agent-admin: " + e.tampered + ". The gateway enforces what the file says now.") : null,
+            el("p", { class: "muted" }, "Changed by " + (e.changed_by || "?") + " (record " + (e.record || "none") + ")."),
+            list, enableForm]));
+    });
+}
+
+function enablementForm(disabled) {
+    const checks = disabled.map(n => ({ n, c: el("input", { type: "checkbox", value: n }) }));
+    const note = el("span", { class: "muted" });
+    const go = el("button", { class: "danger" }, "Enable");
+    const cancel = el("button", { type: "button", class: "link" }, "Cancel");
+    const form = el("form", { class: "confirm enablement-edit", hidden: true },
+        el("h2", null, "Enable task categories?"),
+        el("p", null, "An enabled category starts supervised: each of its changes waits for an approval until you promote it. " +
+           "This cannot be undone: the host does not go back to fewer categories. It is recorded with your name."),
+        checks.map(({ n, c }) => el("label", null, c, " " + n)),
+        el("div", { class: "actions" }, go, cancel, note));
+    form.dataset.for = disabled.join(",");
+    cancel.addEventListener("click", () => { form.hidden = true; note.textContent = "" });
+    form.addEventListener("submit", async ev => {
+        ev.preventDefault();
+        const picked = checks.filter(x => x.c.checked).map(x => x.n);
+        if (picked.length === 0) {
+            note.className = "error-text";
+            note.textContent = "Pick a category.";
+            return;
+        }
+        go.disabled = true;
+        note.className = "muted";
+        note.textContent = "Enabling…";
+        try {
+            await admin(picked.length === disabled.length ? ["enable", "--all"] : ["enable", ...picked]);
+            enableForm = null;
+            showError(null);
+        } catch (ex) {
+            note.className = "error-text";
+            note.textContent = ex.message;
+            go.disabled = false;
+            return;
+        }
+        tabs.agents.refresh();
+    });
+    return form;
 }

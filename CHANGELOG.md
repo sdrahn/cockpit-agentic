@@ -111,6 +111,10 @@ removed.
   besides the servers' approvers, and mails them as it mails those. A
   policy module for the gateway's approver rules (`owners.rego`), with
   no gateway change.
+- Cockpit shows a diagnostics-only host's enablement state on the Agents
+  tab (enabled and disabled categories, who changed it, a state changed
+  outside agent-admin), with **Enable…**; a disabled category is marked
+  in an agent's task categories and offers no **Promote…**.
 
 ### Fixed
 

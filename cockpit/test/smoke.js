@@ -683,6 +683,41 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.click("#owners button:text-is('Save owners')");
     await page.waitForFunction(() => document.querySelector("#error") && !document.querySelector("#error").hidden);
     check((await page.textContent("#error")).includes("an agent never approves"), "an agent as owner is refused, with agent-admin's reason");
+    // The host's enablement state (§6b): which categories it may use;
+    // disabled ones are not promoted; Enable… through the root bridge.
+    await page.goto(url + "?diag#/agents/disk-watch");
+    await page.waitForSelector("#enablement #enabled-patch-errata");
+    check(!(await page.isHidden("#enablement")) && (await page.textContent("#enablement")).includes("started diagnostics-only") &&
+          (await page.textContent("#enabled-config-lifecycle")).includes("enabled") &&
+          (await page.textContent("#enabled-patch-errata")).includes("disabled") && !(await page.textContent("#enablement")).includes("null"),
+          "the enablement state: enabled and disabled categories");
+    await page.waitForSelector("#category-patch-errata");
+    check((await page.textContent("#category-patch-errata")).includes("disabled on this host") &&
+          await page.$eval("#category-patch-errata button:has-text('Change envelope')", b => b.hidden) &&
+          !(await page.$eval("#category-patch-errata button:text-is('Demote')", b => b.hidden)),
+          "a disabled category: marked, not promoted; a bounded one can still be demoted");
+    check(await page.$eval("#category-security-response button:has-text('Promote')", b => b.hidden) &&
+          !(await page.$eval("#category-config-lifecycle button", b => b.hidden)), "Promote only for enabled categories");
+    check(!(await page.$$eval("#category-select option", os => os.map(o => o.value))).includes("patch-errata"), "the promote form offers no disabled category");
+    if (shots) await (await page.$("#enablement")).screenshot({ path: path.join(shots, "enablement.png") });
+    await page.click("#enablement button:has-text('Enable…')");
+    await page.check("#enablement form input[value=patch-errata]");
+    await page.click("#enablement form button:text-is('Enable')");
+    await page.waitForFunction(() => document.querySelector("#enabled-patch-errata").textContent.includes("enabled") &&
+        !document.querySelector("#enabled-patch-errata").textContent.includes("disabled"));
+    const en = await spawned("agent-admin enable patch-errata");
+    check(en.length === 1 && en[0][4] === "require", "Enable… runs agent-admin enable through the root bridge");
+    await page.waitForFunction(() => !document.querySelector("#category-patch-errata").textContent.includes("disabled on this host"));
+    check(true, "an enabled category is shown with its mode again");
+    await page.click("#enablement button:has-text('Enable…')");
+    await page.check("#enablement form input[value=compliance-audit]");
+    await page.check("#enablement form input[value=security-response]");
+    await page.click("#enablement form button:text-is('Enable')");
+    await page.waitForFunction(() => document.querySelector("#enablement button").hidden);
+    check((await spawned("agent-admin enable --all")).length === 1, "every remaining category: enable --all; then nothing left to enable");
+    await page.goto(url + "?diag&tampered#/agents/disk-watch");
+    await page.waitForSelector("#enablement-tampered");
+    check((await page.textContent("#enablement-tampered")).includes("differs from its record"), "a state changed outside agent-admin is reported");
 
     check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join("; ") : ""));
     await browser.close();

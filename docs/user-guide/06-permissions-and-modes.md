@@ -165,7 +165,8 @@ agent-admin enable patch-errata       # enable one category (or several)
 agent-admin enable --all              # every category: the full capability
 ```
 
-`enable` is the one action out of diagnostics-only. It needs root (sudo
+`enable` is the one action out of diagnostics-only; in Cockpit it is
+**Enable…** on the Agents tab ([chapter 8](08-cockpit.md#agents)). It needs root (sudo
 or Cockpit's administrative access) and is recorded with who ran it
 (`categories.enabled`). An enabled category starts supervised, as on a
 host installed with the full capability: promote it later on the path
