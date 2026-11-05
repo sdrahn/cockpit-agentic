@@ -81,6 +81,9 @@ removed.
   moment later, so a refused **Release all agents** (or delete, mode,
   …) seemed to do nothing. An action's error now stays until the next
   action or **Dismiss**.
+- Building the OpenShell agent image (`packaging/openshell/Containerfile`)
+  failed while openSUSE's codec repository was unreachable; the image
+  needs nothing from it and no longer refreshes it.
 
 ## v0.1.1 — 2026-11-04
 
