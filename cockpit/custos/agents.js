@@ -88,7 +88,8 @@ function renderAgentList() {
         const now = state.activities.filter(x => x.agent === a.name && isOpen(x))[0];
         body.append(el("tr", { class: sel === a.name ? "current" : null, id: "agent-row-" + a.name },
             el("td", null, el("button", { class: "link", onclick: () => cockpit.location.go(["agents", a.name]) }, a.name)),
-            el("td", null, stateBadgeText(text, st)),
+            el("td", null, stateBadgeText(text, st), missingCredentials(a.name).length
+                ? [" ", el("span", { class: "badge badge-bad", title: "Missing: " + missingCredentials(a.name).join(", ") }, "credential missing")] : null),
             el("td", null, modeBadge(data && data.mode)),
             el("td", null, a.status ? [a.status.implementation, el("div", { class: "muted" }, a.status.model)] : "–"),
             el("td", { class: "muted" }, scheds.length ? scheds.map(s => s.name).join(", ") : "none"),
@@ -209,7 +210,7 @@ async function renderAgentDetail() {
             toggle), el("div", { class: "muted" }, "“" + s.prompt + "”")));
     }
 
-    box.replaceChildren(head, mode, bounds, categoriesSection(a, data), schedules, configEditor(a), chatSection(a));
+    box.replaceChildren(head, mode, bounds, categoriesSection(a, data), schedules, credentialsSection(a), configEditor(a), chatSection(a));
 }
 
 tabs.agents = {
@@ -220,7 +221,8 @@ tabs.agents = {
         renderAgentList();
         // Not while someone edits the permissions or types a message.
         const f = document.activeElement;
-        const editing = f && (f.id === "permissions-yaml" || f.closest(".chat") || f.closest(".confirm-delete") || f.closest(".config-edit"));
+        const editing = f && (f.id === "permissions-yaml" || f.closest(".chat") || f.closest(".confirm-delete") || f.closest(".config-edit") ||
+            f.closest(".credentials-edit"));
         if (!editing) await renderAgentDetail();
     },
 };

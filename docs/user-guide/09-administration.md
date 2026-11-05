@@ -34,6 +34,8 @@ person behind `sudo` (`SUDO_USER`), else `USER`.
 | `agent-admin promote NAME CATEGORY --envelope FILE [--despite-readiness --reason TEXT]` | let a category act without approval within its windows ([chapter 6](06-permissions-and-modes.md#promote)) |
 | `agent-admin demote NAME CATEGORY [--reason TEXT]` | back to supervised |
 | `agent-admin set-credential NAME CRED < secret` | store a secret for it |
+| `agent-admin credentials [NAME…]` | its credentials' names, what uses them and the missing ones, as JSON; never the values ([below](#credentials)) |
+| `agent-admin remove-credential NAME CRED [--force]` | remove a stored credential (`--force`: one its model uses) |
 | `agent-admin pause NAME`, `resume NAME` | hold it, let it go on |
 | `agent-admin stop-all`, `release-all` | the emergency stop and its end |
 | `agent-admin trigger NAME_SCHEDULE` | start a schedule's run (what its timer runs) |
@@ -180,6 +182,25 @@ unit imports `agent-<name>.*` at start; restart a running agent to use a
 new value (`systemctl restart agent@NAME.service`). For OpenShell agents,
 `gateway-client-secret` and `gateway-token` create the sandbox's gateway
 credential ([chapter 11](11-openshell.md#credential)).
+
+```bash
+agent-admin credentials NAME                 # names, what uses them, missing ones
+agent-admin remove-credential NAME old-key   # one nothing uses
+```
+
+`credentials` lists names only: a stored value cannot be read back,
+from agent-admin or from Cockpit; replace it with `set-credential`. A
+credential the configuration names but that is not stored is listed as
+missing (`"missing": ["model-key"]`): the agent does not start without
+it. `remove-credential` refuses the credential its model uses unless you
+add `--force`. An OpenShell agent's gateway credential is held by
+OpenShell, not in the store: `set-credential` replaces it, and it goes
+with the agent. Each agent has its own copy of a key: several agents
+using one LiteLLM key each store it, and removing one agent's leaves the
+others'.
+
+In Cockpit, an agent's **Credentials** card does the same
+([chapter 8](08-cockpit.md#agents)).
 
 ## Pausing and resuming an agent {#pause}
 

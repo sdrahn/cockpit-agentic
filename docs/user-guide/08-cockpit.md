@@ -30,7 +30,7 @@ Not for logging in:
 |---|---|---|
 | supervisor | membership in `agent-clients` | see the agents, their activities and journal records; chat with an agent |
 | approver | the above, and a place in the gateway's approver rules ([chapter 3](03-gateway.md#approvers)) | decide pending calls (grants are revoked on mcp-gateway's own page, [chapter 7](07-approvals.md)) |
-| administrator | the above, and sudo rights (by default `wheel`) for Cockpit's *Administrative access* | create, change and delete agents; modes, permissions and task categories; pause, stop, schedules; model defaults and credentials; the emergency stop |
+| administrator | the above, and sudo rights (by default `wheel`) for Cockpit's *Administrative access* | create, change and delete agents; modes, permissions and task categories; pause, stop, schedules; model defaults and credentials (listing, storing, removing); the emergency stop |
 
 An approver need not be an administrator. Reading the journal (the
 *Audit* tab, *Decided today*) needs journal access, as for Cockpit's
@@ -46,7 +46,7 @@ each for one kind of action:
 |---|---|---|
 | approve, decline | **the person's**, always | mcp-gateway records the approver it sees |
 | status, activities, the journal, chat; **Check**, the templates, a new agent's starting configuration, reading the model defaults | the person's | the sockets, the journal and these files answer as the person may see |
-| pause, resume, restart, stop, start, mode, permissions, schedules, create, edit (also reading `agent.yaml`, which is not world-readable), delete; promote, demote, readiness, review; model defaults; storing a credential; the emergency stop | **root** | only root changes agents and units; `agent-admin` records the person |
+| pause, resume, restart, stop, start, mode, permissions, schedules, create, edit (also reading `agent.yaml`, which is not world-readable), delete; promote, demote, readiness, review; model defaults; listing, storing and removing credentials; the emergency stop | **root** | only root changes agents and units; `agent-admin` records the person |
 
 So turning on administrative access never changes for whom an approval
 is recorded. Without it, an administrative button says it needs
@@ -140,6 +140,20 @@ Selecting an agent shows:
   access
   ([chapter 6](06-permissions-and-modes.md#readiness));
 - **Schedules**: each with its calendar, next run and **Enable**/**Disable**;
+- **Credentials** (with administrative access): the agent's credentials
+  by name, what uses them, and when each was stored; never a value. A
+  credential its model names but that is not stored is *missing: the
+  agent does not start*, and the agents list marks the agent *credential
+  missing*. **Set**/**Replace** fills the form below: type the secret
+  and **Store** (`agent-admin set-credential`, the secret on stdin; the
+  page keeps no copy). The form offers to store the same key for the
+  other agents whose model uses the same name, each its own encrypted
+  copy, and restarts the agents that run so that they use it.
+  **Remove…** removes one after a confirmation (`agent-admin
+  remove-credential`; the model's needs `--force`, and the confirmation
+  says the agent does not start without it). An OpenShell agent's gateway
+  token is *held by OpenShell*: it can be replaced, not removed
+  ([chapter 9](09-administration.md#credentials));
 - **Configuration**: **Edit configuration** loads `agent.yaml`, **Check**
   validates it, **Save and apply** runs `agent-admin edit`;
 - **Chat**: your own thread with the agent over AG-UI.

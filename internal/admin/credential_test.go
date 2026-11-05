@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,5 +85,99 @@ func TestNoteUnstoredCredential(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "credential") {
 		t.Errorf("edit without a credential says %q", out.String())
+	}
+}
+
+// agent-admin credentials lists names and what uses them, never values;
+// the model's credential that is not stored is missing, as is an OpenShell
+// agent's gateway credential before set-credential.
+func TestCredentialsList(t *testing.T) {
+	a, r := newAdmin(t)
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(modelYAML("model-key")), 0o644)
+	if err := a.Create("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(f, []byte(oshYml), 0o644)
+	if err := a.Create("sb", f); err != nil {
+		t.Fatal(err)
+	}
+	c, err := a.Credentials()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pp := c["patch-pilot"]
+	if len(pp.Missing) != 1 || pp.Missing[0] != "model-key" || len(pp.Credentials) != 1 || pp.Credentials[0].Stored ||
+		pp.Credentials[0].UsedBy[0] != "model" {
+		t.Errorf("before set-credential: %+v", pp)
+	}
+	if sb := c["sb"]; len(sb.Missing) != 1 || sb.Missing[0] != "gateway-token" || sb.Credentials[0].HeldBy != "openshell" {
+		t.Errorf("OpenShell agent: %+v", sb)
+	}
+
+	os.MkdirAll(a.p(CredstoreDir), 0o700)
+	os.WriteFile(a.p(filepath.Join(CredstoreDir, "agent-patch-pilot.model-key")), []byte("secret-value"), 0o600)
+	os.WriteFile(a.p(filepath.Join(CredstoreDir, "agent-patch-pilot.old-key")), []byte("secret-value"), 0o600)
+	// Another agent's whose name starts the same is not this one's.
+	os.WriteFile(a.p(filepath.Join(CredstoreDir, "agent-patch-pilot-2.model-key")), []byte("x"), 0o600)
+	r.gone = func(cmd string) error { return nil } // the relay's socket is enabled
+	c, err = a.Credentials("patch-pilot", "sb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pp = c["patch-pilot"]
+	if len(pp.Missing) != 0 || len(pp.Credentials) != 2 || pp.Credentials[0].Name != "model-key" || !pp.Credentials[0].Stored ||
+		pp.Credentials[0].StoredAt == "" || pp.Credentials[1].Name != "old-key" || len(pp.Credentials[1].UsedBy) != 0 {
+		t.Errorf("stored: %+v", pp)
+	}
+	if sb := c["sb"]; len(sb.Missing) != 0 || !sb.Credentials[0].Stored {
+		t.Errorf("OpenShell agent with its sandbox: %+v", sb)
+	}
+	b, _ := json.Marshal(c)
+	if strings.Contains(string(b), "secret-value") {
+		t.Error("a value is listed")
+	}
+	if _, err := a.Credentials("../x"); err == nil {
+		t.Error("an invalid name is listed")
+	}
+}
+
+// remove-credential removes a stored credential; one the model uses only
+// with --force, and never an OpenShell agent's gateway credential.
+func TestRemoveCredential(t *testing.T) {
+	a, _ := newAdmin(t)
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(modelYAML("model-key")), 0o644)
+	if err := a.Create("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	os.MkdirAll(a.p(CredstoreDir), 0o700)
+	key := a.p(filepath.Join(CredstoreDir, "agent-patch-pilot.model-key"))
+	old := a.p(filepath.Join(CredstoreDir, "agent-patch-pilot.old-key"))
+	os.WriteFile(key, []byte("x"), 0o600)
+	os.WriteFile(old, []byte("x"), 0o600)
+	if err := a.RemoveCredential("patch-pilot", "old-key", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Error("old-key stays")
+	}
+	if err := a.RemoveCredential("patch-pilot", "old-key", false); err == nil || !strings.Contains(err.Error(), "no stored credential") {
+		t.Errorf("twice: %v", err)
+	}
+	if err := a.RemoveCredential("patch-pilot", "model-key", false); err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Errorf("the model's: %v", err)
+	}
+	if _, err := os.Stat(key); err != nil {
+		t.Error("removed without --force")
+	}
+	if err := a.RemoveCredential("patch-pilot", "model-key", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.RemoveCredential("patch-pilot", "gateway-token", true); err == nil || !strings.Contains(err.Error(), "OpenShell") {
+		t.Errorf("gateway-token: %v", err)
+	}
+	if err := a.RemoveCredential("patch-pilot", "../../etc/passwd", true); err == nil {
+		t.Error("a path is removed")
 	}
 }

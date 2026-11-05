@@ -22,6 +22,14 @@ removed.
   An agent's attempt to reach a host outside fails the gate.
 - `run-tests.sh --model URL NAME` (custos-tests): the same checks with
   an agent on a real model, for openQA and other test systems.
+- Credentials management. `agent-admin credentials [NAME…]` lists an
+  agent's credentials by name, with what uses them and the missing ones,
+  never a value; `agent-admin remove-credential NAME CRED [--force]`
+  removes one. In Cockpit, each agent has a Credentials card: set,
+  replace and remove them, store one key for several agents whose model
+  uses the same name (each its own encrypted copy), and restart the
+  agents that run. The agents list marks an agent whose credential is
+  missing.
 
 - CONTRACT.md: the design of the bundled health-check and diagnostics
   install (§20b, O16): the `diagnostics` and `compliance-audit`

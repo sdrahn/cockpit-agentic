@@ -263,10 +263,10 @@ function setTabCount(tab, n) {
 
 /* The page's view of the host, shared by the tabs: refreshed by whichever
  * tab is shown. */
-const state = { agents: [], activities: [], posture: null, user: null };
+const state = { agents: [], activities: [], posture: null, credentials: null, user: null };
 
 async function refreshState() {
-    const [agents, posture] = await Promise.all([listAgents(), loadPosture()]);
+    const [agents, posture, credentials] = await Promise.all([listAgents(), loadPosture(), loadCredentials()]);
     // Agents with gateway data but no socket (stopped) are agents too. A
     // directory without a socket and without gateway data is what a
     // deleted agent left behind (agent-admin delete before 0.2.1 kept
@@ -283,6 +283,7 @@ async function refreshState() {
     await Promise.all(agents.filter(a => a.stopped).map(async a => { a.lifecycle = await stoppedLifecycle(a.name); }));
     state.agents = agents;
     state.posture = posture;
+    state.credentials = credentials;
     state.activities = await loadActivities(agents);
     setTabCount("activity", state.activities.filter(a => a.state === "running" || a.state === "waiting_approval").length);
     renderStopBanner();

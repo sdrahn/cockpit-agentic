@@ -142,8 +142,52 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     const perms = (await calls()).find(c => c[1] === "agent-admin permissions patch-pilot");
     check(perms && perms[4] === "require", "permissions are saved with agent-admin through the root bridge");
 
+    // Credentials (§17): names only, through the root bridge; a missing
+    // one shows in the list; a secret is stored for this agent and, by
+    // choice, for others whose model uses the same name.
+    check((await page.textContent("#agent-row-patch-pilot")).includes("credential missing") &&
+          !(await page.textContent("#agent-row-disk-watch")).includes("credential missing"),
+          "the list shows an agent whose model credential is not stored");
+    check((await spawned("agent-admin credentials")).every(c => c[4] === "try"), "the credentials are listed through the root bridge");
+    const creds = await page.textContent("#credentials");
+    check(creds.includes("model-key") && creds.includes("missing: the agent does not start") && creds.includes("old-key") &&
+          (await page.textContent("#credential-old-key")).includes("nothing"), "the agent's credentials: the model's missing, an unused one");
+    check(!(await page.textContent("body")).includes("sk-old-value"), "no value is shown");
+    if (shots) await (await page.$("#credentials")).screenshot({ path: path.join(shots, "credentials.png") });
+    await page.click("#credential-model-key button:text-is('Set')");
+    check(await page.$eval("#credentials input[name=credential]", e => e.value) === "model-key" &&
+          await page.evaluate(() => document.activeElement.name === "secret"), "Set fills the name and goes to the secret");
+    check((await page.textContent("#credentials .also")).includes("disk-watch") &&
+          !(await page.textContent("#credentials .also")).includes("triage"), "offered for the other agents whose model uses model-key");
+    await page.fill("#credentials input[name=secret]", "sk-new-value");
+    await page.check("#credentials .also input[value=disk-watch]");
+    await page.click("#credentials button:text-is('Store')");
+    await page.waitForFunction(() => document.querySelector("#credentials .credentials-edit .actions").textContent.includes("Stored model-key"));
+    const stored = await page.evaluate(() => window.__credentials);
+    check(stored["patch-pilot.model-key"] === "sk-new-value" && stored["disk-watch.model-key"] === "sk-new-value" &&
+          (await spawned("agent-admin set-credential patch-pilot model-key")).every(c => c[4] === "require"),
+          "set-credential stores it for each agent through the root bridge, the secret on stdin");
+    check((await spawned("systemctl try-restart agent@patch-pilot.service")).length === 1 &&
+          (await spawned("systemctl try-restart agent@disk-watch.service")).length === 1, "the agents that run are restarted");
+    check(await page.$eval("#credentials input[name=secret]", e => e.value) === "", "the page keeps no secret");
+    await page.waitForFunction(() => !document.querySelector("#agent-row-patch-pilot").textContent.includes("credential missing"));
+    check(true, "stored, it is no longer missing");
+    await page.click("#credential-old-key button:has-text('Remove')");
+    await page.click("#credentials button:text-is('Remove old-key')");
+    await page.waitForFunction(() => !document.querySelector("#credential-old-key"));
+    const removed = await spawned("agent-admin remove-credential patch-pilot old-key");
+    check(removed.length === 1 && removed[0][4] === "require", "an unused credential is removed, without --force");
+    await page.click("#credential-model-key button:has-text('Remove')");
+    check((await page.textContent("#credentials .confirm")).includes("does not start without it"), "removing the model's says what follows");
+    await page.click("#credentials button:text-is('Remove model-key')");
+    await page.waitForFunction(() => document.querySelector("#agent-row-patch-pilot").textContent.includes("credential missing"));
+    check((await spawned("agent-admin remove-credential patch-pilot model-key --force")).length === 1, "the model's is removed with --force");
+
     await page.click("#agent-row-triage button");
     await page.waitForSelector("#agent-detail button:has-text('Disable')");
+    check(await page.$eval("#credential-gateway-token button:has-text('Remove')", b => b.hidden) &&
+          (await page.textContent("#credential-gateway-token")).includes("held by OpenShell"),
+          "an OpenShell agent's gateway token is OpenShell's: replaced, not removed");
     check((await page.textContent("#agent-detail")).includes("morning-check") &&
           (await page.textContent("#agent-detail")).includes("*-*-* 06:00"), "the schedules with their calendar");
     await page.click("#agent-detail button:has-text('Disable')");
