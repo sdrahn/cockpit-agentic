@@ -77,7 +77,7 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 		cats = only
 	}
 	now := a.Now()
-	recs, decisions, err := a.journalRecords(name, now.AddDate(0, 0, -th.WindowDays))
+	recs, decisions, _, err := a.journalRecords(name, now.AddDate(0, 0, -th.WindowDays))
 	if err != nil {
 		return nil, err
 	}
@@ -100,9 +100,9 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 	return r, nil
 }
 
-// journalRecords reads the agent's records and the gateway's decisions
-// for it since then.
-func (a *Admin) journalRecords(name string, since time.Time) ([]readiness.Record, map[string]readiness.Decision, error) {
+// journalRecords reads the agent's records, and the gateway's decisions
+// and call results (R2) for it, since then.
+func (a *Admin) journalRecords(name string, since time.Time) ([]readiness.Record, map[string]readiness.Decision, []readiness.Result, error) {
 	at := "@" + strconv.FormatInt(since.Unix(), 10)
 	read := a.JournalJSON
 	if read == nil {
@@ -112,11 +112,11 @@ func (a *Admin) journalRecords(name string, since time.Time) ([]readiness.Record
 	}
 	agentLog, err := read("AGENT_NAME="+name, "AGENT_CONTRACT=1")
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading agent %s's journal: %w", name, err)
+		return nil, nil, nil, fmt.Errorf("reading agent %s's journal: %w", name, err)
 	}
 	gwLog, err := read("-u", "mcp-gateway.service")
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading mcp-gateway's journal: %w", err)
+		return nil, nil, nil, fmt.Errorf("reading mcp-gateway's journal: %w", err)
 	}
-	return readiness.ParseRecords(agentLog), readiness.ParseDecisions(gwLog, "agent-"+name), nil
+	return readiness.ParseRecords(agentLog), readiness.ParseDecisions(gwLog, "agent-"+name), readiness.ParseResults(gwLog, "agent-"+name), nil
 }

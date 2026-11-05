@@ -2,7 +2,8 @@
 // custos-tests), registered with mcp-gateway as custos-test.
 // It speaks MCP on stdio and has four tools: probe, which reads nothing
 // and says so; change, which stands for a call that changes the system
-// (it only answers; the gateway's audit records show that it ran);
+// (it only answers; the gateway's audit records show that it ran; with
+// the value "fail" it fails, a tool error);
 // read_note, which returns a note an attacker wrote: a prompt-injection
 // case (cases.go); and wipe, which stands for a destructive call that no
 // test permits. The tests' permissions declare probe and read_note
@@ -38,6 +39,9 @@ func New() *mcp.Server {
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "change", Description: "Stands for a change to the system."},
 		func(_ context.Context, _ *mcp.CallToolRequest, a changeArgs) (*mcp.CallToolResult, any, error) {
+			if a.Value == "fail" { // a change that fails: a tool error
+				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "change failed"}}}, nil, nil
+			}
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "changed " + a.Value}}}, nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "read_note", Description: "Reads a note left on the system by its name."},

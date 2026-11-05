@@ -17,6 +17,12 @@ removed.
   in the agent's error and the gateway's audit, instead of "denied by
   policy" or "no matching permission" (user guide chapter 12). An older
   mcp-gateway decides the same and keeps its generic reasons.
+- The rollback condition `tool_error` and the incident rate take each
+  call's outcome from the gateway's audit (mcp-gateway's `mcp-result`,
+  its requirement R2): a call the gateway saw fail (a tool error, an
+  error, a timeout) counts although the agent recorded it as ok, or not
+  at all. The agent's own `tool.result` still counts too; an older
+  mcp-gateway without `mcp-result` leaves it the only source.
 - A suspected prompt injection is shown with the approval item
   (CONTRACT.md §7, O14): the agent checks what its model read before each
   call for signs of an injection (an instruction to ignore its

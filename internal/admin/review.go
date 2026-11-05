@@ -42,7 +42,7 @@ func (a *Admin) reviewData(name string) (*GatewayData, []readiness.Record, time.
 		return nil, nil, time.Time{}, err
 	}
 	now := a.Now()
-	recs, _, err := a.journalRecords(name, now.Add(-ReviewWindow))
+	recs, _, _, err := a.journalRecords(name, now.Add(-ReviewWindow))
 	return d, recs, now, err
 }
 

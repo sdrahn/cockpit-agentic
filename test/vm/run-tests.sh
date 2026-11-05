@@ -525,6 +525,20 @@ check "evaluate demotes it when its health check fails" bash -c "agent-admin eva
 check "the category is supervised again" bash -c "agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"supervised\"' >/dev/null"
 check "journal: category.demoted by custos-demote, with the reason" eventually 10 journal_has t1 category.demoted \
 	'.AGENT_BY == "custos-demote" and (.AGENT_REASON | startswith("rollback health_check_failed"))'
+# The rollback condition tool_error from what the gateway saw come back
+# (its mcp-result, requirement R2), when the gateway audits outcomes.
+if gw_audit_has '.event == "mcp-result"'; then
+	printf 'windows:\n  - {days: [%s], from: "00:00", to: "23:59", tz: UTC}\nrollback: {on: [tool_error]}\n' "$today" >"$work/rollback-error.yaml"
+	check "promote with rollback on tool_error" agent-admin promote t1 patch-errata --envelope "$work/rollback-error.yaml" --despite-readiness --reason "functional test"
+	check "bounded: a change that fails runs without an approval" eventually 30 runs_with t1 "CHANGE FAIL" 'change failed'
+	check "the gateway's audit: its mcp-result is a tool_error, with the agent's progress token" eventually 10 gw_audit_has \
+		'.event == "mcp-result" and .sub == "agent-t1" and .name == "change" and .outcome == "tool_error" and (.approval_id | not) and (.progress_token | startswith("custos:"))'
+	check "evaluate demotes it on the gateway's tool_error" bash -c \
+		"agent-admin evaluate | grep -q 'category patch-errata demoted: rollback tool_error: custos-test__change failed .*(the gateway: tool_error'"
+	check "the category is supervised again after the tool error" bash -c "agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"supervised\"' >/dev/null"
+else
+	skip "rollback on the gateway's tool_error (this mcp-gateway does not audit call outcomes, mcp-result)"
+fi
 check "custos-demote.service runs the evaluator" systemctl start custos-demote.service
 systemctl disable --now custos-demote.timer >/dev/null 2>&1
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' | agent-admin permissions t1
@@ -987,7 +1001,9 @@ printf '%s\n' 'dg:' '  mode: supervised' '  permissions:' '    - {server: custos
 check "the gateway's OPA denies the disabled category's call" eventually 30 effect_is dg change deny
 check "the gateway's OPA allows the diagnostics call" effect_is dg probe allow
 if gateway_reasons; then
-	check "the denial's reason: the category is not enabled" reason_is dg change \
+	# Waited for: before the edit, no permission named change, so the
+	# denial above may come from the data OPA had before it reloaded.
+	check "the denial's reason: the category is not enabled" eventually 30 reason_is dg change \
 		"task category patch-errata is not enabled on this host (diagnostics-only): agent-admin enable patch-errata"
 	check "a tool no permission names keeps \"no matching permission\"" reason_is dg wipe "no matching permission"
 	sed -i 's/^  mode: supervised$/  mode: supervised\n  paused: true/' "$dgdata"

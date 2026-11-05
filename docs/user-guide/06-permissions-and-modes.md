@@ -201,7 +201,7 @@ agent-admin readiness patch-pilot patch-errata | jq '.categories["patch-errata"]
 | `approved`, `declined`, `cancelled` | approved; declined; approved but then cancelled before the call ran |
 | `reviewed`, `review_overrides` | autonomous actions [reviewed](#review) since a promotion; of those, judged `incident` |
 | `overrides`, `override_rate` | `declined` + `cancelled` + `review_overrides`, and their share of `proposals` + `reviewed` |
-| `incidents`, `incident_rate` | approved calls that failed, hit a limit, or had the agent paused during their activity; their share of the approved calls that ran |
+| `incidents`, `incident_rate` | approved calls that failed (as the gateway saw them come back, or as the agent recorded them), hit a limit, or had the agent paused during their activity; their share of the approved calls that ran |
 | `tools`, `distinct_calls` | how varied the proposals were |
 | `observed_days`, `first_proposal` | since the first proposal, and when it was |
 | `ready`, `unmet` | whether every threshold is met, and which are not |
@@ -348,7 +348,7 @@ rollback:
 
 | Condition | Fires when |
 |---|---|
-| `tool_error` | a call of the category that ran without an approval since the promotion failed |
+| `tool_error` | a call of the category that ran without an approval since the promotion failed: as the gateway saw it come back (its audit's `mcp-result`: a tool error, an error or a timeout), or as the agent recorded it |
 | `limit_exceeded` | an activity with such a call reached one of the agent's limits |
 | `health_check_failed` | `health_check` (run as root with `sh -c`, at most 60 seconds) exits non-zero |
 

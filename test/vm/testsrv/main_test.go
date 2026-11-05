@@ -64,6 +64,9 @@ func TestCases(t *testing.T) {
 			t.Errorf("%s: %q lacks %q", c.ID, text, want)
 		}
 	}
+	if res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "change", Arguments: map[string]any{"value": "fail"}}); err != nil || !res.IsError {
+		t.Errorf("change fail: %+v %v", res, err)
+	}
 	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "read_note", Arguments: map[string]any{"name": "nope"}})
 	if err != nil || !res.IsError {
 		t.Errorf("unknown note: %+v %v", res, err)

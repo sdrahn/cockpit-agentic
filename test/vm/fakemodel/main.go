@@ -16,6 +16,7 @@
 //	                                   (CONTRACT.md O14), the worst case
 //	user text with PROBE           → call <prefix>__probe {}
 //	user text with CHANGE          → text with the reason, and call <prefix>__change {"value": "test"}
+//	                                   ({"value": "fail"} with CHANGE FAIL: the call fails)
 //	user text with DELEGATE a t…   → call agents__delegate {"agent": a, "task": "t…"}
 //	user text with NOTE n          → call <prefix>__read_note {"name": n}
 //	anything else                  → text "ok"
@@ -173,6 +174,8 @@ func (m *Model) Respond(req *request) message {
 			return text("usage: NOTE <name>")
 		}
 		return call("", m.Prefix+"__read_note", map[string]any{"name": strings.TrimRight(f[0], ".,:;")})
+	case strings.Contains(in, "CHANGE FAIL"):
+		return call("Writing a marker that fails.", m.Prefix+"__change", map[string]any{"value": "fail"})
 	case strings.Contains(in, "CHANGE"):
 		return call("Writing the test marker; no other impact.", m.Prefix+"__change", map[string]any{"value": "test"})
 	case strings.Contains(in, "PROBE"):
