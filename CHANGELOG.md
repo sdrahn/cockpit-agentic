@@ -9,6 +9,11 @@ removed.
 
 ### Added
 
+- User guide, chapter 14: where inference runs, in the order on-premises,
+  the customer's own cloud account, vendor-hosted; every network flow
+  that leaves a Custos host, each with its switch (Custos itself sends
+  no telemetry, model updates or incident reports); fencing a systemd
+  agent to its model; installing without a network.
 - The air-gapped release gate (CONTRACT.md O15): on release branches, CI
   installs the packages, Ollama and a tested open-weight model
   (`test/airgap/versions`: Qwen3 0.6B) from an offline mirror in a Leap 16

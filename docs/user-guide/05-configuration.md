@@ -72,7 +72,10 @@ default if absent). `credential` is the **name** of a secret stored with
 `openai` covers any server that implements OpenAI's chat completions
 with tool calls: vLLM, llama.cpp's server, Ollama's OpenAI endpoint,
 LiteLLM and hosted services. With a server on the host or the local
-network, the agent needs nothing from the internet.
+network, the agent needs nothing from the internet. Prefer, in this
+order, a model on-premises, then one in your own cloud account, then a
+vendor's service; [chapter 14](14-network.md#inference) says what each
+sees and every other network flow.
 
 `model.endpoint` is only for `openai`: with `gemini` or `vertex` it is
 an error (`model.endpoint: only for provider openai`).
