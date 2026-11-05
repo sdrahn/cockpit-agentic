@@ -93,6 +93,11 @@
         control: { stopped: false },
     };
     let enabled = { "agent-schedule@triage_morning-check.timer": true };
+    // disk-watch's config-lifecycle actions without an approval, to review.
+    let toReview = [
+        { activity: "e-0d90", call: "c1", tool: "snapper__delete_snapshots", outcome: "ok", at: new Date(Date.now() - 3600e3).toISOString() },
+        { activity: "e-0d91", call: "c1", tool: "snapper__delete_snapshots", outcome: "error", at: new Date(Date.now() - 1800e3).toISOString() },
+    ];
     // The agents' agent.yaml (root:agent-<name> 0640: root only).
     const configs = { triage: "version: 1\nname: triage\nmodel: {provider: openai, name: m, endpoint: \"http://x\"}\n" +
         "sandbox: {kind: openshell, openshell_gateway: openshell}\n", "patch-pilot": "version: 1\nname: patch-pilot\ndescription: Keeps the host patched.\n" +
@@ -287,6 +292,21 @@
                                      incidents: 0, incident_rate: 0, tools: 0, distinct_calls: 0, observed_days: 0, ready: false,
                                      unmet: ["observed 0.0 days of 14", "0 proposals of 50"] },
                              };
+                             if (cmd === "review" && args.length === 3) {
+                                 return Promise.resolve(JSON.stringify({ agent: name, categories: {
+                                     "config-lifecycle": { mode: d.categories["config-lifecycle"].mode, actions: 3, reviewed: 3 - toReview.length, pending: toReview },
+                                     "patch-errata": { mode: "bounded", actions: 0, reviewed: 0, pending: [] } } })).then(ok, bad);
+                             }
+                             if (cmd === "review") {
+                                 const [cat, activity, , verdict] = args.slice(3, 7);
+                                 const flags = args.slice(7);
+                                 if (verdict === "incident" && !flags.includes("--reason")) {
+                                     return Promise.reject(new Error("agent-admin: an incident needs --reason TEXT: why it should not have run")).then(ok, bad);
+                                 }
+                                 toReview = toReview.filter(x => x.activity !== activity);
+                                 if (verdict === "incident") d.categories[cat].mode = "supervised";
+                                 return Promise.resolve("").then(ok, bad);
+                             }
                              if (cmd === "readiness") {
                                  return Promise.resolve(JSON.stringify({ agent: name,
                                      thresholds: { observation_days: 14, proposals: 50, override_rate: 0.05, incident_rate: 0.02, window_days: 30 },

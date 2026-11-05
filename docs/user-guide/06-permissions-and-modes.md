@@ -234,6 +234,28 @@ The category is supervised again, so its calls need an approval. Its
 envelope stays for a later promotion. The record is `category.demoted`.
 Pause and the emergency stop still stop everything, promoted or not.
 
+## Reviewing what a promoted category did {#review}
+
+Inside its windows a promoted category acts without asking, so nobody
+decided its actions beforehand. Review them afterwards:
+
+```bash
+agent-admin review patch-pilot patch-errata | jq '.categories["patch-errata"].pending'
+agent-admin review patch-pilot patch-errata e-3f2a… c1 ok
+agent-admin review patch-pilot patch-errata e-41b7… c1 incident --reason "patched the database host during business hours"
+```
+
+The list holds the calls of the category that ran without an approval
+since its promotion, in the last week: all of them while there are at
+most 20 in the week, otherwise the newest unreviewed ones up to 20
+reviews. `ok` says it was fine. `incident` says it should not have run:
+it needs a reason, counts as an override in the
+[readiness](#readiness) (`reviewed`, `review_overrides`), and demotes
+the category at once. Each verdict is a `category.review` record with
+who reviewed it. In Cockpit, the agent's *Task categories* card lists
+them under *To review*, with **Fine** and **Should not have run**.
+Reviewing needs root (or Cockpit's administrative access).
+
 ## Automatic demotion {#auto-demote}
 
 The demotion evaluator, `custos-demote.timer`, checks every bounded
@@ -243,7 +265,8 @@ enables the timer. It demotes a category when:
 - its override rate since the promotion (at most the last 7 days) is
   above the threshold. Outside its windows the category still asks for
   approvals, and a decline counts;
-- a **rollback** condition of its envelope fires.
+- a **rollback** condition of its envelope fires;
+- a [review](#review) found an action that should not have run.
 
 ```yaml
 windows:

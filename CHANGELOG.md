@@ -27,6 +27,14 @@ removed.
   (14 days, 50 proposals, at most 5 % overrides and 2 % incidents; your
   own in `/etc/custos/promotion.yaml`) unless given
   `--despite-readiness --reason TEXT`.
+- The review of what a promoted category did without an approval:
+  `agent-admin review NAME [CATEGORY]` lists the week's autonomous
+  actions to review (all of them up to 20 a week, then 20), and
+  `agent-admin review NAME CATEGORY ACTIVITY CALL ok|incident --reason
+  TEXT` records a verdict (`category.review`). An incident counts as an
+  override in the readiness and demotes the category at once; the
+  demotion evaluator also demotes on it. In Cockpit, *To review* with
+  **Fine** and **Should not have run**.
 - The Cockpit page: an agent's task categories with their readiness
   (ready or not, what is not met, override and incident rates,
   proposals), **Promote…** with the envelope, and **Demote**.

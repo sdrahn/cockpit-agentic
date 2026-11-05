@@ -250,9 +250,9 @@ local limits. A different host implementation changes none of this.
 `category` field, the effective mode in the agents module, the
 envelope's `windows`, readiness and its thresholds, `promote` (refused
 below readiness without `--despite-readiness`) and `demote`, and their
-records, the demotion evaluator with the override rate and `rollback`.
-Not yet: the review of autonomous actions, and `rate` (O12), with the
-demotions that need them; an envelope with `rate` is refused until it
+records, the demotion evaluator with the override rate and `rollback`,
+and the review of autonomous actions. Not yet: `rate` (O12), with the
+demotion that needs it; an envelope with `rate` is refused until it
 is enforced. Part I defines the data, the measures and
 the records. The commands named here are the reference implementation's
 (§17); another host or control plane provides the same actions. An
@@ -390,8 +390,22 @@ listing the proposals behind each number.
 
 In a `bounded` category, nothing is approved beforehand. Its override
 rate is measured **afterwards**: the approvers review a sample of its
-autonomous actions (all of them below 20 a week, then 20), and an
-action marked "should not have run" counts as an override.
+**autonomous actions**, the calls of the category since its promotion
+that ran without an approval (`tool.result` without an approval id, and
+no `approval.pending` for the call). Of a week's actions all are
+offered while there are at most 20, otherwise the newest unreviewed ones
+up to 20 reviews in the week. A verdict is `ok`, or `incident`: the
+action should not have run, which needs a reason. It is recorded as
+`category.review` (§10); a later verdict on the same action replaces
+an earlier one. In the measures, each reviewed action counts as a
+decision, and each `incident` as an override:
+
+| Measure | Definition |
+|---|---|
+| reviewed, review_overrides | reviewed actions of the category in the window, and of those the `incident` ones |
+| **override rate** | (declined + cancelled + review_overrides) / (proposals + reviewed) |
+
+An `incident` demotes a bounded category at once (§6a, Demotion).
 
 ### Promotion
 
@@ -427,8 +441,8 @@ holds for a bounded category:
 - a `rollback` condition fires;
 - *not yet:* the gateway's rate cap is reached repeatedly (three times in
   a day; needs `rate`, O12);
-- *not yet:* an approver marks an autonomous action as an incident
-  (needs the review, O11).
+- an approver marks an autonomous action as an `incident` (`review`
+  demotes at once; the evaluator also does, should that have failed).
 
 `agent-admin promote` enables `custos-demote.timer` (the package leaves
 it as the presets say). An automatic demotion takes effect as soon as
@@ -599,6 +613,8 @@ write them with `SYSLOG_IDENTIFIER=custos-promotion`, `AGENT_CONTRACT`,
 | `AGENT_PROMOTION` | the record's id (`p-…`), also in the agent data's `promotion` |
 | `AGENT_MODE_FROM`, `AGENT_MODE_TO` | `supervised`, `bounded` |
 | `AGENT_BY` | the person, or `custos-demote` for an automatic demotion |
+| `AGENT_VERDICT` | `category.review`: `ok` or `incident` |
+| `AGENT_INVOCATION`, `AGENT_CALL_ID`, `AGENT_TOOL` | `category.review`: the reviewed action |
 | `AGENT_REASON` | the reason given, or the trigger (`override rate 7.1 % above 5.0 % since …`, `rollback tool_error: …`, `rollback health_check_failed: …`) |
 | `AGENT_ENVELOPE_SHA256` | SHA-256 of the envelope's JSON with sorted keys |
 | `AGENT_READINESS` | the readiness measures at the time, as JSON |
@@ -838,7 +854,8 @@ standard error:
 | `categories` | the catalog (§6a), as JSON: `{"<category>": {"title", "description"?}}`. Needs no root |
 | `promote NAME CATEGORY --envelope FILE [--despite-readiness --reason TEXT]`, `demote NAME CATEGORY [--reason TEXT]` | a category's promotion with its envelope (`FILE` `-` is stdin), and its demotion (§6a). They write `categories.<category>` in the gateway data and a promotion record (§10), and return once the gateway has loaded the change, as `mode` does. `promote` refuses a category that is not ready, naming what is not met, unless it is given `--despite-readiness` with a reason; its record's `AGENT_READINESS` is the category's measures |
 | `evaluate` | the demotion evaluator (§6a), which `custos-demote.service` runs: demotes every bounded category whose override rate or rollback conditions say so, printing one line per demotion. An agent whose journal it cannot read is reported, and the others are still evaluated |
-| `readiness NAME [CATEGORY…]` | the readiness of the agent's categories (those its permissions name), or of the given ones, as JSON: `{"agent", "thresholds": {"observation_days", "proposals", "override_rate", "incident_rate", "window_days"}, "categories": {"<category>": {"proposals", "approved", "declined", "cancelled", "overrides", "override_rate", "incidents", "incident_rate", "tools", "distinct_calls", "observed_days", "first_proposal"?, "ready", "unmet"?}}}` (§6a). Reads the agent's journal and mcp-gateway's, so it needs root or the `systemd-journal` group |
+| `review NAME [CATEGORY…]`, `review NAME CATEGORY ACTIVITY CALL ok\|incident [--reason TEXT]` | the review (§6a). Without a verdict: per category promoted since (bounded, or demoted after a promotion) the week's autonomous actions still to review, as JSON: `{"agent", "categories": {"<category>": {"mode", "actions", "reviewed", "pending": [{"activity", "call", "tool", "outcome", "at", "args_sha256"?}]}}}`. With one: records `category.review` (the person behind `sudo` as `AGENT_BY`) for an action that ran without an approval in the last week; `incident` needs a reason and demotes a bounded category. Reads the journal: root or `systemd-journal`; a verdict needs root |
+| `readiness NAME [CATEGORY…]` | the readiness of the agent's categories (those its permissions name), or of the given ones, as JSON: `{"agent", "thresholds": {"observation_days", "proposals", "override_rate", "incident_rate", "window_days"}, "categories": {"<category>": {"proposals", "approved", "declined", "cancelled", "reviewed", "review_overrides", "overrides", "override_rate", "incidents", "incident_rate", "tools", "distinct_calls", "observed_days", "first_proposal"?, "ready", "unmet"?}}}` (§6a). Reads the agent's journal and mcp-gateway's, so it needs root or the `systemd-journal` group |
 
 ## 18. SELinux (`custos` module)
 
@@ -905,7 +922,7 @@ the product and release process, tracked here so that nothing is lost.
 |---|---|---|
 | Supervised by default for every category; not configurable away at install | §6, §6a | done (§6, §6a) |
 | Policy-bounded autonomy as a named destination, with an envelope (hosts, windows, rates, blast radius, rollback) | §6a | `bounded` with `windows`, and `rollback` (the demotion evaluator), done; rates need mcp-gateway (O12); hosts and blast radius across hosts parked with the fleet (O13) |
-| Observation period, override rate, explicit authenticated promotion, demotion path | §6a, §10 | observation, override rate, promotion and demotion by hand, and automatic demotion on the override rate and rollback conditions, done; on repeated rate caps and reviews open (O11) |
+| Observation period, override rate, explicit authenticated promotion, demotion path | §6a, §10 | observation, override rate (with reviews of autonomous actions), promotion and demotion by hand, and automatic demotion on the override rate, rollback conditions and incident reviews, done; on repeated rate caps open (O12) |
 | Per-category, not whole-agent, promotion; audit per category | §6a, §10 | done: `promote`, `demote`, promotion records (O11) |
 | Promotion-readiness view (override rate, incident rate, diversity, envelope size) | §6a | measures, thresholds, `agent-admin readiness` and the Cockpit view done, and `promote` checks them; envelope size open (O11) |
 | Hard capability limits, audit trail, emergency stop | §6, §8, §10, §15, §18 | done |
@@ -1007,17 +1024,18 @@ the product and release process, tracked here so that nothing is lost.
   `/etc/custos/promotion.yaml`) from the agents' records and the
   gateway's decisions, `agent-admin promote` (refused below readiness
   without `--despite-readiness`) and `demote`, the demotion evaluator
-  (`agent-admin evaluate`, `custos-demote.timer`) on the override rate
-  and the envelope's `rollback` (`tool_error`, `limit_exceeded`,
-  `health_check_failed`), the promotion records, `show` with the
+  (`agent-admin evaluate`, `custos-demote.timer`) on the override rate,
+  the envelope's `rollback` and incident reviews, the after-the-fact
+  review of autonomous actions (`agent-admin review`, `category.review`,
+  counted in the override rate), the promotion records, `show` with the
   categories, and the Cockpit page's view of an agent's categories with
-  their readiness, **Promote…** and **Demote**. Tested with OPA against
-  the gateway's policy, in the functional tests and in a real Cockpit.
-  Open: the after-the-fact review of autonomous actions
-  (`category.review`) and the demotion on it, telling the approvers of
-  an automatic demotion, and in the measures: the agent data in force
-  at a call's time, emergency stops as incidents, the envelope's size,
-  and the proposals behind each number.
+  their readiness, the actions to review, **Promote…** and **Demote**.
+  Tested with OPA against the gateway's policy, in the functional tests
+  and in a real Cockpit. Open: telling the approvers of an automatic
+  demotion; reviews by the gateway's approvers rather than by root; and
+  in the measures: the agent data in force at a call's time, emergency
+  stops as incidents, the envelope's size, and the proposals behind each
+  number.
 - **O12 — envelope limits in the gateway.** A per-agent, per-category
   call counter in mcp-gateway, with the window and the limit from the
   agent data, so that `rate` is enforced where the approvals are.
