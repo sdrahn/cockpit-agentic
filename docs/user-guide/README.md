@@ -21,11 +21,11 @@ first working agent.
 | [2. Installing Custos](02-installation.md) | requirements, packages, SELinux, checking the installation, people's accounts, upgrading, removing |
 | [3. Connecting Custos to mcp-gateway](03-gateway.md) | the socket, the agents' gateway data, servers, approvers, approval links, delegation |
 | [4. Creating your first agent](04-first-agent.md) | a walk-through from configuration to an approved tool call |
-| [5. Configuring an agent (agent.yaml)](05-configuration.md) | every key of `agent.yaml`, models and credentials, limits, chat, schedules |
-| [6. Permissions and autonomy modes](06-permissions-and-modes.md) | advisory, supervised, bounded; permission lists; pause |
+| [5. Configuring an agent (agent.yaml)](05-configuration.md) | every key of `agent.yaml`, models and credentials, the model defaults for new agents, limits, chat, schedules |
+| [6. Permissions and autonomy modes](06-permissions-and-modes.md) | advisory, supervised, bounded; permission lists; task categories, promotion, readiness, review, automatic demotion; pause |
 | [7. Approving an agent's calls](07-approvals.md) | the flow, who may decide, Cockpit and command line, grants, notifications |
 | [8. Using the Custos page in Cockpit](08-cockpit.md) | logging in, roles, the tabs, the emergency stop |
-| [9. Administering agents](09-administration.md) | `agent-admin`, create, edit, delete, pause, stop, schedules, backups |
+| [9. Administering agents](09-administration.md) | `agent-admin`, create, agent templates, edit, delete, pause, stop, schedules, backups |
 | [10. Monitoring agents and reading the audit record](10-monitoring-and-audit.md) | the control API, journal fields, the gateway's audit, retention |
 | [11. Agents in OpenShell sandboxes, the gateway's HTTPS listener and the identity provider](11-openshell.md) | agents in OpenShell, the HTTPS listener, Keycloak or another IdP, tokens |
 | [12. Troubleshooting](12-troubleshooting.md) | symptoms, causes and fixes; every error message |

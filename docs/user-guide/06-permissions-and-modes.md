@@ -45,15 +45,15 @@ agent-admin permissions patch-pilot < perms.yaml
 
 ```yaml
 # perms.yaml
-- {server: zypp, tool: 'list_*', read_only: true}
-- {server: zypp, tool: install_patches}
-- {server: systemd, tool: restart_unit, autonomous: true, args: {unit: '^nginx\.service$'}}
+- {server: zypp, tool: check_updates, read_only: true}
+- {server: zypp, tool: confirm_install}
+- {server: systemd, tool: change_unit_state, autonomous: true, args: {name: '^nginx\.service$', action: '^restart$'}}
 ```
 
 | Key | Meaning |
 |---|---|
 | `server` | the gateway server's name; a glob (`*`) matches several |
-| `tool` | the tool's name on that server; a glob, such as `'list_*'` |
+| `tool` | the tool's name on that server; a glob, such as `'find_*'` |
 | `resource`, `prompt` | instead of `tool`: an MCP resource or prompt of the server |
 | `args` | per argument, a regular expression its value must match; the call is refused otherwise |
 | `read_only: true` | the tool only reads: it runs in every mode without an approval |
@@ -78,9 +78,9 @@ Rules:
 
 | The agent should | Permissions |
 |---|---|
-| report on updates | `{server: zypp, tool: 'list_*', read_only: true}` |
-| install patches, each with approval | the above, and `{server: zypp, tool: install_patches}` |
-| restart one service on its own (bounded mode) | `{server: systemd, tool: restart_unit, autonomous: true, args: {unit: '^nginx\.service$'}}` |
+| report on updates | `{server: zypp, tool: check_updates, read_only: true}` |
+| install updates, each with approval | the above, and `{server: zypp, tool: confirm_install}` |
+| restart one service on its own (bounded mode) | `{server: systemd, tool: change_unit_state, autonomous: true, args: {name: '^nginx\.service$', action: '^restart$'}}` |
 | hand work to another agent | `{server: agents, tool: delegate, read_only: true, args: {agent: '^patch-pilot$'}}` ([chapter 3](03-gateway.md#delegation)) |
 
 Narrow `args` with anchored expressions (`^…$`): `nginx\.service` alone
@@ -135,9 +135,9 @@ file in `/etc/custos/categories.d/`, for example `backups.yaml` with
 A permission joins a category with `category:`:
 
 ```yaml
-- {server: zypp, tool: 'list_*', read_only: true}
+- {server: zypp, tool: check_updates, read_only: true}
 - {server: zypp, tool: patch, category: patch-errata}
-- {server: systemd, tool: restart_unit, category: config-lifecycle, args: {unit: '^nginx\.service$'}}
+- {server: systemd, tool: change_unit_state, category: config-lifecycle, args: {name: '^nginx\.service$', action: '^restart$'}}
 ```
 
 A permission in a category is supervised until its category is
@@ -158,11 +158,12 @@ agent-admin readiness patch-pilot patch-errata | jq '.categories["patch-errata"]
 | Field | Meaning |
 |---|---|
 | `proposals` | the category's approval items that an approver decided (expired ones do not count) |
-| `declined`, `cancelled` | declined, and approved but then cancelled before the call ran |
-| `override_rate` | (`declined` + `cancelled`) / `proposals` |
+| `approved`, `declined`, `cancelled` | approved; declined; approved but then cancelled before the call ran |
+| `reviewed`, `review_overrides` | autonomous actions [reviewed](#review) since a promotion; of those, judged `incident` |
+| `overrides`, `override_rate` | `declined` + `cancelled` + `review_overrides`, and their share of `proposals` + `reviewed` |
 | `incidents`, `incident_rate` | approved calls that failed, hit a limit, or had the agent paused during their activity; their share of the approved calls that ran |
 | `tools`, `distinct_calls` | how varied the proposals were |
-| `observed_days` | since the first proposal |
+| `observed_days`, `first_proposal` | since the first proposal, and when it was |
 | `ready`, `unmet` | whether every threshold is met, and which are not |
 
 The thresholds are 14 days, 50 proposals, at most 5 % overrides and at
@@ -216,11 +217,14 @@ agent-admin promote patch-pilot patch-errata --envelope window.yaml \
 - an agent in `advisory` mode;
 - `rate` in the envelope (not enforced yet), and `hosts`
   or `blast_radius` (they need a fleet). It refuses them rather than
-  ignore them.
+  ignore them;
+- an envelope without `windows`, or with a key it does not know;
+- `--despite-readiness` without `--reason`;
+- the same envelope the category already has while it is bounded.
 
 It returns once the gateway has the change, and writes a
 `category.promoted` record with the readiness measures at that moment ([chapter 10](10-monitoring-and-audit.md#promotion-records)).
-Promoting a promoted category again replaces its envelope.
+Promoting a promoted category again with another envelope replaces it.
 `agent-admin show NAME` lists the agent's categories with their mode,
 envelope and who promoted them.
 
@@ -254,7 +258,9 @@ it needs a reason, counts as an override in the
 the category at once. Each verdict is a `category.review` record with
 who reviewed it. In Cockpit, the agent's *Task categories* card lists
 them under *To review*, with **Fine** and **Should not have run**.
-Reviewing needs root (or Cockpit's administrative access).
+Listing the actions to review needs root or the group
+`systemd-journal`; a verdict needs root (or Cockpit's administrative
+access).
 
 ## Automatic demotion {#auto-demote}
 

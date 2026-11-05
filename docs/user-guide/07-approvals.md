@@ -17,7 +17,7 @@ covers its channels, the approval page and notifications in full.
    ([chapter 6](06-permissions-and-modes.md#modes)). The gateway creates
    a pending approval with an id such as `a-6c88df4c32d09c66…` and holds
    the call.
-2. The gateway tells the agent "Waiting for approval of zypp/install_patches … (id a-…)".
+2. The gateway tells the agent "Waiting for approval of zypp/confirm_install … (id a-…)".
    The agent marks the call and its activity **waiting for approval** and
    writes `approval.pending` to the journal.
 3. A person who may decide approves or declines it.
@@ -45,10 +45,13 @@ one item with two halves:
 
 | The call, from mcp-gateway | The agent's account (self-asserted) |
 |---|---|
-| server and tool, the agent's principal (`agent-patch-pilot`, uid, by `SO_PEERCRED`), the policy that asked, the exact arguments | the agent's stated reason and impact, who started the activity and its delegation chain, its earlier calls as evidence |
+| server and tool, the agent's principal (`agent-patch-pilot`, uid, by `SO_PEERCRED`), the policy that asked, who may decide, how it was asked (the channel), when it times out, the exact arguments | the agent's stated reason and impact, who started the activity and its delegation chain, its earlier calls as evidence |
 
 Only the left half is trustworthy: it comes from the gateway. The right
 half is what the agent says about itself.
+If the agent is no longer waiting for the call (it ended, or the gateway
+restarted), the item says so: approving then lets its next identical
+call through.
 
 The buttons are the scopes the gateway offers: **Approve once** (this
 call only), **Approve for this session**, **Approve for 1 h** (a grant:
@@ -84,7 +87,7 @@ Cockpit session, never through administrative access, and adds
 `"via": "cockpit"`. The gateway's audit then has, for example:
 
 ```json
-{"audit": true, "event": "mcp-approval", "id": "a-6c88…", "ok": true, "by": "carol", "scope": "once", "via": "cockpit", "principal": "agent-patch-pilot", "server": "zypp", "target": "install_patches"}
+{"audit": true, "event": "mcp-approval", "id": "a-6c88…", "ok": true, "by": "carol", "scope": "once", "via": "cockpit", "principal": "agent-patch-pilot", "server": "zypp", "target": "confirm_install"}
 ```
 
 Decide as yourself: a decision made as root (for example `sudo

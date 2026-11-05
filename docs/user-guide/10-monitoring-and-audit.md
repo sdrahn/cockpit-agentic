@@ -43,13 +43,15 @@ fields named `AGENT_*`:
 
 | Field | Value |
 |---|---|
-| `AGENT_NAME`, `AGENT_EVENT` | the agent; the event (below) |
+| `AGENT_CONTRACT`, `AGENT_NAME`, `AGENT_EVENT` | the contract version (`1`, on every record), the agent; the event (below) |
 | `AGENT_INVOCATION`, `AGENT_SESSION`, `AGENT_USER` | the activity id, the session, for whom it runs |
 | `AGENT_ORIGIN`, `AGENT_ORIGIN_BY`, `AGENT_SCHEDULE` | how it started (`chat`, `schedule`, `event`, `delegation`, `api`) |
 | `AGENT_PARENT_AGENT`, `AGENT_PARENT_ACTIVITY`, `AGENT_ROOT_AGENT`, `AGENT_ROOT_ACTIVITY` | the delegation chain |
 | `AGENT_TOOL`, `AGENT_SERVER`, `AGENT_CALL_ID`, `AGENT_ARGS_SHA256` | a tool call; arguments only as their SHA-256 |
 | `AGENT_RATIONALE` | the model's stated reason with a call (self-asserted) |
 | `AGENT_APPROVAL_ID`, `AGENT_OUTCOME`, `AGENT_REASON` | approvals, results and why |
+| `AGENT_MODEL`, `AGENT_TOKENS_IN`, `AGENT_TOKENS_OUT` | a model call: the model, and the tokens it reports |
+| `AGENT_DURATION_MS`, `AGENT_LLM_CALLS`, `AGENT_TOOL_CALLS` | at the end of an activity: how long it took and how many calls it made |
 
 Events: `agent.start`, `agent.stop`, `config.invalid`, `agent.paused`,
 `agent.resumed`, `invocation.start`, `invocation.end`,
@@ -71,8 +73,9 @@ policy says.
 
 ## Promotion records {#promotion-records}
 
-`agent-admin promote` and `demote` write a record for each change of a
-task category's mode ([chapter 6](06-permissions-and-modes.md#promote)),
+`agent-admin promote` and `demote`, the demotion evaluator and the
+review write a record for each change of a task category's mode, and
+for each verdict ([chapter 6](06-permissions-and-modes.md#promote)),
 with `SYSLOG_IDENTIFIER=custos-promotion`:
 
 | Field | Value |
@@ -80,7 +83,8 @@ with `SYSLOG_IDENTIFIER=custos-promotion`:
 | `AGENT_EVENT` | `category.promoted`, `category.demoted`, `category.review` (a verdict on an action, [chapter 6](06-permissions-and-modes.md#review)) |
 | `AGENT_NAME`, `AGENT_CATEGORY` | the agent, the category |
 | `AGENT_MODE_FROM`, `AGENT_MODE_TO` | `supervised`, `bounded` |
-| `AGENT_BY`, `AGENT_REASON` | who (the person behind `sudo`) and why |
+| `AGENT_BY`, `AGENT_REASON` | who (the person behind `sudo`, or `custos-demote` for an automatic demotion) and why (for `custos-demote`, the condition that fired) |
+| `AGENT_READINESS` | with a promotion: the category's readiness measures at that moment, as JSON |
 | `AGENT_PROMOTION` | the promotion's id (`p-…`), also in the agent's gateway data |
 | `AGENT_ENVELOPE_SHA256` | the envelope's digest |
 | `AGENT_VERDICT`, `AGENT_INVOCATION`, `AGENT_CALL_ID`, `AGENT_TOOL` | a review: `ok` or `incident`, and the action |

@@ -144,9 +144,9 @@ started them.
   "reason": "",
   "llm_calls": 2,
   "calls": [
-    {"call_id": "c1", "tool": "zypp__list_updates", "state": "ok", "args_sha256": "4413…",
+    {"call_id": "c1", "tool": "zypp__check_updates", "state": "ok", "args_sha256": "4413…",
      "since": "…", "ended": "…"},
-    {"call_id": "c2", "tool": "zypp__install_patches", "state": "waiting_approval", "args_sha256": "6eb8…",
+    {"call_id": "c2", "tool": "zypp__confirm_install", "state": "waiting_approval", "args_sha256": "6eb8…",
      "approval_id": "a-42", "approval": "pending",
      "rationale": "Installing 1 security patch; nginx restarts."}
   ]
@@ -205,9 +205,9 @@ the host never writes itself:
   paused: false           # true: the gateway denies every call (§8)
   paused_by: "alice 2026-11-03T12:00:00Z"
   permissions:            # gateway permissions, with two flags
-    - {server: zypp, tool: 'list_*', read_only: true}
-    - {server: zypp, tool: install_patches}
-    - {server: systemd, tool: restart_unit, autonomous: true, args: {unit: '^nginx\.service$'}}
+    - {server: zypp, tool: check_updates, read_only: true}
+    - {server: zypp, tool: confirm_install}
+    - {server: systemd, tool: change_unit_state, autonomous: true, args: {name: '^nginx\.service$', action: '^restart$'}}
 ```
 
 | Mode | Read-only permissions | Other permissions | `autonomous: true` ones |
@@ -284,9 +284,9 @@ field, §6):
 <name>:
   mode: supervised            # as §6: the default for every category
   permissions:
-    - {server: zypp, tool: 'list_*', read_only: true}
-    - {server: zypp, tool: install_patches, category: patch-errata}
-    - {server: systemd, tool: restart_unit, category: config-lifecycle, args: {unit: '^nginx\.service$'}}
+    - {server: zypp, tool: check_updates, read_only: true}
+    - {server: zypp, tool: confirm_install, category: patch-errata}
+    - {server: systemd, tool: change_unit_state, category: config-lifecycle, args: {name: '^nginx\.service$', action: '^restart$'}}
   categories:                 # added: one entry per category that left the default
     patch-errata:
       mode: bounded

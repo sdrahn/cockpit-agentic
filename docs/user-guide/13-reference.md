@@ -14,16 +14,18 @@ fields, gateway data, AG-UI events) are defined in the contract,
 
 | Program | Runs as | Does |
 |---|---|---|
-| `/usr/sbin/agent-admin` | root (or anyone for `check FILE`, `show`) | administration ([chapter 9](09-administration.md#agent-admin)) |
+| `/usr/sbin/agent-admin` (also `/usr/libexec/custos/agent-admin`) | root; anyone for `check FILE`, `show`, `categories`, `templates`, `draft` and reading `defaults`; root or `systemd-journal` for `readiness` and the review queue | administration ([chapter 9](09-administration.md#agent-admin)) |
 | `/usr/libexec/custos/agent-launcher` | `agent-<name>` (`agent_t`) | the agent: `agent-launcher serve` |
 | `/usr/libexec/custos/agent-delegate` | the delegating agent's user (`mcpsrv_agents_t`), started by mcp-gateway | the `agents` server: delegation |
 | `/usr/libexec/custos/agent-openshell-relay` | root (`agent_relay_t`) | an OpenShell agent's socket and journal |
 | `/usr/libexec/custos/agent-openshell-logs` | the relay | follows the sandbox container's output |
+| `/usr/libexec/custos/agent-openshell-start` | root, before the relay (`agent-openshell@.service`) | starts the agent's sandbox and waits until it is ready |
 
 ## Files and directories {#files}
 
 | Path | Owner, mode | Contents |
 |---|---|---|
+| `/etc/custos/agents/<name>/` | root:agent-`<name>` 0750 | the agent's configuration directory |
 | `/etc/custos/agents/<name>/agent.yaml` | root:agent-`<name>` 0640 | the configuration ([chapter 5](05-configuration.md)) |
 | `/etc/custos/agents/<name>/openshell.env`, `openshell-policy.yaml`, `openshell-profile.yaml`, `relay.secret` | root | OpenShell agents: relay settings, sandbox policy, provider profile, the relay's secret (0600) |
 | `/etc/mcp-gateway/policy/agents/<name>.yaml` | root 0644 | the agent's mode, pause and permissions ([chapter 6](06-permissions-and-modes.md)) |
@@ -32,7 +34,10 @@ fields, gateway data, AG-UI events) are defined in the contract,
 | `/etc/credstore.encrypted/agent-<name>.<cred>` | root 0600 | credentials (`systemd-creds`) |
 | `/etc/sysusers.d/agent-<name>.conf` | root 0644 | the agent's user |
 | `/etc/systemd/system/agent-schedule@<name>_<schedule>.timer.d/schedule.conf` | root | a schedule's calendar |
-| `/etc/systemd/system/agent@<name>.service.d/` | root | drop-ins for the agent's unit |
+| `/etc/systemd/system/agent@<name>.service.d/` | root | drop-ins for the agent's unit (Cockpit writes only `50-cockpit.conf`) |
+| `/etc/systemd/system/agent-openshell@<name>.service.d/openshell-user.conf` | root | OpenShell agents: the OpenShell user's Podman directories for the relay's log source |
+| `/usr/lib/systemd/system/agent@.*`, `agent-schedule@.*`, `agent-openshell@.*`, `custos-demote.*` | root 0644 | the unit templates ([below](#units)) |
+| `/usr/lib/sysusers.d/custos.conf`, `/usr/lib/tmpfiles.d/custos.conf` | root 0644 | the group `agent-clients`; the directories |
 | `/var/lib/agents/<name>/sessions.db` | agent-`<name>` 0600 | chat sessions |
 | `/run/agents/<name>/api.sock` | root:agent-clients 0660 | the agent's control API |
 | `/usr/share/mcp-gateway/policy/custos/agents.rego` | root 0644 | the autonomy policy module |
@@ -67,6 +72,7 @@ fields, gateway data, AG-UI events) are defined in the contract,
 | `agent-<name>` | an agent's system user; no password, no login shell |
 | `agent-clients` | people who supervise agents; agents are members too, for delegation |
 | `mcp-users` | the gateway's socket group; agents are members |
+| `systemd-journal` | reading the journal: lets a person run `agent-admin readiness` and list the review queue without root |
 | `wheel` | in the gateway's default role data, the role `admin` (may approve); in Cockpit, sudo for administrative access |
 
 ## Environment variables {#environment}
@@ -75,14 +81,14 @@ fields, gateway data, AG-UI events) are defined in the contract,
 |---|---|---|
 | `CUSTOS_OPENSHELL_IMAGE` | `agent-admin` | the image for new sandboxes (default `localhost/custos-agent:latest`) |
 | `CUSTOS_OPENSHELL_USER` | `agent-admin` | the user whose rootless Podman holds the sandboxes |
-| `SUDO_USER`, `USER` | `agent-admin` | who acted, for `paused_by` and the emergency stop's `by` |
+| `SUDO_USER`, `USER` | `agent-admin` | who acted: `paused_by`, the emergency stop's `by`, `promoted_by`, `demoted_by` and the review's verdicts |
 | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `GOOGLE_APPLICATION_CREDENTIALS` | the agent (a unit drop-in) | Vertex AI ([chapter 5](05-configuration.md#vertex)) |
 
 ## SELinux {#selinux}
 
 | Type or boolean | What |
 |---|---|
-| `agent_t` (`agent_exec_t`) | the agents; reach the gateway's MCP socket and HTTP ports |
+| `agent_t` (`agent_exec_t`) | the agents; reach the gateway's MCP socket and HTTP ports, read their own credentials (`init_var_run_t` in `/run/credentials/<unit>`) |
 | `mcpsrv_agents_t` | the delegation bridge; reaches the agents' sockets |
 | `agent_relay_t` | the OpenShell relay |
 | `agent_conf_t`, `agent_var_lib_t`, `agent_runtime_t`, `agent_sock_t` | `/etc/custos`, `/var/lib/agents`, `/run/agents`, the sockets |
@@ -105,7 +111,8 @@ fields, gateway data, AG-UI events) are defined in the contract,
 | discovery, sandbox backends | §3, §3a |
 | activities, the control API | §4, §5 |
 | autonomy modes, the agents' gateway data | §6 |
+| task categories, promotion, readiness, review, demotion | §6a |
 | approvals, intervention, delegation | §7, §8, §9 |
 | journal fields and `MESSAGE_ID`s | §10 |
 | AG-UI (chat) | §11 |
-| files, configuration, units, launcher, OpenShell, `agent-admin`, SELinux, packages | §13 to §19 |
+| files, configuration, templates, defaults for new agents, units, launcher, OpenShell, `agent-admin`, SELinux, packages | §13 to §19 (templates §14a, defaults §14b) |

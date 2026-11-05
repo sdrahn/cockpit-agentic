@@ -38,10 +38,12 @@ person behind `sudo` (`SUDO_USER`), else `USER`.
 | `agent-admin stop-all`, `release-all` | the emergency stop and its end |
 | `agent-admin trigger NAME_SCHEDULE` | start a schedule's run (what its timer runs) |
 
-`mode`, `permissions`, `promote`, `demote`, `pause`, `resume`, `stop-all` and `release-all`
+`create`, `mode`, `permissions`, `promote`, `demote`, `pause`, `resume`, `stop-all` and `release-all`
 return once the gateway's policy engine has the change, so it is in
 force when the command ends. If the engine does not load it within 20
-seconds, the command says so and fails
+seconds, the command says so and fails. If mcp-gateway's OPA is not
+running at all, it says so and succeeds: the change is in force once
+OPA starts
 ([chapter 12](12-troubleshooting.md#policy-not-loaded)). Its standard
 output is its own messages; what the programs it runs print goes to
 standard error.
@@ -213,7 +215,8 @@ systemctl start agent@NAME.socket
 For an OpenShell agent: `systemctl stop agent-openshell@NAME.service`,
 which also stops its sandbox. A stopped agent's gateway data stays: the
 Agents tab shows it as *stopped*. To keep it stopped across reboots,
-`systemctl disable agent@NAME.socket`.
+`systemctl disable agent@NAME.socket`; `release-all` then leaves it
+stopped too.
 
 ## Schedules {#schedules}
 
@@ -262,7 +265,8 @@ agents stay paused. In Cockpit: **Stop all agents** in the header, and
 
 `agent@.service` runs each agent as its own user with
 `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp`,
-`PrivateDevices`, `NoNewPrivileges`, no capabilities, a system call
+`PrivateDevices` (with `/dev/tpmrm0` allowed only for systemd to
+decrypt TPM-sealed credentials), `NoNewPrivileges`, no capabilities, a system call
 filter and `MemoryDenyWriteExecute`, without the gateway's control socket
 and without `/run/agents`. Adjust it for one agent with a drop-in, for
 example to set environment variables:
@@ -283,13 +287,17 @@ To restore a host's agents, keep:
 | Path | What |
 |---|---|
 | `/etc/custos/agents/` | configurations |
+| `/etc/custos/defaults.yaml`, `/etc/custos/promotion.yaml`, `/etc/custos/categories.d/`, `/etc/custos/templates/` | model defaults, readiness thresholds, your categories and templates |
 | `/etc/mcp-gateway/policy/agents/` | modes, permissions, pause, the emergency stop, `_http.yaml` |
 | `/etc/sysusers.d/agent-*.conf` | the agents' users |
-| `/etc/systemd/system/agent-schedule@*.timer.d/`, `/etc/systemd/system/agent@*.service.d/` | schedules' calendars, drop-ins |
+| `/etc/systemd/system/agent-schedule@*.timer.d/`, `/etc/systemd/system/agent@*.service.d/`, `/etc/systemd/system/agent-openshell@*.service.d/` | schedules' calendars, drop-ins |
 | `/var/lib/agents/` | chat sessions (optional) |
 
 The credentials (`/etc/credstore.encrypted/agent-*`) are encrypted for
 this host and cannot be read on another. On a new host, run
-`agent-admin create` with each configuration, restore the permissions
-with `agent-admin permissions`, and set the credentials again with
+`agent-admin create` with each configuration, which writes it as
+supervised without permissions. Then copy its saved
+`/etc/mcp-gateway/policy/agents/NAME.yaml` back over the new one: it
+holds the mode, the permissions and the categories' promotions, and the
+gateway picks it up within seconds. Set the credentials again with
 `agent-admin set-credential`.

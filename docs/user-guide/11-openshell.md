@@ -94,7 +94,12 @@ cd / && runuser -l osh -c "podman build -t localhost/custos-agent:latest -f /usr
 
 `agent-admin` creates sandboxes from `localhost/custos-agent:latest`, or
 from the image `CUSTOS_OPENSHELL_IMAGE` names. Rebuild the image after
-updating `custos`, then recreate the sandboxes with `agent-admin edit`.
+updating `custos`. A running sandbox keeps its image: to move an agent
+to the new one, set its gateway credential again
+(`agent-admin set-credential NAME gateway-client-secret`, or
+`gateway-token`), which deletes the sandbox and creates it anew from the
+image. `agent-admin edit` recreates a sandbox only when the change
+reaches it ([below](#edit)), from the image it was created with.
 
 ## Step 3: mcp-gateway's HTTPS listener {#listener}
 

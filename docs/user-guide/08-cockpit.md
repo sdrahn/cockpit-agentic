@@ -29,8 +29,8 @@ Not for logging in:
 | Role | The account needs | Can |
 |---|---|---|
 | supervisor | membership in `agent-clients` | see the agents, their activities and journal records; chat with an agent |
-| approver | the above, and a place in the gateway's approver rules ([chapter 3](03-gateway.md#approvers)) | decide pending calls; revoke grants |
-| administrator | the above, and sudo rights (by default `wheel`) for Cockpit's *Administrative access* | create, change and delete agents; modes and permissions; pause, stop, schedules; the emergency stop |
+| approver | the above, and a place in the gateway's approver rules ([chapter 3](03-gateway.md#approvers)) | decide pending calls (grants are revoked on mcp-gateway's own page, [chapter 7](07-approvals.md)) |
+| administrator | the above, and sudo rights (by default `wheel`) for Cockpit's *Administrative access* | create, change and delete agents; modes, permissions and task categories; pause, stop, schedules; model defaults and credentials; the emergency stop |
 
 An approver need not be an administrator. Reading the journal (the
 *Audit* tab, *Decided today*) needs journal access, as for Cockpit's
@@ -44,13 +44,26 @@ each for one kind of action:
 
 | Action | Session | Why |
 |---|---|---|
-| approve, decline, revoke | **the person's**, always | mcp-gateway records the approver it sees |
-| status, activities, the journal, chat | the person's | the sockets and the journal answer as the person may see |
-| pause, resume, stop, start, mode, permissions, schedules, create, edit, delete, the emergency stop | **root** | only root changes agents and units; `agent-admin` records the person |
+| approve, decline | **the person's**, always | mcp-gateway records the approver it sees |
+| status, activities, the journal, chat; **Check**, the templates, a new agent's starting configuration, reading the model defaults | the person's | the sockets, the journal and these files answer as the person may see |
+| pause, resume, restart, stop, start, mode, permissions, schedules, create, edit (also reading `agent.yaml`, which is not world-readable), delete; promote, demote, readiness, review; model defaults; storing a credential; the emergency stop | **root** | only root changes agents and units; `agent-admin` records the person |
 
 So turning on administrative access never changes for whom an approval
 is recorded. Without it, an administrative button says it needs
 administrative access.
+
+## Refreshing and errors {#refresh}
+
+The page refreshes the tab you look at: *Activity* every 3 seconds,
+*Approvals* every 2, *Agents* every 5, *Policy* every 10; *Audit* reads
+the journal when you ask. An agent's details do not refresh while you
+edit something in them.
+
+An action that fails (a refused promotion, a configuration that does not
+check) shows its reason in the red box at the top until you click
+**Dismiss** or start another action; a refresh does not clear it. A
+refresh that fails (the gateway not running, say) shows there too, and
+goes once a refresh works again. Switching tabs clears both.
 
 ## Activity tab {#activity}
 
@@ -84,11 +97,24 @@ decisions from the journal.
 *Agents on this host* lists every agent: those with a socket in
 `/run/agents`, and those that have gateway data but are stopped. Each
 shows its state, autonomy mode, host and model, schedules and current
-work. **Create agent** opens a form for a new agent's configuration
-([chapter 9](09-administration.md#create)), blank or **Start from** one
-of the shipped templates, which also gives the agent the template's
-permissions and mode ([chapter 9](09-administration.md#templates)). **Model defaults** sets the model new
-agents start with ([chapter 5](05-configuration.md#model-defaults)).
+work. An agent whose socket does not answer within 8 seconds shows as
+*unreachable*, with "not answering (no answer within 8 s): its service
+may be failing to start; see its Logs"; the other agents are listed as
+usual ([chapter 12](12-troubleshooting.md#agent-start)).
+
+**Create agent** opens a form for a new agent: a name (2 to 32
+lower-case letters, digits and dashes, starting with a letter), and its
+configuration, blank or **Start from** one of the shipped templates,
+which also gives the agent the template's permissions and mode
+([chapter 9](09-administration.md#templates)). The editor starts with
+the model defaults. **Check** validates it, **Create** creates it. When
+its model names a credential, the page then asks for the secret and
+stores it (**Store**, `agent-admin set-credential`).
+
+**Model defaults** sets the model new agents start with: provider,
+model, endpoint (for `openai`), credential (a name) and temperature.
+**Save** writes them, **Remove the defaults** removes them; existing
+agents keep their model ([chapter 5](05-configuration.md#model-defaults)).
 
 Selecting an agent shows:
 
@@ -103,12 +129,15 @@ Selecting an agent shows:
 - **Task categories**: each category its permissions name, with its
   mode and windows, its readiness (ready or not, and what is not met;
   the override and incident rates against their limits; the proposals),
-  **Demote** for a bounded one, the actions a promoted category took
-  without an approval to review (**Fine**, **Should not have run**), and
-  **Promote…**, which opens a form with
-  the envelope. A category that is not ready is refused unless you
-  promote it despite its readiness, with a reason. Readiness and the
-  actions need administrative access
+  **Demote** for a bounded one, and **Promote…** (for a bounded one
+  **Change envelope…**), which opens a form with the envelope. A
+  category that is not ready is refused unless you promote it despite
+  its readiness, with a reason. Once a category has been promoted, *To
+  review* lists the actions it took without an approval, with **Fine**
+  and **Should not have run**. **Demote** and **Should not have run**
+  take the reason from the *Reason (recorded)* field (Demote's default:
+  "demoted in Cockpit"). Readiness and the actions need administrative
+  access
   ([chapter 6](06-permissions-and-modes.md#readiness));
 - **Schedules**: each with its calendar, next run and **Enable**/**Disable**;
 - **Configuration**: **Edit configuration** loads `agent.yaml`, **Check**

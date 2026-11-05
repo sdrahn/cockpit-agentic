@@ -40,14 +40,21 @@ patch-pilot:
   mode: supervised
   paused: false
   permissions:
-    - {server: zypp, tool: 'list_*', read_only: true}
-    - {server: zypp, tool: install_patches}
+    - {server: zypp, tool: check_updates, read_only: true}
+    - {server: zypp, tool: confirm_install, category: patch-errata}
+  categories:                 # once a category is promoted (chapter 6)
+    patch-errata:
+      mode: bounded
+      envelope: {windows: [{days: [sat], from: '02:00', to: '05:00', tz: Europe/Berlin}]}
+      promoted_by: "alice 2026-11-07T09:00:00.123456789Z"
+      promotion: p-3f9c…
 ```
 
 `agent-admin` writes these files; do not edit them by hand. OPA picks up
 a change within seconds, and `agent-admin` waits (up to 20 seconds) until
 OPA has it before it returns, so a change is in force when the command
-ends. The same directory holds `_control.yaml` (the emergency stop) and
+ends. If mcp-gateway's OPA is not running at all, `agent-admin` says so
+and returns: the change is in force once OPA starts. The same directory holds `_control.yaml` (the emergency stop) and
 `_http.yaml` (the token issuers of agents over HTTPS). OPA watches only
 directories it loaded a file from at start, which is why all of them
 live in this one directory.
@@ -71,6 +78,12 @@ systemctl reload mcp-gateway.service
 curl -s --unix-socket /run/mcp-gateway/control.sock http://localhost/v1/servers | grep -o '"name":"[^"]*"'
 ```
 
+The agent templates need more servers: mcp-server-snapper,
+firewalld-mcp, mcp-server-tukit on transactional systems, and
+mcp-gateway-exec-server with the command in
+`/usr/share/custos/templates/exec.d-disk-usage.yaml`. Each template's
+`needs` lists its own ([chapter 9](09-administration.md#templates)).
+
 The setup packages also ship roles (`zypp-reader`, `systemd-operator`,
 …) for people. Agents do not use them: bind those roles to people only.
 What an agent may call comes from its permissions
@@ -83,8 +96,8 @@ Two lists decide what reaches an agent:
 | `gateway.servers` (and `gateway.tools`) in the agent's `agent.yaml` | which tools the model is *shown* |
 | the agent's permissions (`agent-admin permissions`) | what the gateway *allows* |
 
-A tool the agent may not call is hidden from it by the gateway as well
-(it answers `not offered`).
+A tool the agent may not call is also left out of the tool list the
+gateway gives the agent, so the model does not see it.
 
 ## Who may approve an agent's calls {#approvers}
 
