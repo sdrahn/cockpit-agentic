@@ -775,6 +775,8 @@ check "agent-admin feedback on the report" agent-admin feedback pb "$pb_act" --h
 check "journal: diagnosis.feedback by root" eventually 10 bash -c \
 	"journalctl -o json --no-pager --since '@$t0' SYSLOG_IDENTIFIER=custos-promotion AGENT_EVENT=diagnosis.feedback AGENT_NAME=pb | jq -e 'select(.AGENT_INVOCATION == \"$pb_act\" and .AGENT_BY == \"root\" and (.AGENT_FEEDBACK | fromjson | .hypotheses.h1 == \"confirmed\"))' >/dev/null"
 check "agent-admin feedback refuses a hypothesis the report does not have" not agent-admin feedback pb "$pb_act" --hypothesis h9=confirmed
+check "readiness shows the diagnostics history: the report, its verified quote, root's feedback" eventually 10 bash -c \
+	"agent-admin readiness pb | jq -e '.diagnostics | .reports >= 1 and .verified_quotes >= 1 and .with_feedback >= 1 and .confirmed >= 1 and .plans_executed >= 1' >/dev/null"
 check "a playbook whose tool the gateway does not offer is refused (422)" code_is 422 api pb /v1/activities -X POST -d '{"playbook":"change-check"}'
 check "an unknown playbook is refused (404)" code_is 404 api pb /v1/activities -X POST -d '{"playbook":"no-such"}'
 n0=$(journal pb invocation.start | jq -s 'map(select(.AGENT_ORIGIN == "schedule")) | length')

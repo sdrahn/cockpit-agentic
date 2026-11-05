@@ -287,3 +287,51 @@ func TestForgedReviewsIgnored(t *testing.T) {
 		t.Error("ByRoot")
 	}
 }
+
+// The diagnostics history: the last report and the last feedback per
+// activity; feedback only from root's records.
+func TestDiagnosticsOf(t *testing.T) {
+	rec := func(us int64, f map[string]string) Record {
+		r := Record{"__REALTIME_TIMESTAMP": strconv.FormatInt(us, 10)}
+		for k, v := range f {
+			r[k] = v
+		}
+		return r
+	}
+	report := func(hyps, verified, unverified int) string {
+		var h, e []string
+		for i := 0; i < hyps; i++ {
+			h = append(h, `{"id":"h`+strconv.Itoa(i)+`"}`)
+		}
+		for i := 0; i < verified; i++ {
+			e = append(e, `{"verified":true}`)
+		}
+		for i := 0; i < unverified; i++ {
+			e = append(e, `{"verified":false}`)
+		}
+		return `{"hypotheses":[` + strings.Join(h, ",") + `],"evidence":[` + strings.Join(e, ",") + `]}`
+	}
+	recs := []Record{
+		// e-1: reported twice; the later report counts.
+		rec(1, map[string]string{"AGENT_EVENT": "diagnosis.report", "AGENT_INVOCATION": "e-1", "AGENT_REPORT": report(5, 0, 5)}),
+		rec(2, map[string]string{"AGENT_EVENT": "diagnosis.report", "AGENT_INVOCATION": "e-1", "AGENT_REPORT": report(2, 2, 1)}),
+		rec(3, map[string]string{"AGENT_EVENT": "diagnosis.report", "AGENT_INVOCATION": "e-2", "AGENT_REPORT": report(1, 1, 0)}),
+		rec(4, map[string]string{"AGENT_EVENT": "diagnosis.report", "AGENT_INVOCATION": "e-3", "AGENT_REPORT": report(1, 0, 1)}),
+		// Feedback on e-1, replaced by a later one.
+		rec(5, map[string]string{"AGENT_EVENT": "diagnosis.feedback", "AGENT_INVOCATION": "e-1", "_UID": "0",
+			"AGENT_FEEDBACK": `{"hypotheses":{"h0":"rejected","h1":"rejected"}}`}),
+		rec(6, map[string]string{"AGENT_EVENT": "diagnosis.feedback", "AGENT_INVOCATION": "e-1", "_UID": "0",
+			"AGENT_FEEDBACK": `{"hypotheses":{"h0":"confirmed","h1":"unsure"},"plan":"useful","executed":true}`}),
+		rec(7, map[string]string{"AGENT_EVENT": "diagnosis.feedback", "AGENT_INVOCATION": "e-2", "_UID": "0",
+			"AGENT_FEEDBACK": `{"hypotheses":{"h0":"rejected"},"plan":"not_useful"}`}),
+		// Written by the agent itself (its own uid): not feedback.
+		rec(8, map[string]string{"AGENT_EVENT": "diagnosis.feedback", "AGENT_INVOCATION": "e-3", "_UID": "461",
+			"AGENT_FEEDBACK": `{"hypotheses":{"h0":"confirmed"},"plan":"useful","executed":true}`}),
+	}
+	d := DiagnosticsOf(recs)
+	want := Diagnostics{Reports: 3, Hypotheses: 4, Quotes: 5, VerifiedQuotes: 3, WithFeedback: 2, Confirmed: 1, Rejected: 1, Unsure: 1,
+		PlansUseful: 1, PlansNotUseful: 1, PlansExecuted: 1, ConfirmedRate: 0.5}
+	if d != want {
+		t.Errorf("got  %+v\nwant %+v", d, want)
+	}
+}
