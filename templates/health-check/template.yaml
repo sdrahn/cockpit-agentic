@@ -1,0 +1,8 @@
+title: Health check
+description: Checks this host's health every day with the diagnostic playbooks (failed units, disk, errors, updates) and on request with any of them, and reports what it finds, the likely causes and a plan for you to carry out. Read-only; the bundled diagnostics agent.
+system: any
+mode: supervised
+needs:
+  - systemd-mcp
+  - mcp-gateway-exec-server with exec.d-diagnostics.yaml and exec.d-disk-usage.yaml in /etc/mcp-gateway/exec.d/
+  - mcp-server-zypp and mcp-server-snapper, or on a transactional system mcp-server-tukit, as far as they are installed

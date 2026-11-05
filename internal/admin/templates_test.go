@@ -11,13 +11,14 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/playbook"
 )
 
 // knownTools are the tools of the gateway servers the templates use, as
 // the servers define them (systemd-mcp, mcp-server-zypp 0.1.2,
 // mcp-server-snapper, firewalld-mcp 0.1.0, mcp-server-tukit 0.4.0) and,
-// for exec, as exec.d-disk-usage.yaml does. read: the tools that change
+// for exec, as the shipped exec.d-*.yaml files do. read: the tools that change
 // nothing. A template naming a tool not here names one that does not
 // exist, and the gateway would never match it.
 var knownTools = map[string]struct{ read, change []string }{
@@ -41,7 +42,36 @@ var knownTools = map[string]struct{ read, change []string }{
 		change: []string{"refresh_repositories", "pkg_install", "pkg_remove", "update_system", "rollback",
 			"delete_snapshot", "cleanup_snapshots", "apply", "reboot", "run_in_snapshot"},
 	},
-	"exec": {read: []string{"disk_usage"}},
+	"exec": {}, // from the shipped exec.d files (init)
+}
+
+// The exec server's tools are the commands of the shipped exec.d files;
+// the read-only ones among them change nothing.
+func init() {
+	files, _ := filepath.Glob("../../templates/exec.d-*.yaml")
+	k := knownTools["exec"]
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			panic(err)
+		}
+		var doc struct {
+			Commands map[string]struct {
+				ReadOnly bool `yaml:"read_only"`
+			} `yaml:"commands"`
+		}
+		if err := yaml.Unmarshal(b, &doc); err != nil {
+			panic(f + ": " + err.Error())
+		}
+		for n, c := range doc.Commands {
+			if c.ReadOnly {
+				k.read = append(k.read, n)
+			} else {
+				k.change = append(k.change, n)
+			}
+		}
+	}
+	knownTools["exec"] = k
 }
 
 // Changes that alter what runs: never in a category, so they need an
@@ -354,5 +384,68 @@ func TestPlaybooksShipped(t *testing.T) {
 	}
 	if len(p) != len(m) || p["failed-units"] == nil || p["failed-units"].Error != "" || p["failed-units"].File != "/usr/share/custos/playbooks/failed-units.yaml" {
 		t.Errorf("%d of %d: %+v", len(p), len(m), p["failed-units"])
+	}
+}
+
+// health-check, the bundled diagnostics agent (§20b): read-only and in
+// diagnostics only, so it runs on a diagnostics-only host; it can run
+// every shipped playbook, and its schedules name shipped ones.
+func TestHealthCheckTemplate(t *testing.T) {
+	src := "../../templates/health-check"
+	perms := readPerms(t, filepath.Join(src, "permissions.yaml"))
+	allowed := map[string]bool{}
+	for _, p := range perms {
+		if p["read_only"] != true || p["category"] != Diagnostics {
+			t.Errorf("not read-only in diagnostics: %v", p)
+		}
+		allowed[p["server"].(string)+"__"+p["tool"].(string)] = true
+	}
+	files, _ := filepath.Glob("../../packaging/playbooks/*.yaml")
+	shipped := map[string]bool{}
+	for _, f := range files {
+		b, _ := os.ReadFile(f)
+		doc, err := playbook.Parse(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for n, p := range doc {
+			shipped[n] = true
+			for _, s := range p.Steps {
+				if !allowed[s.Tool] {
+					t.Errorf("playbook %s: health-check has no permission for %s", n, s.Tool)
+				}
+			}
+		}
+	}
+	cfg, err := config.Load(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Schedules) == 0 {
+		t.Error("no schedules")
+	}
+	for _, s := range cfg.Schedules {
+		if !shipped[s.Playbook] {
+			t.Errorf("schedule %s: playbook %q is not shipped", s.Name, s.Playbook)
+		}
+	}
+
+	// On a diagnostics-only host it is created, supervised, with its
+	// permissions; another template is refused there.
+	a, _ := withTemplates(t)
+	mem := &journal.Memory{}
+	a.Journal = func(string) journal.Logger { return mem }
+	if err := a.InitDiagnosticsOnly("setup"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CreateFromTemplate("health-check", "health-check", ""); err != nil {
+		t.Fatalf("on a diagnostics-only host: %v", err)
+	}
+	d, _ := a.readGateway("health-check")
+	if d.Mode != "supervised" || len(d.Permissions) != len(perms) {
+		t.Errorf("gateway data: %s, %d permissions", d.Mode, len(d.Permissions))
+	}
+	if err := a.CreateFromTemplate("pp", "patch-pilot", ""); err == nil {
+		t.Error("patch-pilot created on a diagnostics-only host")
 	}
 }

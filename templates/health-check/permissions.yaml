@@ -1,0 +1,24 @@
+# The health-check template's permissions (CONTRACT.md §14a, §6b): every tool
+# of the shipped diagnostic playbooks (§14c), read-only, in the task
+# category diagnostics. A server that is not installed is never asked.
+- {server: systemd, tool: list_loaded_units, read_only: true, category: diagnostics}
+- {server: systemd, tool: list_log, read_only: true, category: diagnostics}
+- {server: systemd, tool: get_file, read_only: true, category: diagnostics}
+- {server: systemd, tool: check_restart_reload, read_only: true, category: diagnostics}
+- {server: exec, tool: disk_usage, read_only: true, category: diagnostics}
+- {server: exec, tool: memory_usage, read_only: true, category: diagnostics}
+- {server: exec, tool: pressure_stall, read_only: true, category: diagnostics}
+- {server: exec, tool: load_average, read_only: true, category: diagnostics}
+- {server: exec, tool: time_status, read_only: true, category: diagnostics}
+- {server: exec, tool: network_addresses, read_only: true, category: diagnostics}
+- {server: exec, tool: network_routes, read_only: true, category: diagnostics}
+- {server: exec, tool: listening_sockets, read_only: true, category: diagnostics}
+- {server: exec, tool: boot_time, read_only: true, category: diagnostics}
+- {server: exec, tool: boot_blame, read_only: true, category: diagnostics}
+- {server: exec, tool: selinux_status, read_only: true, category: diagnostics}
+- {server: exec, tool: package_dependencies, read_only: true, category: diagnostics}
+- {server: zypp, tool: check_updates, read_only: true, category: diagnostics}
+- {server: snapper, tool: list_snapshots, read_only: true, category: diagnostics}
+- {server: tukit, tool: get_status, read_only: true, category: diagnostics}
+- {server: tukit, tool: list_snapshots, read_only: true, category: diagnostics}
+- {server: tukit, tool: list_updates, read_only: true, category: diagnostics}

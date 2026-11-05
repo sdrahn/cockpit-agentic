@@ -797,6 +797,15 @@ check "agent-admin refuses a permission without a category" not dg_perms '- {ser
 check "journal: category.refused, with the person" eventually 10 promotion_record category.refused '.AGENT_NAME == "dg" and .AGENT_CATEGORY == "patch-errata" and .AGENT_BY == "root"'
 check "agent-admin refuses a template of a disabled category" bash -c "agent-admin create pp --template patch-pilot 2>&1 | grep -q 'patch-errata.* not enabled'"
 check "no agent pp was created" not test -e /etc/custos/agents/pp
+# The bundled diagnostics agent's template is what a diagnostics-only host
+# can create (§20b): read-only, in diagnostics, with its schedules.
+agent-admin delete hc >/dev/null 2>&1
+check "agent-admin create hc --template health-check on a diagnostics-only host" agent-admin create hc --template health-check
+check "hc: supervised, every permission read-only in diagnostics" bash -c \
+	"agent-admin show hc | jq -e '.agents.hc | .mode == \"supervised\" and (.permissions | length > 0) and all(.permissions[]; .read_only == true and .category == \"diagnostics\")' >/dev/null"
+check "hc's schedules run playbooks: their timers are enabled" bash -c \
+	"for s in failed-units disk-pressure journal-errors update-status; do systemctl is-enabled -q agent-schedule@hc_\$s.timer || exit 1; done"
+check "agent-admin delete hc" agent-admin delete hc
 # The gate: the gateway refuses the category even with its permission in
 # the agent's data, written past agent-admin as an administrator might.
 cp "$dgdata" "$work/dg.yaml"
