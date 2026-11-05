@@ -360,12 +360,20 @@ func Autonomous(category string, perms []map[string]any, recs []Record, since ti
 	return out
 }
 
+// ByRoot reports whether journald says root wrote the record (its
+// trusted field _UID): agent-admin's records (SYSLOG_IDENTIFIER
+// custos-promotion) are root's. An agent writes its own records to the
+// journal and may set any other field, an identifier and AGENT_EVENT
+// included, but never _UID.
+func ByRoot(r Record) bool { return r["_UID"] == "0" }
+
 // Reviews are the category's review records, by activity and call; a
-// later verdict on the same action replaces an earlier one.
+// later verdict on the same action replaces an earlier one. Only root's
+// records count (ByRoot): a review an agent wrote itself is none.
 func Reviews(category string, recs []Record) map[string]Review {
 	out := map[string]Review{}
 	for _, r := range recs {
-		if r["AGENT_EVENT"] != "category.review" || r["AGENT_CATEGORY"] != category {
+		if r["AGENT_EVENT"] != "category.review" || r["AGENT_CATEGORY"] != category || !ByRoot(r) {
 			continue
 		}
 		k := r["AGENT_INVOCATION"] + " " + r["AGENT_CALL_ID"]

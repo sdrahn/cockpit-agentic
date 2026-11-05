@@ -15,10 +15,20 @@ import (
 // journalctl -o json gives them.
 type fakeJournal struct{ agent, gw []string }
 
+// rootsEvent: the records agent-admin writes, as root.
+func rootsEvent(e string) bool {
+	return e == "category.review" || e == "category.promoted" || e == "category.demoted" || e == "categories.enabled" || e == "diagnosis.feedback"
+}
+
 func (j *fakeJournal) rec(at time.Time, event string, f map[string]string) {
 	m := map[string]string{"AGENT_EVENT": event, "__REALTIME_TIMESTAMP": strconv.FormatInt(at.UnixMicro(), 10)}
 	for k, v := range f {
 		m["AGENT_"+k] = v
+	}
+	if rootsEvent(event) {
+		m["_UID"] = "0" // agent-admin's records are root's (journald's trusted field)
+	} else {
+		m["_UID"] = "981" // the agent's
 	}
 	b, _ := json.Marshal(m)
 	j.agent = append(j.agent, string(b))

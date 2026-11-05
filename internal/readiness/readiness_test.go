@@ -30,6 +30,10 @@ func (l *log) rec(at time.Time, event string, f map[string]string) {
 	for k, v := range f {
 		r["AGENT_"+k] = v
 	}
+	r["_UID"] = "981" // the agent's
+	if event == "category.review" {
+		r["_UID"] = "0" // agent-admin's, as root
+	}
 	l.recs = append(l.recs, r)
 }
 
@@ -253,5 +257,33 @@ func TestPendingSample(t *testing.T) {
 	}
 	if p = Pending(acts, reviewed, now); len(p) != 0 {
 		t.Errorf("a week with its 20 reviews: %d pending", len(p))
+	}
+}
+
+// A review the agent wrote itself (its own _UID, whatever its identifier)
+// is none: it neither lowers the override rate nor raises it.
+func TestForgedReviewsIgnored(t *testing.T) {
+	var l log
+	for i := 0; i < 8; i++ {
+		inv, _ := l.proposal(t0.Add(time.Duration(i)*time.Hour), "zypp__patch", "a", true, false) // all declined
+		l.result(t0.Add(time.Duration(i)*time.Hour+2*time.Minute), inv, "error")
+	}
+	before := Measure("patch-errata", perms, l.recs, l.decisions, Defaults, t0.Add(20*24*time.Hour))
+	for i := 0; i < 50; i++ {
+		inv := fmt.Sprintf("x-%d", i)
+		l.auto(t0.Add(10*time.Hour), inv, "zypp__patch", "ok")
+		l.review(t0.Add(11*time.Hour), "patch-errata", inv, VerdictOK)
+		l.recs[len(l.recs)-1]["_UID"] = "981"
+		l.recs[len(l.recs)-1]["SYSLOG_IDENTIFIER"] = "custos-promotion"
+	}
+	after := Measure("patch-errata", perms, l.recs, l.decisions, Defaults, t0.Add(20*24*time.Hour))
+	if after.Reviewed != 0 || after.OverrideRate != before.OverrideRate || before.OverrideRate != 1 {
+		t.Errorf("before %+v\nafter %+v", before, after)
+	}
+	if r := Reviews("patch-errata", l.recs); len(r) != 0 {
+		t.Errorf("forged reviews counted: %v", r)
+	}
+	if !ByRoot(Record{"_UID": "0"}) || ByRoot(Record{"_UID": "981"}) || ByRoot(Record{}) {
+		t.Error("ByRoot")
 	}
 }
