@@ -335,3 +335,62 @@ func TestDiagnosticsOf(t *testing.T) {
 		t.Errorf("got  %+v\nwant %+v", d, want)
 	}
 }
+
+// The gateway's outcomes (R2): an approved call that failed is an
+// incident though the agent recorded it as ok, or not at all; one the
+// gateway saw cancelled is cancelled.
+func TestIncidentsFromTheGateway(t *testing.T) {
+	var l log
+	for i := 0; i < 4; i++ {
+		at := t0.Add(time.Duration(i) * time.Hour)
+		inv, id := l.proposal(at, "zypp__patch", "x", true, true)
+		d := l.decisions[id]
+		switch i {
+		case 0:
+			l.result(at.Add(2*time.Minute), inv, "ok") // the agent says ok
+			d.Outcome = "tool_error"
+		case 1: // no record of the agent's
+			d.Outcome = "timeout"
+		case 2:
+			l.result(at.Add(2*time.Minute), inv, "ok")
+			d.Outcome = "cancelled"
+		case 3:
+			l.result(at.Add(2*time.Minute), inv, "ok")
+			d.Outcome = "ok"
+		}
+		l.decisions[id] = d
+	}
+	m := Measure("patch-errata", perms, l.recs, l.decisions, Defaults, t0.Add(20*24*time.Hour))
+	if m.Approved != 4 || m.Cancelled != 1 || m.Incidents != 2 {
+		t.Errorf("%+v", m)
+	}
+}
+
+func TestParseResults(t *testing.T) {
+	msg := func(m map[string]any) string {
+		b, _ := json.Marshal(m)
+		o, _ := json.Marshal(map[string]string{"MESSAGE": string(b), "__REALTIME_TIMESTAMP": "1762000002000000"})
+		return string(o)
+	}
+	gw := strings.Join([]string{
+		msg(map[string]any{"audit": true, "msg": "mcp", "event": "mcp-approval", "id": "a-1", "ok": true, "by": "alice", "principal": "agent-pp"}),
+		msg(map[string]any{"audit": true, "msg": "mcp", "event": "mcp-result", "sub": "agent-pp", "server": "zypp", "name": "patch",
+			"approval_id": "a-1", "outcome": "tool_error", "error": "exit 4", "progress_token": "custos:e-1/c2", "duration_ms": 10}),
+		msg(map[string]any{"audit": true, "msg": "mcp", "event": "mcp-result", "sub": "agent-pp", "server": "zypp", "name": "list", "outcome": "ok"}),
+		msg(map[string]any{"audit": true, "msg": "mcp", "event": "mcp-result", "sub": "agent-other", "server": "zypp", "name": "patch", "outcome": "error"}),
+		msg(map[string]any{"msg": "mcp", "event": "mcp-result", "sub": "agent-pp", "server": "zypp", "name": "patch", "outcome": "error"}), // no audit record
+	}, "\n")
+	rs := ParseResults([]byte(gw), "agent-pp")
+	if len(rs) != 2 || rs[0].Tool != "zypp__patch" || rs[0].Outcome != "tool_error" || rs[0].Error != "exit 4" || rs[0].ApprovalID != "a-1" ||
+		rs[0].Invocation != "e-1" || rs[0].CallID != "c2" || rs[1].Invocation != "" || rs[0].At.IsZero() {
+		t.Errorf("%+v", rs)
+	}
+	if d := ParseDecisions([]byte(gw), "agent-pp"); d["a-1"].Outcome != "tool_error" || !d["a-1"].OK {
+		t.Errorf("%+v", d)
+	}
+	for o, want := range map[string]bool{"tool_error": true, "error": true, "timeout": true, "cancelled": false, "ok": false, "": false} {
+		if Failed(o) != want {
+			t.Errorf("Failed(%q)", o)
+		}
+	}
+}
