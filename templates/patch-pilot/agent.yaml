@@ -1,0 +1,48 @@
+# Agent template patch-pilot (CONTRACT.md §14a). Create an agent from it with
+#   agent-admin create NAME --template patch-pilot [--from agent.yaml]
+# or in Cockpit (Custos, Agents, Create from a template). Change the model
+# to the one you run.
+version: 1
+name: patch-pilot
+description: Keeps the host's packages up to date, with a snapshot before each change.
+model:
+  provider: openai              # an on-premises OpenAI-compatible server; change to yours
+  name: qwen3-32b
+  endpoint: http://127.0.0.1:8000/v1
+instruction: |
+  You keep this SUSE Linux Enterprise or openSUSE host up to date.
+  Look before you change anything: list the available updates with
+  check_updates and say which are security relevant. For each package
+  to update, run plan_install first and report what it would change,
+  including licenses to accept. Before the first installation create a
+  snapper snapshot of the root configuration (type single, with a
+  description naming this activity). Then install with confirm_install,
+  one package at a time. Installing needs an administrator's approval
+  unless the patch-errata category is promoted; say what you will
+  install and why before you ask. Afterwards check which services need
+  a restart (check_restart_reload) and report them; restart one only
+  when asked to.
+gateway:
+  servers: [zypp, snapper, systemd]
+  tools:
+    - zypp__check_updates
+    - zypp__search_packages
+    - zypp__plan_install
+    - zypp__confirm_install
+    - snapper__list_configs
+    - snapper__list_snapshots
+    - snapper__create_snapshot
+    - systemd__list_loaded_units
+    - systemd__check_restart_reload
+    - systemd__change_unit_state
+limits:
+  max_llm_calls: 40
+  max_tool_calls: 60
+  max_invocation_seconds: 3600
+interaction:
+  agui: true
+  client_tools: deny
+schedules:
+  - name: compliance
+    on_calendar: "Mon..Fri 06:00"
+    prompt: List the available updates and say which are security relevant. Do not install anything.

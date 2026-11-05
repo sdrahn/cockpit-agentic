@@ -16,6 +16,10 @@ const usage = `usage: agent-admin COMMAND …
   show [NAME…]                           the gateway data and the emergency stop, as JSON
   check NAME|FILE                        validate a configuration (FILE -: stdin)
   create NAME --from FILE                install a new agent (supervised, no permissions; FILE -: stdin)
+  create NAME --template TEMPLATE [--from FILE]
+                                         install a new agent from a template: its configuration (or FILE's),
+                                         permissions and mode
+  templates                              the agent templates (CONTRACT.md §14a), as JSON
   edit NAME --from FILE                  replace its configuration and apply it (restart; OpenShell: its sandbox; FILE -: stdin)
   delete NAME [--keep-state]             remove an agent (its user stays)
   set-credential NAME CRED               encrypt a secret read from stdin
@@ -113,6 +117,10 @@ func run(a *admin.Admin, args []string) error {
 		if err := need(1); err != nil {
 			return err
 		}
+		if t, ok := flag("--template"); ok && cmd == "create" {
+			f, _ := flag("--from")
+			return a.CreateFromTemplate(args[0], t, f)
+		}
 		f, err := from()
 		if err != nil {
 			return err
@@ -149,6 +157,14 @@ func run(a *admin.Admin, args []string) error {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(c)
+	case "templates":
+		t, err := a.ListTemplates()
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(t)
 	case "readiness":
 		if err := need(1); err != nil {
 			return err

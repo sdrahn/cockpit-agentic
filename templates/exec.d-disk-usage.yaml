@@ -1,0 +1,10 @@
+# The command triage, service-doctor and the disk-watch templates use to
+# see free disk space, for mcp-gateway-exec-server. Copy it to
+# /etc/mcp-gateway/exec.d/ (CONTRACT.md §14a):
+#   cp /usr/share/custos/templates/exec.d-disk-usage.yaml /etc/mcp-gateway/exec.d/disk-usage.yaml
+version: 1
+commands:
+  disk_usage:
+    description: Space and inodes used on the mounted file systems (df -h)
+    argv: [/usr/bin/df, -h, --output=source,fstype,size,used,avail,pcent,ipcent,target]
+    read_only: true

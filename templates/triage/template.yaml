@@ -1,0 +1,8 @@
+title: Triage
+description: Looks into a problem you describe (failed units, logs, disk space, updates, snapshots, firewall) and reports the likely cause and next steps. Read-only.
+system: any
+mode: advisory
+needs:
+  - systemd-mcp, mcp-server-zypp, mcp-server-snapper and firewalld-mcp, as far as they are installed
+  - mcp-gateway-exec-server with exec.d-disk-usage.yaml in /etc/mcp-gateway/exec.d/ (disk_usage)
+  - on a transactional system, mcp-server-tukit

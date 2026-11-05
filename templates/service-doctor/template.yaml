@@ -1,0 +1,7 @@
+title: Service doctor
+description: Finds failed or flapping services, reads their logs and restarts or reloads them, with an approval until service restarts are promoted for a window.
+system: any
+mode: supervised
+needs:
+  - systemd-mcp
+  - mcp-gateway-exec-server with exec.d-disk-usage.yaml in /etc/mcp-gateway/exec.d/ (disk_usage)

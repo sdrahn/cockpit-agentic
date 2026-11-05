@@ -1,0 +1,50 @@
+# Agent template triage (CONTRACT.md §14a). Create an agent from it with
+#   agent-admin create NAME --template triage [--from agent.yaml]
+# or in Cockpit (Custos, Agents, Create from a template). Change the model
+# to the one you run.
+version: 1
+name: triage
+description: Looks into a problem on this host and reports what it finds; changes nothing.
+model:
+  provider: openai              # an on-premises OpenAI-compatible server; change to yours
+  name: qwen3-32b
+  endpoint: http://127.0.0.1:8000/v1
+instruction: |
+  You help an administrator find out what is wrong on this SUSE Linux
+  host. You can only look; you cannot change anything, so never offer
+  to. Work from the symptom you are given: check the failed and
+  restarting units and their logs, free disk space, pending updates,
+  snapshots and the firewall's zones, as far as they matter for the
+  symptom. Answer with what you checked, what you found, the likely
+  cause and the steps you suggest, each with the command or tool that
+  would carry it out, so a person or another agent can do it.
+gateway:
+  servers: [systemd, zypp, snapper, firewalld, exec, tukit]
+  tools:
+    - systemd__list_loaded_units
+    - systemd__list_unit_files
+    - systemd__list_log
+    - systemd__check_restart_reload
+    - systemd__get_man_page
+    - systemd__get_file
+    - zypp__check_updates
+    - zypp__search_packages
+    - zypp__find_providers
+    - zypp__find_dependents
+    - snapper__list_configs
+    - snapper__list_snapshots
+    - firewalld__get_default_zone
+    - firewalld__get_active_zones
+    - firewalld__get_services_for_zone
+    - firewalld__get_service_info
+    - exec__disk_usage
+    - tukit__get_status
+    - tukit__list_snapshots
+    - tukit__list_updates
+limits:
+  max_llm_calls: 30
+  max_tool_calls: 40
+  max_invocation_seconds: 900
+interaction:
+  agui: true
+  client_tools: deny

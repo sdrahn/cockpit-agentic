@@ -1,0 +1,16 @@
+# What service-doctor may do at the gateway (CONTRACT.md §6, §6a).
+# Starting, restarting and reloading are config-lifecycle: an approval
+# each time until it is promoted for a window
+# (envelopes/config-lifecycle.yaml). Stopping and disabling have no
+# category: an approval every time. The forced and kill actions and
+# enabling are not listed: denied.
+- {server: systemd, tool: list_loaded_units, read_only: true}
+- {server: systemd, tool: list_unit_files, read_only: true}
+- {server: systemd, tool: list_log, read_only: true}
+- {server: systemd, tool: get_file, read_only: true}
+- {server: systemd, tool: get_man_page, read_only: true}
+- {server: systemd, tool: check_restart_reload, read_only: true}
+- {server: systemd, tool: change_unit_state, category: config-lifecycle, args: {action: '^(start|restart|reload)$'}}
+- {server: systemd, tool: change_unit_state, args: {action: '^(stop|disable)$'}}
+# mcp-gateway-exec-server with the command in exec.d-disk-usage.yaml:
+- {server: exec, tool: disk_usage, read_only: true}

@@ -369,6 +369,39 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(deleted.length === 1 && deleted[0][4] === "require", "delete runs agent-admin delete --keep-state through the root bridge");
     check(cockpit_path(await page.url()) === "agents", "after deleting, the list is shown");
 
+    // Creating an agent from a shipped template (§14a).
+    await page.goto(url + "?template#/agents");
+    await page.waitForSelector("#agents tbody tr");
+    await page.click("#create-open");
+    await page.waitForSelector("#create-from-row:not([hidden])");
+    const tl = await spawned("agent-admin templates");
+    check(tl.length === 1 && tl[0][4] === "", "the templates are listed as the person (agent-admin templates)");
+    const opts = await page.$$eval("#create-from option", os => os.map(o => [o.value, o.disabled, o.textContent]));
+    check(opts[0][0] === "" && opts[1][0] === "service-doctor" && !opts[1][1], "a blank configuration first, then this system's templates");
+    check(opts.some(o => o[0] === "patch-pilot-transactional" && o[1] && o[2].includes("for transactional")),
+          "a template for transactional systems is offered disabled on a classic one");
+    check(opts.some(o => o[0] === "cleaner" && o[1] && o[2].includes("cannot be used")), "a broken template says why");
+    await page.selectOption("#create-from", "service-doctor");
+    await page.waitForFunction(() => document.querySelector("#create-agent textarea").value.includes("# Agent template service-doctor"));
+    check(await page.inputValue("#create-name") === "service-doctor", "the template's name is the agent's until changed");
+    const desc = await page.textContent("#create-template");
+    check(desc.includes("flapping") && desc.includes("config-lifecycle") && desc.includes("systemd-mcp") &&
+          desc.includes("/usr/share/custos/templates/service-doctor/envelopes/"), "the template's description, categories and needs are shown");
+    const tread = (await calls()).find(c => c[0] === "read" && c[1] === "/usr/share/custos/templates/service-doctor/agent.yaml");
+    check(tread && tread[4] === "", "the template is read as the person");
+    await page.fill("#create-name", "web-doctor");
+    check((await page.inputValue("#create-agent textarea")).includes("\nname: web-doctor\n"), "the name goes into the template's configuration");
+    if (shots) await page.screenshot({ path: path.join(shots, "create-template.png"), fullPage: true });
+    await page.click("#create-agent button[name=create]");
+    await page.waitForSelector("#agent-row-web-doctor");
+    const tc = await spawned("agent-admin create web-doctor --template service-doctor --from -");
+    check(tc.length === 1 && tc[0][4] === "require", "create from a template runs agent-admin create --template --from - through the root bridge");
+    check((await page.textContent("#agent-created")).includes("from the template Service doctor"), "the new agent says where it came from");
+    await page.click("#create-open");
+    await page.selectOption("#create-from", "");
+    check(!(await page.inputValue("#create-agent textarea")).includes("Agent template") && !(await page.isVisible("#create-template")),
+          "a blank configuration again");
+
     // Editing an agent's configuration.
     await page.goto(url + "?edit#/agents/patch-pilot");
     await page.waitForSelector("#config-patch-pilot button:has-text('Edit configuration')");

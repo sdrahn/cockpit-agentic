@@ -181,6 +181,14 @@ func (a *Admin) Create(name, from string) error {
 	if err != nil {
 		return err
 	}
+	return a.create(name, b)
+}
+
+// create installs a new agent from its configuration.
+func (a *Admin) create(name string, b []byte) error {
+	if err := checkName(name); err != nil {
+		return err
+	}
 	cfg, err := config.Parse(b)
 	if err != nil {
 		return err
@@ -722,37 +730,13 @@ func (a *Admin) SetPermissions(name string, from io.Reader) error {
 	if err := checkName(name); err != nil {
 		return err
 	}
-	var perms []map[string]any
 	b, err := io.ReadAll(from)
 	if err != nil {
 		return err
 	}
-	dec := yaml.NewDecoder(bytes.NewReader(b))
-	if err := dec.Decode(&perms); err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("permissions: %w", err)
-	}
-	for i, p := range perms {
-		if _, ok := p["server"].(string); !ok {
-			return fmt.Errorf("permissions[%d]: server missing", i)
-		}
-		for k := range p {
-			switch k {
-			case "server", "tool", "resource", "prompt", "args", "read_only", "autonomous", "approval_channel", "approval_scopes", "effect", "obligations":
-			case "category":
-				c, ok := p["category"].(string)
-				if !ok {
-					return fmt.Errorf("permissions[%d]: category is a name", i)
-				}
-				if err := a.checkCategory(c); err != nil {
-					return fmt.Errorf("permissions[%d]: %w", i, err)
-				}
-				if p["autonomous"] != nil {
-					return fmt.Errorf("permissions[%d]: autonomous is for permissions without a category; a category is promoted with agent-admin promote", i)
-				}
-			default:
-				return fmt.Errorf("permissions[%d]: unknown key %q", i, k)
-			}
-		}
+	perms, err := a.parsePermissions(b)
+	if err != nil {
+		return err
 	}
 	d, err := a.readGateway(name)
 	if err != nil {
@@ -760,6 +744,42 @@ func (a *Admin) SetPermissions(name string, from io.Reader) error {
 	}
 	d.Permissions = perms
 	return a.writeGateway(name, d)
+}
+
+// parsePermissions reads and checks a YAML list of gateway permissions.
+func (a *Admin) parsePermissions(b []byte) ([]map[string]any, error) {
+	var perms []map[string]any
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	if err := dec.Decode(&perms); err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("permissions: %w", err)
+	}
+	for i, p := range perms {
+		if _, ok := p["server"].(string); !ok {
+			return nil, fmt.Errorf("permissions[%d]: server missing", i)
+		}
+		for k := range p {
+			switch k {
+			case "server", "tool", "resource", "prompt", "args", "read_only", "autonomous", "approval_channel", "approval_scopes", "effect", "obligations":
+			case "category":
+				c, ok := p["category"].(string)
+				if !ok {
+					return nil, fmt.Errorf("permissions[%d]: category is a name", i)
+				}
+				if err := a.checkCategory(c); err != nil {
+					return nil, fmt.Errorf("permissions[%d]: %w", i, err)
+				}
+				if p["autonomous"] != nil {
+					return nil, fmt.Errorf("permissions[%d]: autonomous is for permissions without a category; a category is promoted with agent-admin promote", i)
+				}
+			default:
+				return nil, fmt.Errorf("permissions[%d]: unknown key %q", i, k)
+			}
+		}
+	}
+	if perms == nil {
+		perms = []map[string]any{}
+	}
+	return perms, nil
 }
 
 // Pause holds an agent: the gateway denies its calls (enforced) and the

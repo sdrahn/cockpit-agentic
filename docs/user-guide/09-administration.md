@@ -19,6 +19,8 @@ person behind `sudo` (`SUDO_USER`), else `USER`.
 | `agent-admin show [NAME…]` | their gateway data and the emergency stop, as JSON (no root needed) |
 | `agent-admin check NAME\|FILE` | validate a configuration (a FILE needs no root; `-` is stdin) |
 | `agent-admin create NAME --from FILE` | create an agent: supervised, no permissions |
+| `agent-admin create NAME --template TEMPLATE [--from FILE]` | create an agent from a template, with its permissions and mode ([below](#templates)) |
+| `agent-admin templates` | the agent templates, as JSON (no root needed) |
 | `agent-admin edit NAME --from FILE` | replace its configuration and apply it |
 | `agent-admin delete NAME [--keep-state]` | remove an agent |
 | `agent-admin mode NAME MODE` | `advisory`, `supervised` or `bounded` |
@@ -56,7 +58,86 @@ data (supervised, no permissions) and the schedules' timers. Then it
 enables `agent@<name>.socket` and the timers. Next, give the agent
 permissions ([chapter 6](06-permissions-and-modes.md)) and, if its model
 needs one, a credential. In Cockpit, *Agents*, **Create agent**: a name,
-the configuration from a template, **Check**, **Create**.
+the configuration, **Check**, **Create**. To start from a shipped
+template instead, with its permissions, see [below](#templates).
+
+## Creating an agent from a template {#templates}
+
+Custos ships templates for agents that look after one system. Each is
+a configuration, the permissions it needs with the tool names of the
+gateway's servers, and, where it has task categories, a suggested
+envelope for promoting them. Templates are in
+`/usr/share/custos/templates/<template>/`:
+
+| Template | Systems | Mode | Does | Changes, and what they need |
+|---|---|---|---|---|
+| `triage` | any | advisory | looks into a problem you describe: failed units and their logs, disk space, updates, snapshots, the firewall; reports the likely cause and next steps | none |
+| `exposure-watch` | any | advisory | reports the firewall's zones, the services they allow and the running services, weekly | none |
+| `service-doctor` | any | supervised | finds failed or flapping units, works out why from their logs, restarts or reloads them; hourly report | start, restart, reload: `config-lifecycle`; stop, disable: an approval every time |
+| `patch-pilot` | classic | supervised | lists the updates, takes a snapper snapshot, installs them with zypp one package at a time; a report on working days | install and snapshot: `patch-errata`; restart a service: `config-lifecycle` |
+| `patch-pilot-transactional` | transactional | supervised | updates an immutable system into a new snapshot with mcp-server-tukit; a report on working days | refresh, update, clean up: `patch-errata`; reboot, apply, rollback: an approval every time |
+| `disk-watch` | classic | supervised | reports file systems more than 85 % full and old snapper snapshots that could go; daily | deleting snapshots: an approval every time |
+| `disk-watch-transactional` | transactional | supervised | the same on an immutable system; cleans up with transactional-update's rules | clean up: `patch-errata` |
+
+*Classic* systems have a writable root file system; *transactional*
+ones (SLE Micro, Leap Micro, a transactional SLES) have a read-only one
+and are updated with transactional-update. `agent-admin templates`
+says which this system is.
+
+```bash
+agent-admin templates                                   # the templates, as JSON
+agent-admin create web-doctor --template service-doctor # its configuration, named web-doctor
+agent-admin create web-doctor --template service-doctor --from agent.yaml   # your configuration
+```
+
+The agent gets the template's permissions and mode. Its task
+categories stay supervised: every change waits for an approval until
+you promote a category, after it has shown it is ready
+([chapter 6](06-permissions-and-modes.md#promote)). The suggested
+envelopes are in the template's `envelopes/`; set their time zone and
+windows to yours:
+
+```bash
+agent-admin readiness web-doctor config-lifecycle
+agent-admin promote web-doctor config-lifecycle \
+    --envelope /usr/share/custos/templates/service-doctor/envelopes/config-lifecycle.yaml
+```
+
+Before you create one, check:
+
+- **the model.** The templates use a local OpenAI-compatible server at
+  `http://127.0.0.1:8000/v1` with `qwen3-32b`. Change `model:` to
+  yours: with `--from` and your own copy of `agent.yaml`, or in
+  Cockpit's editor ([chapter 5](05-configuration.md#models));
+- **the gateway's servers.** `template.yaml`'s `needs` lists them. A
+  server the gateway does not have is simply not offered to the agent;
+  the template still works with the others. `patch-pilot` needs
+  mcp-server-zypp's privileged definition, since installing runs as
+  root. The transactional templates need mcp-server-tukit: install
+  `mcp-server-tukit-gateway` and link its definition
+  `/usr/share/mcp-gateway/profiles/tukit.yaml` into
+  `/etc/mcp-gateway/servers.d/` (mcp-gateway 1.8 or later);
+- **free disk space.** `triage`, `service-doctor` and the disk-watch
+  templates read it through mcp-gateway-exec-server's `disk_usage`,
+  a command you allow:
+
+  ```bash
+  zypper install mcp-gateway-exec-server
+  cp /usr/share/custos/templates/exec.d-disk-usage.yaml /etc/mcp-gateway/exec.d/disk-usage.yaml
+  ```
+
+To change a template for this site, copy its directory to
+`/etc/custos/templates/` and edit it there: it replaces the shipped one
+of the same name, and survives updates. A directory there without
+`template.yaml` hides the shipped template. A template that names a
+category the catalog does not have is listed with the reason and
+cannot be used.
+
+In Cockpit: *Agents*, **Create agent**, **Start from** a template. The
+form shows what the template does, its categories and what it needs at
+the gateway, and fills the editor with its configuration; change the
+name and the model, **Check**, **Create**. Templates for the other kind
+of system are offered disabled.
 
 ## Editing an agent {#edit}
 
