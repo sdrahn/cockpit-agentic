@@ -497,6 +497,10 @@ if gw /v1/reviews | jq -e 'type == "array"' >/dev/null 2>&1; then
 	check "evaluate demotes it on the gateway's incident" bash -c \
 		"agent-admin evaluate | grep -q 'category patch-errata demoted: review by root on the gateway: custos-test__change (review .*) should not have run: functional test (gateway)'"
 	check "promote again, for what follows" agent-admin promote t1 patch-errata --envelope "$work/now.yaml" --despite-readiness --reason "functional test"
+	# A new promotion starts a new review period: root's review below takes
+	# an action of this one.
+	check "after the promotion, the change runs without an approval again" eventually 30 runs_with t1 CHANGE 'changed test'
+	act=$(agent-admin review t1 patch-errata | jq -r '.categories["patch-errata"].pending[-1] | "\(.activity) \(.call)"')
 else
 	skip "reviews by the gateway's approvers (this mcp-gateway has no review items)"
 fi
