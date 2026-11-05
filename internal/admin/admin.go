@@ -903,7 +903,9 @@ func opaData(path string) (any, error) {
 	return out.Result, nil
 }
 
-// ReleaseAll undoes StopAll: sockets and timers that are enabled start again.
+// ReleaseAll undoes StopAll: sockets and timers that are enabled start
+// again. One an administrator disabled (an agent kept stopped, a paused
+// schedule) stays stopped.
 func (a *Admin) ReleaseAll(by string) error {
 	if err := a.writeStop(false, by); err != nil {
 		return err
@@ -926,10 +928,25 @@ func (a *Admin) ReleaseAll(by string) error {
 			}
 		}
 	}
-	if len(units) == 0 {
+	var start []string
+	for _, u := range units {
+		if a.enabled(u) {
+			start = append(start, u)
+		}
+	}
+	if len(start) == 0 {
 		return nil
 	}
-	return a.Run(nil, "systemctl", append([]string{"start"}, units...)...)
+	return a.Run(nil, "systemctl", append([]string{"start"}, start...)...)
+}
+
+// enabled reports whether a unit is enabled (systemctl is-enabled).
+func (a *Admin) enabled(unit string) bool {
+	probe := a.Probe
+	if probe == nil {
+		probe = func(name string, args ...string) error { return a.Run(nil, name, args...) }
+	}
+	return probe("systemctl", "is-enabled", "--quiet", unit) == nil
 }
 
 // Trigger starts a schedule's activity on the agent's socket, as root
@@ -1036,19 +1053,21 @@ func scheduleUnit(agent, sched string) string { return "agent-schedule@" + agent
 // syncSchedules writes a timer drop-in per schedule and removes the
 // ones of schedules that are gone.
 func (a *Admin) syncSchedules(cfg *config.Config) error {
-	want := map[string]bool{}
+	want := map[string]bool{} // unit → new (no drop-in before)
 	for _, s := range cfg.Schedules {
 		unit := scheduleUnit(cfg.Name, s.Name)
-		want[unit] = true
+		dropIn := a.p(filepath.Join(UnitDir, unit+".timer.d", "schedule.conf"))
+		_, err := os.Stat(dropIn)
+		want[unit] = errors.Is(err, os.ErrNotExist)
 		conf := fmt.Sprintf("# agent-admin: schedule %s of agent %s\n[Timer]\nOnCalendar=\nOnCalendar=%s\n", s.Name, cfg.Name, s.OnCalendar)
-		if err := writeFile(a.p(filepath.Join(UnitDir, unit+".timer.d", "schedule.conf")), []byte(conf), 0o644); err != nil {
+		if err := writeFile(dropIn, []byte(conf), 0o644); err != nil {
 			return err
 		}
 	}
 	old, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "agent-schedule@"+cfg.Name+"_*.timer.d")))
 	for _, d := range old {
 		unit := strings.TrimSuffix(filepath.Base(d), ".timer.d")
-		if !want[unit] {
+		if _, keep := want[unit]; !keep {
 			a.Run(nil, "systemctl", "disable", "--now", unit+".timer")
 			if err := os.RemoveAll(d); err != nil {
 				return err
@@ -1056,8 +1075,15 @@ func (a *Admin) syncSchedules(cfg *config.Config) error {
 		}
 	}
 	a.Run(nil, "systemctl", "daemon-reload")
-	for unit := range want {
-		if err := a.Run(nil, "systemctl", "enable", "--now", unit+".timer"); err != nil {
+	// A new schedule's timer is enabled and started. One that was there
+	// keeps what the administrator made of it: a running timer restarts
+	// for its new calendar, a stopped or disabled one stays so.
+	for unit, isNew := range want {
+		verb := []string{"try-restart", unit + ".timer"}
+		if isNew {
+			verb = []string{"enable", "--now", unit + ".timer"}
+		}
+		if err := a.Run(nil, "systemctl", verb...); err != nil {
 			return err
 		}
 	}

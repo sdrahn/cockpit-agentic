@@ -766,3 +766,80 @@ func TestProgramsPrintToStderr(t *testing.T) {
 		}
 	}
 }
+
+// edit enables only a schedule that is new; one that was there keeps what
+// the administrator made of it (a running timer restarts for its new
+// calendar, a disabled one stays disabled).
+func TestEditKeepsDisabledSchedules(t *testing.T) {
+	a, r := newAdmin(t)
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(yml), 0o644)
+	if err := a.Create("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	r.cmds = nil
+	edited := strings.Replace(yml, `"Mon..Fri 06:00"`, `"Mon..Fri 07:00"`, 1) +
+		`  - {name: weekly, on_calendar: "Sun 03:00", prompt: "Report."}` + "\n"
+	os.WriteFile(f, []byte(edited), 0o644)
+	if err := a.Edit("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(r.cmds, "\n")
+	if !strings.Contains(all, "systemctl try-restart agent-schedule@patch-pilot_compliance.timer") ||
+		strings.Contains(all, "enable --now agent-schedule@patch-pilot_compliance.timer") {
+		t.Errorf("the existing schedule:\n%s", all)
+	}
+	if !strings.Contains(all, "systemctl enable --now agent-schedule@patch-pilot_weekly.timer") {
+		t.Errorf("the new schedule:\n%s", all)
+	}
+	b, _ := os.ReadFile(a.p("/etc/systemd/system/agent-schedule@patch-pilot_compliance.timer.d/schedule.conf"))
+	if !strings.Contains(string(b), "OnCalendar=Mon..Fri 07:00") {
+		t.Errorf("calendar %q", b)
+	}
+}
+
+// release-all starts what is enabled; an agent or a schedule the
+// administrator disabled stays stopped.
+func TestReleaseAllKeepsDisabledUnits(t *testing.T) {
+	a, r := newAdmin(t)
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(yml), 0o644)
+	if err := a.Create("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(f, []byte(strings.Replace(yml, "patch-pilot", "kept-off", 1)), 0o644)
+	if err := a.Create("kept-off", f); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.StopAll("alice"); err != nil {
+		t.Fatal(err)
+	}
+	// Enabled: patch-pilot's socket. Disabled: its schedule's timer, and
+	// kept-off's socket and timer.
+	r.gone = func(c string) error {
+		if c == "systemctl is-enabled --quiet agent@patch-pilot.socket" {
+			return nil
+		}
+		return errors.New("disabled")
+	}
+	r.cmds = nil
+	if err := a.ReleaseAll("bob"); err != nil {
+		t.Fatal(err)
+	}
+	var start string
+	for _, c := range r.cmds {
+		if strings.HasPrefix(c, "systemctl start ") {
+			start = c
+		}
+	}
+	if start != "systemctl start agent@patch-pilot.socket" {
+		t.Errorf("start %q, want only the enabled socket (commands %q)", start, r.cmds)
+	}
+	// Nothing enabled: no start at all.
+	r.gone = func(string) error { return errors.New("disabled") }
+	r.cmds = nil
+	a.ReleaseAll("bob")
+	if all := strings.Join(r.cmds, "\n"); strings.Contains(all, "systemctl start") {
+		t.Errorf("started with nothing enabled:\n%s", all)
+	}
+}

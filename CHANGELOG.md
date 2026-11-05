@@ -111,6 +111,11 @@ removed.
   (`model.credential: open /run/credentials/…: permission denied`): the
   `custos` module did not let `agent_t` read the unit's credentials
   (`init_var_run_t`), and the base policy does not log that denial.
+- `agent-admin edit` enabled every schedule's timer of the agent again,
+  and `release-all` started every agent's socket and schedule timer,
+  so a schedule or an agent an administrator had disabled ran again.
+  `edit` enables only new schedules now (a running timer restarts for
+  its new calendar), and `release-all` starts only what is enabled.
 
 ## v0.1.1 — 2026-11-04
 

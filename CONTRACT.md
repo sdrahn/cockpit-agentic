@@ -892,7 +892,7 @@ standard error:
 | Command | Does |
 |---|---|
 | `create NAME --from FILE` | `FILE` `-` (here and for `edit` and `check`) is stdin, so a control plane needs no file of its own. Validates; writes the sysusers.d file and runs `systemd-sysusers`; installs `agent.yaml`; writes the gateway agent data (supervised, no permissions); writes the schedules' timer drop-ins; enables the socket and timers |
-| `edit NAME --from FILE` | validates, replaces `agent.yaml`, syncs schedules; systemd agents: `try-restart agent@<name>.service`; OpenShell agents: the policy, the profile and the sandbox as in §16a (at least `try-restart agent-openshell@<name>.service`). `sandbox.kind` (and `sandbox.openshell_gateway`) stay as created |
+| `edit NAME --from FILE` | validates, replaces `agent.yaml`, syncs schedules (a new schedule's timer is enabled and started, a removed one's disabled; one that stays keeps its state, and restarts for its calendar if it runs); systemd agents: `try-restart agent@<name>.service`; OpenShell agents: the policy, the profile and the sandbox as in §16a (at least `try-restart agent-openshell@<name>.service`). `sandbox.kind` (and `sandbox.openshell_gateway`) stay as created |
 | `create NAME --template TEMPLATE [--from FILE]` | `create` from a template (§14a): its configuration as `draft` gives it (named `NAME`, with the model defaults), or `FILE`'s; then the template's permissions and mode in the gateway agent data |
 | `draft NAME [--template TEMPLATE]` | a new agent's starting configuration on standard output: the template's, or a blank one, named `NAME`, with the model defaults (§14b). Needs no root |
 | `defaults [--from FILE \| --clear]` | the model defaults (§14b), as JSON: `{"model"?: {"provider", "name", "endpoint"?, "credential"?, "temperature"?}}`, needing no root; `--from` checks and replaces them (`FILE` `-` is stdin), `--clear` removes them |
@@ -901,7 +901,7 @@ standard error:
 | `mode NAME MODE`, `permissions NAME < list.yaml` | the gateway agent data (§6). Like `pause`, `resume`, `stop-all` and `release-all`, it returns once the gateway's OPA has loaded the change (it reads it back on `/run/mcp-gateway/opa.sock`, for up to 20 s), so the change is in force when the command returns |
 | `set-credential NAME CRED < secret` | `systemd-creds encrypt`; for OpenShell agents `gateway-client-secret` or `gateway-token` (§16a) |
 | `pause NAME`, `resume NAME` | §8 (gateway data and `/v1/pause`) |
-| `stop-all`, `release-all` | the emergency stop (§8) and its end; both record who (`_control.by`: the person behind `sudo`, `SUDO_USER`, else `USER`) and when (`at`) |
+| `stop-all`, `release-all` | the emergency stop (§8) and its end. `release-all` starts again the agents' sockets and schedule timers that are enabled: what an administrator disabled stays stopped. Both record who (`_control.by`: the person behind `sudo`, `SUDO_USER`, else `USER`) and when (`at`) |
 | `delete NAME [--keep-state]` | disables and stops units; removes configuration, gateway data, credentials, drop-ins, timers and, unless kept, state. The user stays, since uids are not reused while files may still belong to them |
 | `trigger NAME_SCHEDULE` | starts the schedule's activity (run by `agent-schedule@.service`) |
 | `list` | the agents |

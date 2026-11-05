@@ -215,8 +215,8 @@ systemctl start agent@NAME.socket
 For an OpenShell agent: `systemctl stop agent-openshell@NAME.service`,
 which also stops its sandbox. A stopped agent's gateway data stays: the
 Agents tab shows it as *stopped*. To keep it stopped across reboots,
-`systemctl disable agent@NAME.socket`. `release-all` starts every
-agent's socket again, disabled or not.
+`systemctl disable agent@NAME.socket`; `release-all` then leaves it
+stopped too.
 
 ## Schedules {#schedules}
 
@@ -229,9 +229,9 @@ systemctl start agent-schedule@NAME_SCHEDULE.service           # run it now
 
 To change a schedule's calendar or prompt, edit the configuration
 ([chapter 5](05-configuration.md#schedules)). `agent-admin edit` rewrites
-the timers and enables every schedule's timer of the agent again,
-including one you disabled; so does `release-all` (it starts them). To
-stop a schedule for good, remove it from the configuration.
+the timers: it enables a new schedule's timer, and leaves one you
+disabled disabled. A disabled timer stays disabled until you enable it,
+`release-all` included.
 
 ## Cancelling an activity {#cancel}
 
@@ -256,7 +256,8 @@ it, it denies every agent everything, on every backend. Then it stops
 every agent's socket and service, every OpenShell sandbox and every
 schedule timer. An agent started by hand afterwards is still denied by
 the gateway. `release-all` sets `stopped: false`, recording who released
-it, and starts every agent's socket and schedule timers again. Paused
+it, and starts again every agent's socket and schedule timer that is
+enabled: an agent or a schedule you disabled stays stopped. Paused
 agents stay paused. In Cockpit: **Stop all agents** in the header, and
 **Release…** in the banner.
 
