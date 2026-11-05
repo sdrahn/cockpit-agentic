@@ -1,0 +1,17 @@
+# A diagnostic playbook (CONTRACT.md §14c), installed in
+# /usr/share/custos/playbooks/. A file of the same name in
+# /etc/custos/playbooks/ replaces it; an empty one hides it.
+boot-health:
+  title: Boot health
+  description: How the last boot went, and what slowed it down.
+  needs:
+    - "exec: boot_time, boot_blame (exec.d-diagnostics.yaml)"
+    - "systemd-mcp"
+  steps:
+    - {tool: exec__boot_time, why: "The time of each boot phase."}
+    - {tool: exec__boot_blame, why: "The units that took longest."}
+    - {tool: systemd__list_loaded_units, why: "Units that failed at boot."}
+    - {tool: systemd__list_log, why: "Errors early in the boot.", optional: true}
+  look_for: >
+    A boot much slower than usual, units that took more than 10 seconds,
+    units that failed, a wait for a network or a device that never came.

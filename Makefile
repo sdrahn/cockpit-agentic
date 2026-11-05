@@ -95,6 +95,9 @@ install: build
 	install -m 0644 packaging/categories/*.yaml $(DESTDIR)$(DATADIR)/custos/categories.d/
 	install -d -m 0755 $(DESTDIR)$(SYSCONFDIR)/custos/templates
 	install -D -m 0644 templates/exec.d-disk-usage.yaml $(DESTDIR)$(DATADIR)/custos/templates/exec.d-disk-usage.yaml
+	install -D -m 0644 templates/exec.d-diagnostics.yaml $(DESTDIR)$(DATADIR)/custos/templates/exec.d-diagnostics.yaml
+	install -d -m 0755 $(DESTDIR)$(DATADIR)/custos/playbooks $(DESTDIR)$(SYSCONFDIR)/custos/playbooks
+	install -m 0644 packaging/playbooks/*.yaml $(DESTDIR)$(DATADIR)/custos/playbooks/
 	for t in templates/*/; do \
 		t=$${t%/}; \
 		install -D -m 0644 -t $(DESTDIR)$(DATADIR)/custos/$$t $$t/*.yaml || exit 1; \

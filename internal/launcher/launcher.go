@@ -44,6 +44,7 @@ import (
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/openai"
 	"github.com/sdrahn/custos/internal/peercred"
+	"github.com/sdrahn/custos/internal/playbook"
 )
 
 // Version is set by the build.
@@ -58,6 +59,9 @@ type Options struct {
 	Credentials string
 	// Model replaces the configured model (tests).
 	Model model.LLM
+	// PlaybookRoot is prefixed to the playbooks' directories (tests); ""
+	// on a host.
+	PlaybookRoot string
 }
 
 type Launcher struct {
@@ -70,6 +74,10 @@ type Launcher struct {
 	log     journal.Logger
 	started time.Time
 	db      *gorm.DB
+	// tools are the gateway's tools the model is shown; playbookRoot as
+	// Options.
+	tools        tool.Toolset
+	playbookRoot string
 
 	mu       sync.Mutex
 	requests int
@@ -79,7 +87,7 @@ type Launcher struct {
 
 func New(ctx context.Context, o Options) (*Launcher, error) {
 	cfg := o.Config
-	l := &Launcher{cfg: cfg, log: o.Log, started: time.Now(), lastSeen: time.Now()}
+	l := &Launcher{cfg: cfg, log: o.Log, started: time.Now(), lastSeen: time.Now(), playbookRoot: o.PlaybookRoot}
 	l.Governor = governance.New(cfg, o.Log)
 
 	llm := o.Model
@@ -103,6 +111,7 @@ func New(ctx context.Context, o Options) (*Launcher, error) {
 		return nil, err
 	}
 	tools := tool.FilterToolset(gw, func(_ agent.ReadonlyContext, t tool.Tool) bool { return cfg.ShowsTool(t.Name()) })
+	l.tools = tools
 	ct := clienttools.NewRegistry()
 
 	gcc := &genai.GenerateContentConfig{}
@@ -393,6 +402,9 @@ type StartRequest struct {
 	Trace *Trace `json:"trace"`
 	// Wait: answer when the activity has ended, with the activity.
 	Wait bool `json:"wait"`
+	// Playbook names a diagnostic playbook to run (CONTRACT.md §14c);
+	// Prompt is then optional and added to it.
+	Playbook string `json:"playbook"`
 }
 
 type Trace struct {
@@ -405,11 +417,21 @@ type Trace struct {
 func (l *Launcher) startActivity(w http.ResponseWriter, r *http.Request) {
 	c, _ := peercred.From(r.Context())
 	var req StartRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil || strings.TrimSpace(req.Prompt) == "" {
-		http.Error(w, "want {\"prompt\": …}", http.StatusBadRequest)
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil || (strings.TrimSpace(req.Prompt) == "" && req.Playbook == "") {
+		http.Error(w, "want {\"prompt\": …} or {\"playbook\": …}", http.StatusBadRequest)
 		return
 	}
 	st := governance.Start{}
+	prompt := req.Prompt
+	if req.Playbook != "" {
+		var status int
+		var err error
+		if prompt, status, err = l.playbookPrompt(r.Context(), req.Playbook, req.Prompt); err != nil {
+			http.Error(w, err.Error(), status)
+			return
+		}
+		st.Playbook = req.Playbook
+	}
 	user := c.Name
 	switch name, isAgent := c.Agent(); {
 	case isAgent:
@@ -469,7 +491,7 @@ func (l *Launcher) startActivity(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		var runErr error
 		var id string
-		for ev, err := range l.Runner.Run(runCtx, user, sid, genai.NewContentFromText(req.Prompt, genai.RoleUser), agent.RunConfig{}) {
+		for ev, err := range l.Runner.Run(runCtx, user, sid, genai.NewContentFromText(prompt, genai.RoleUser), agent.RunConfig{}) {
 			if ev != nil && id == "" {
 				id = ev.InvocationID
 			}
@@ -584,3 +606,59 @@ func peekJSON(r *http.Request, v any) (*http.Request, error) {
 	r2.Body = io.NopCloser(bytes.NewReader(b))
 	return r2, nil
 }
+
+// playbookPrompt is the model's prompt for a playbook: refused when the
+// playbook is unknown or broken (400), or when the gateway does not offer
+// this agent a tool of a step that is not optional (422).
+func (l *Launcher) playbookPrompt(ctx context.Context, name, extra string) (string, int, error) {
+	if !playbook.ValidName(name) {
+		return "", http.StatusBadRequest, fmt.Errorf("playbook: %q is not a playbook name", name)
+	}
+	all, err := playbook.Load(l.playbookRoot)
+	if err != nil {
+		return "", http.StatusInternalServerError, fmt.Errorf("reading the playbooks: %w", err)
+	}
+	p := all[name]
+	switch {
+	case p == nil:
+		return "", http.StatusNotFound, fmt.Errorf("no playbook %q on this host", name)
+	case p.Error != "":
+		return "", http.StatusBadRequest, fmt.Errorf("playbook %s (%s): %s", name, p.File, p.Error)
+	}
+	offered, err := l.offeredTools(ctx)
+	if err != nil {
+		return "", http.StatusBadGateway, fmt.Errorf("listing the gateway's tools: %w", err)
+	}
+	if m := p.Missing(offered); len(m) > 0 {
+		return "", http.StatusUnprocessableEntity, fmt.Errorf("playbook %s needs tools the gateway does not offer agent %s: %s",
+			name, l.cfg.Name, strings.Join(m, ", "))
+	}
+	return p.Prompt(offered, extra), 0, nil
+}
+
+// offeredTools are the gateway's tools the model is shown now: what the
+// gateway's discovery offers this agent, narrowed by its configuration.
+func (l *Launcher) offeredTools(ctx context.Context) (map[string]bool, error) {
+	ts, err := l.tools.Tools(listContext{ctx})
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, t := range ts {
+		out[t.Name()] = true
+	}
+	return out, nil
+}
+
+// listContext is the context for listing tools outside a run: the
+// toolsets use it only as a context.
+type listContext struct{ context.Context }
+
+func (listContext) UserContent() *genai.Content          { return nil }
+func (listContext) InvocationID() string                 { return "" }
+func (listContext) AgentName() string                    { return "" }
+func (listContext) ReadonlyState() session.ReadonlyState { return nil }
+func (listContext) UserID() string                       { return "" }
+func (listContext) AppName() string                      { return "" }
+func (listContext) SessionID() string                    { return "" }
+func (listContext) Branch() string                       { return "" }

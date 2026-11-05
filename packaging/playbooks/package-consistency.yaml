@@ -1,0 +1,16 @@
+# A diagnostic playbook (CONTRACT.md §14c), installed in
+# /usr/share/custos/playbooks/. A file of the same name in
+# /etc/custos/playbooks/ replaces it; an empty one hides it.
+package-consistency:
+  title: Package consistency
+  description: Whether the installed packages' dependencies are satisfied.
+  needs:
+    - "exec: package_dependencies (exec.d-diagnostics.yaml)"
+    - "zypp-mcp (optional)"
+  steps:
+    - {tool: exec__package_dependencies, why: "Unsatisfied dependencies of the installed packages."}
+    - {tool: zypp__check_updates, why: "Updates that would fix them.", optional: true}
+  look_for: >
+    Packages with missing or conflicting dependencies, and whether an
+    available update resolves them; packages from foreign repositories
+    as the usual cause.

@@ -1040,10 +1040,14 @@ func (a *Admin) Trigger(instance string) error {
 	}
 	for _, s := range cfg.Schedules {
 		if s.Name == sched {
-			return a.Start(filepath.Join(SocketDir, name, "api.sock"), map[string]any{
+			body := map[string]any{
 				"prompt": s.Prompt,
 				"origin": map[string]any{"kind": "schedule", "by": "agent-schedule@" + instance + ".timer", "schedule": sched},
-			})
+			}
+			if s.Playbook != "" {
+				body["playbook"] = s.Playbook
+			}
+			return a.Start(filepath.Join(SocketDir, name, "api.sock"), body)
 		}
 	}
 	return fmt.Errorf("agent %s has no schedule %q", name, sched)

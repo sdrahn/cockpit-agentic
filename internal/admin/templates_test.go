@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/playbook"
 )
 
 // knownTools are the tools of the gateway servers the templates use, as
@@ -336,5 +337,22 @@ func TestWithName(t *testing.T) {
 	want := "# name: keep\nversion: 1\nname: mine\ndescription: x\nmodel:\n  name: qwen3-32b\n"
 	if got := string(WithName([]byte(in), "mine")); got != want {
 		t.Errorf("got\n%s", got)
+	}
+}
+
+// agent-admin playbooks lists the shipped set (§14c).
+func TestPlaybooksShipped(t *testing.T) {
+	a, _ := newAdmin(t)
+	m, _ := filepath.Glob("../../packaging/playbooks/*.yaml")
+	for _, f := range m {
+		b, _ := os.ReadFile(f)
+		writeFile(a.p(filepath.Join(playbook.Vendor, filepath.Base(f))), b, 0o644)
+	}
+	p, err := a.Playbooks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p) != len(m) || p["failed-units"] == nil || p["failed-units"].Error != "" || p["failed-units"].File != "/usr/share/custos/playbooks/failed-units.yaml" {
+		t.Errorf("%d of %d: %+v", len(p), len(m), p["failed-units"])
 	}
 }

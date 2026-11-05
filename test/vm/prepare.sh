@@ -52,6 +52,10 @@ fi
 # installed. mcp-gateway needs --nodeps for its opa, a binary above.
 rpm -Uvh --nodeps "$dir"/rpms/mcp-gateway-[0-9]*.rpm "$dir"/rpms/mcp-gateway-selinux-*.rpm ||
 	die "installing mcp-gateway failed"
+# The exec server, for the shipped diagnostic commands (if it was built).
+for f in "$dir"/rpms/mcp-gateway-exec-server-*.rpm; do
+	[ -f "$f" ] && { rpm -Uvh --nodeps "$f" || die "installing mcp-gateway-exec-server failed"; }
+done
 zypper -n --no-remote --no-refresh in --no-recommends --allow-unsigned-rpm \
 	"$dir"/rpms/custos-[0-9]*.rpm "$dir"/rpms/custos-selinux-*.rpm "$dir"/rpms/custos-tests-*.rpm \
 	>/tmp/zypper-custos.log 2>&1 ||

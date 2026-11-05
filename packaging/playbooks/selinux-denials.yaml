@@ -1,0 +1,16 @@
+# A diagnostic playbook (CONTRACT.md §14c), installed in
+# /usr/share/custos/playbooks/. A file of the same name in
+# /etc/custos/playbooks/ replaces it; an empty one hides it.
+selinux-denials:
+  title: SELinux state and denials
+  description: Whether SELinux enforces its policy, and what it denied.
+  needs:
+    - "exec: selinux_status (exec.d-diagnostics.yaml)"
+    - "systemd-mcp"
+  steps:
+    - {tool: exec__selinux_status, why: "The mode and the loaded policy."}
+    - {tool: systemd__list_log, why: "Denials (avc denied) in the journal, and setroubleshoot's analysis."}
+  look_for: >
+    A mode other than enforcing; denials, with the source and target
+    contexts and the permission; a file with a wrong label (restorecon) as
+    the usual cause, rather than a policy change.

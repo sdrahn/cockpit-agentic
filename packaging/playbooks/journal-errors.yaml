@@ -1,0 +1,15 @@
+# A diagnostic playbook (CONTRACT.md §14c), installed in
+# /usr/share/custos/playbooks/. A file of the same name in
+# /etc/custos/playbooks/ replaces it; an empty one hides it.
+journal-errors:
+  title: Errors in the journal
+  description: The errors logged since the last boot, grouped by where they come from.
+  needs:
+    - "systemd-mcp"
+  steps:
+    - {tool: systemd__list_log, why: "The journal's messages of priority error and worse."}
+    - {tool: systemd__list_loaded_units, why: "The state of the units the errors come from."}
+  look_for: >
+    Errors that repeat, those from failed units, kernel errors (I/O,
+    file system, hardware), authentication failures, and the first error
+    of a series rather than the ones it caused.

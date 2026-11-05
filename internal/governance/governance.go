@@ -99,6 +99,8 @@ type Activity struct {
 	Reason   string     `json:"reason,omitempty"`
 	Calls    []Call     `json:"calls"`
 	LLMCalls int        `json:"llm_calls"`
+	// Playbook is the diagnostic playbook it runs (§14c), if any.
+	Playbook string `json:"playbook,omitempty"`
 }
 
 // Activity states.
@@ -116,9 +118,11 @@ const (
 // it and how to cancel it. Without one, an activity is origin "api".
 type Start struct {
 	Origin Origin
-	Parent *Ref
-	Root   *Ref
-	Cancel context.CancelFunc
+	// Playbook is the diagnostic playbook the activity runs (§14c).
+	Playbook string
+	Parent   *Ref
+	Root     *Ref
+	Cancel   context.CancelFunc
 	// Started, if set, is told the activity's id when it starts.
 	Started func(id string)
 }
@@ -398,7 +402,7 @@ func (g *Governor) beforeRun(ictx agent.InvocationContext) (*genai.Content, erro
 	if st.Root != nil {
 		root = *st.Root
 	}
-	act := &Activity{ID: id, Agent: g.cfg.Name, Session: s.ID(), User: s.UserID(), Origin: st.Origin, Parent: st.Parent, Root: root, State: StateRunning, Started: g.now()}
+	act := &Activity{ID: id, Agent: g.cfg.Name, Session: s.ID(), User: s.UserID(), Origin: st.Origin, Parent: st.Parent, Root: root, State: StateRunning, Started: g.now(), Playbook: st.Playbook}
 	paused := g.paused
 	if !paused {
 		g.inv[id] = &invocation{session: s.ID(), user: s.UserID(), start: act.Started, act: act, cancel: st.Cancel}
@@ -407,7 +411,7 @@ func (g *Governor) beforeRun(ictx agent.InvocationContext) (*genai.Content, erro
 	f := journal.Fields{
 		"SESSION": s.ID(), "INVOCATION": id, "USER": s.UserID(),
 		"ORIGIN": st.Origin.Kind, "ORIGIN_BY": st.Origin.By, "SCHEDULE": st.Origin.Schedule,
-		"ROOT_AGENT": root.Agent, "ROOT_ACTIVITY": root.Activity,
+		"ROOT_AGENT": root.Agent, "ROOT_ACTIVITY": root.Activity, "PLAYBOOK": st.Playbook,
 	}
 	if st.Parent != nil {
 		f["PARENT_AGENT"], f["PARENT_ACTIVITY"] = st.Parent.Agent, st.Parent.Activity

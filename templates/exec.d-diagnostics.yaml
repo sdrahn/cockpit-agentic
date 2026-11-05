@@ -1,0 +1,57 @@
+# Read-only diagnostic commands for mcp-gateway's exec server
+# (mcp-gateway-exec-server), which the diagnostic playbooks
+# (/usr/share/custos/playbooks, CONTRACT.md §14c) call. Copy to
+# /etc/mcp-gateway/exec.d/ and check with
+# /usr/libexec/mcp-servers/mcp-server-exec --check. They run as the calling
+# agent's user, without network, and take no arguments. Each is a tool
+# exec__<name>; give an agent read_only permissions with category
+# diagnostics for the ones it uses. ip, ss, sestatus and getenforce are
+# found on the server's PATH (/usr/sbin:/usr/bin), wherever the
+# distribution puts them.
+version: 1
+commands:
+  memory_usage:
+    description: Memory and swap in use, in MiB (free -m -w)
+    argv: [/usr/bin/free, -m, -w]
+    read_only: true
+  pressure_stall:
+    description: Pressure stall information for CPU, memory and I/O (/proc/pressure)
+    argv: [/usr/bin/cat, /proc/pressure/cpu, /proc/pressure/memory, /proc/pressure/io]
+    read_only: true
+  load_average:
+    description: Uptime and load averages (uptime)
+    argv: [/usr/bin/uptime]
+    read_only: true
+  time_status:
+    description: The clock, time zone and whether NTP has synchronized it (timedatectl show)
+    argv: [/usr/bin/timedatectl, show]
+    read_only: true
+  network_addresses:
+    description: The network interfaces, their state and addresses (ip -brief address)
+    argv: [/usr/bin/env, ip, -brief, address]
+    read_only: true
+  network_routes:
+    description: The routing table (ip route show)
+    argv: [/usr/bin/env, ip, route, show]
+    read_only: true
+  listening_sockets:
+    description: TCP and UDP sockets listening on this host (ss -tulnH)
+    argv: [/usr/bin/env, ss, -tulnH]
+    read_only: true
+  boot_time:
+    description: How long the last boot took, by phase (systemd-analyze time)
+    argv: [/usr/bin/systemd-analyze, time]
+    read_only: true
+  boot_blame:
+    description: The units that took longest to start at the last boot (systemd-analyze blame)
+    argv: [/usr/bin/systemd-analyze, blame, --no-pager]
+    read_only: true
+  selinux_status:
+    description: SELinux mode, policy and its state (sestatus)
+    argv: [/usr/bin/env, sestatus]
+    read_only: true
+  package_dependencies:
+    description: Unsatisfied dependencies of the installed packages; no file checks (rpm -Va --nofiles)
+    argv: [/usr/bin/rpm, -Va, --nofiles, --nodigest, --nosignature]
+    read_only: true
+    timeout: 300s

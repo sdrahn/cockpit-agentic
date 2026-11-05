@@ -847,3 +847,22 @@ func TestReleaseAllKeepsDisabledUnits(t *testing.T) {
 		t.Errorf("started with nothing enabled:\n%s", all)
 	}
 }
+
+// A schedule that names a playbook starts it, with its prompt (if any)
+// added (§14c).
+func TestTriggerPlaybook(t *testing.T) {
+	a, _ := newAdmin(t)
+	var got map[string]any
+	a.Start = func(sock string, body map[string]any) error { got = body; return nil }
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(strings.Replace(yml, `prompt: "Run the compliance check."}`, `playbook: failed-units}`, 1)), 0o644)
+	if err := a.Create("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Trigger("patch-pilot_compliance"); err != nil {
+		t.Fatal(err)
+	}
+	if got["playbook"] != "failed-units" || got["prompt"] != "" {
+		t.Errorf("body %v", got)
+	}
+}

@@ -1,0 +1,19 @@
+# A diagnostic playbook (CONTRACT.md §14c), installed in
+# /usr/share/custos/playbooks/. A file of the same name in
+# /etc/custos/playbooks/ replaces it; an empty one hides it.
+network-config:
+  title: Network configuration
+  description: The host's interfaces, routes, name resolution and listening ports. It reads the configuration; it does not test reachability (the tools have no network).
+  needs:
+    - "exec: network_addresses, network_routes, listening_sockets (exec.d-diagnostics.yaml)"
+    - "systemd-mcp"
+  steps:
+    - {tool: exec__network_addresses, why: "The interfaces, their state and addresses."}
+    - {tool: exec__network_routes, why: "The routes, the default route first."}
+    - {tool: exec__listening_sockets, why: "The ports services listen on."}
+    - {tool: systemd__get_file, why: "/etc/resolv.conf, the name servers.", optional: true}
+    - {tool: systemd__list_log, why: "NetworkManager's or wicked's journal.", optional: true}
+  look_for: >
+    An interface that is down or without an address, no default route or
+    two of them, no name server, a service that listens only on localhost
+    or on every address when it should not.
