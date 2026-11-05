@@ -38,6 +38,20 @@ members of `wheel` (the role `admin`) may decide everything. The rule
 `self` never lets an agent approve its own call: agent users have no
 password, and agents cannot reach the gateway's control socket.
 
+An agent's **owners** may decide its calls too, besides the server's
+approvers, and are mailed about them like the server's approvers:
+
+```bash
+agent-admin owners web-doctor user:alice group:web-team   # alice and web-team approve web-doctor's calls
+agent-admin owners web-doctor                             # none: the servers' approvers only
+```
+
+Owners take the gateway's approver forms (`user:`, `group:`, `role:`,
+`remote-user:`, `remote-group:`); `self` and an agent's own account are
+refused. In Cockpit: the agent's view, *Owners*. Owners decide in
+Cockpit, on the gateway's page or with `mcp-gateway-admin approvals`,
+and are recorded as the approver like anyone else.
+
 ## Deciding in Cockpit {#cockpit}
 
 The *Approvals* tab of the Custos page lists the pending calls, each as

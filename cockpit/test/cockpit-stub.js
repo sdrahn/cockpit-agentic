@@ -379,6 +379,12 @@
                                  defaults.model = { provider: v("provider"), name: v("name"), endpoint: v("endpoint"), credential: v("credential") };
                              }
                              if (cmd === "set-credential") credentials[name + "." + arg] = input;
+                             if (cmd === "owners") {
+                                 if (args.slice(3).some(o => o === "self" || o.startsWith("user:agent-")))
+                                     return Promise.reject(new Error("agent-admin: owner \"" + args[3] + "\" is an agent's account: an agent never approves")).then(ok, bad);
+                                 d.owners = args.slice(3);
+                                 if (d.owners.length === 0) delete d.owners;
+                             }
                              if (cmd === "feedback") {
                                  if (args.includes("h9=confirmed")) return Promise.reject(new Error("agent-admin: the report of " + arg + " has no hypothesis \"h9\"")).then(ok, bad);
                                  (window.__feedback = window.__feedback || []).push(args.slice(2));

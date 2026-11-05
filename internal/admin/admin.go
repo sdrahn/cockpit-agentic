@@ -729,6 +729,9 @@ type GatewayData struct {
 	Permissions []map[string]any `yaml:"permissions" json:"permissions"`
 	// Categories are the task categories promoted or demoted (§6a).
 	Categories map[string]*CategoryState `yaml:"categories,omitempty" json:"categories,omitempty"`
+	// Owners may approve the agent's calls (§7, O1): rules of the
+	// gateway's approver forms (owners.rego).
+	Owners []string `yaml:"owners,omitempty" json:"owners,omitempty"`
 }
 
 // gatewayFile is the agent's file in GatewayAgents: <name>.yaml, whose
@@ -768,8 +771,14 @@ func (a *Admin) writeGateway(name string, d *GatewayData) error {
 		m, _ := v.(map[string]any)
 		perms, _ := m["permissions"].([]any)
 		paused, _ := m["paused"].(bool)
-		if m == nil || m["mode"] != d.Mode || paused != d.Paused || len(perms) != len(d.Permissions) {
+		owners, _ := m["owners"].([]any)
+		if m == nil || m["mode"] != d.Mode || paused != d.Paused || len(perms) != len(d.Permissions) || len(owners) != len(d.Owners) {
 			return false
+		}
+		for i, o := range d.Owners {
+			if owners[i] != o {
+				return false
+			}
 		}
 		cats, _ := m["categories"].(map[string]any)
 		for n, c := range d.Categories {
@@ -801,6 +810,49 @@ func (a *Admin) SetMode(name, mode string) error {
 	}
 	d.Mode = mode
 	return a.writeGateway(name, d)
+}
+
+// ownerRE is an owner rule: the gateway's approver forms but "self"
+// (owners.rego).
+var ownerRE = regexp.MustCompile(`^(user|group|role|remote-user|remote-group):[A-Za-z0-9._@-][A-Za-z0-9._@:-]{0,127}$`)
+
+// SetOwners sets who may approve the agent's calls besides the servers'
+// approvers (§7, O1); none clears them. An agent's own user or group is
+// refused: an agent never approves.
+func (a *Admin) SetOwners(name string, owners []string) error {
+	if err := checkName(name); err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, o := range owners {
+		switch {
+		case o == "self":
+			return errors.New(`owner "self" would be the agent itself: name a person, a group or a role`)
+		case !ownerRE.MatchString(o):
+			return fmt.Errorf("owner %q: want user:NAME, group:NAME, role:NAME, remote-user:SUBJECT or remote-group:NAME", o)
+		case strings.HasPrefix(o, "user:agent-") || strings.HasPrefix(o, "group:agent-"):
+			return fmt.Errorf("owner %q is an agent's account: an agent never approves", o)
+		}
+		if !seen[o] {
+			seen[o] = true
+			out = append(out, o)
+		}
+	}
+	d, err := a.readGateway(name)
+	if err != nil {
+		return err
+	}
+	d.Owners = out
+	if err := a.writeGateway(name, d); err != nil {
+		return err
+	}
+	if len(out) == 0 {
+		fmt.Fprintf(a.Out, "agent %s: no owners; the servers' approvers decide its calls\n", name)
+	} else {
+		fmt.Fprintf(a.Out, "agent %s: %s may approve its calls\n", name, strings.Join(out, ", "))
+	}
+	return nil
 }
 
 // SetPermissions replaces the agent's gateway permissions from a YAML list.

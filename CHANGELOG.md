@@ -105,6 +105,13 @@ removed.
   `diagnostics_confirmed_rate` in `/etc/custos/promotion.yaml`), so
   `promote` follows them; Cockpit says so.
 
+- Owners approve their agent's calls (CONTRACT.md §7, O1):
+  `agent-admin owners NAME user:alice group:web-team` (and *Owners* in
+  Cockpit's agent view) lets them decide the agent's pending calls
+  besides the servers' approvers, and mails them as it mails those. A
+  policy module for the gateway's approver rules (`owners.rego`), with
+  no gateway change.
+
 ### Fixed
 
 - Security: an agent could write a review verdict into its own journal

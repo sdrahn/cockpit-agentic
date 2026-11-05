@@ -37,6 +37,8 @@ const usage = `usage: agent-admin COMMAND …
                                          they start supervised
   diagnostics-only                       make a fresh host diagnostics-only (the bundled install, custos-setup)
   mode NAME advisory|supervised|bounded  set the autonomy mode (enforced by mcp-gateway)
+  owners NAME [RULE…]                    who may approve its calls besides the servers' approvers
+                                         (user:NAME, group:NAME, role:NAME, remote-user:SUB, remote-group:NAME); none clears
   permissions NAME                       replace its gateway permissions (YAML list on stdin)
   categories                             the task categories (CONTRACT.md §6a), as JSON
   readiness NAME [CATEGORY]              a category's promotion readiness (CONTRACT.md §6a), as JSON
@@ -326,6 +328,11 @@ func run(a *admin.Admin, args []string) error {
 			fmt.Printf("agent %s: category %s demoted: %s\n", x.Agent, x.Category, x.Reason)
 		}
 		return err
+	case "owners":
+		if err := need(1); err != nil {
+			return err
+		}
+		return a.SetOwners(args[0], args[1:])
 	case "pause", "resume":
 		if err := need(1); err != nil {
 			return err

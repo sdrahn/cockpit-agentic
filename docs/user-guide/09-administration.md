@@ -28,6 +28,7 @@ person behind `sudo` (`SUDO_USER`), else `USER`.
 | `agent-admin edit NAME --from FILE` | replace its configuration and apply it |
 | `agent-admin delete NAME [--keep-state]` | remove an agent |
 | `agent-admin mode NAME MODE` | `advisory`, `supervised` or `bounded` |
+| `agent-admin owners NAME [RULE…]` | who may approve its calls besides the servers' approvers ([chapter 7](07-approvals.md#who-may-decide)) |
 | `agent-admin permissions NAME < list.yaml` | replace its permissions |
 | `agent-admin categories` | the task categories, as JSON (no root needed) |
 | `agent-admin review NAME [CATEGORY]`, `agent-admin review NAME CATEGORY ACTIVITY CALL ok\|incident [--reason TEXT]` | the actions of promoted categories to review, and a verdict ([chapter 6](06-permissions-and-modes.md#review)) |

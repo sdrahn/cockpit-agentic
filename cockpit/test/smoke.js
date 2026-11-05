@@ -669,6 +669,21 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(started.length === 1 && JSON.parse(started[0][3]).prompt === "/var" && started[0][4] === "",
           "the playbook runs as the person, with the request, and its activity opens");
 
+    // Owners (O1): who may approve the agent's calls, set through the
+    // root bridge.
+    await page.goto(url + "?owners#/agents/patch-pilot");
+    await page.waitForSelector("#owners-input");
+    check((await page.textContent("#owners")).includes("No owners"), "without owners, the servers' approvers decide");
+    await page.fill("#owners-input", "user:alice group:web-team");
+    await page.click("#owners button:text-is('Save owners')");
+    await page.waitForFunction(() => document.querySelector("#owners").textContent.includes("user:alice, group:web-team may approve"));
+    const ow = await spawned("agent-admin owners patch-pilot user:alice group:web-team");
+    check(ow.length === 1 && ow[0][4] === "require", "owners are set with agent-admin owners through the root bridge");
+    await page.fill("#owners-input", "user:agent-triage");
+    await page.click("#owners button:text-is('Save owners')");
+    await page.waitForFunction(() => document.querySelector("#error") && !document.querySelector("#error").hidden);
+    check((await page.textContent("#error")).includes("an agent never approves"), "an agent as owner is refused, with agent-admin's reason");
+
     check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join("; ") : ""));
     await browser.close();
 })().catch(e => { console.error(e); process.exit(1); });

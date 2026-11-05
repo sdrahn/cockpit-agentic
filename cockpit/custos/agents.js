@@ -158,7 +158,7 @@ async function renderAgentDetail() {
             group.append(b);
         }
         mode.append(group, el("p", { class: "muted" }, "Enforced by mcp-gateway from /etc/mcp-gateway/policy/agents/" +
-            a.name + ".yaml. Tool annotations from MCP servers never allow anything."));
+            a.name + ".yaml. Tool annotations from MCP servers never allow anything."), ownersEditor(a, data));
     } else {
         mode.append(el("p", { class: "muted" }, "The gateway has no data for this agent: it denies it everything."));
     }
@@ -221,7 +221,7 @@ tabs.agents = {
         renderAgentList();
         // Not while someone edits the permissions or types a message.
         const f = document.activeElement;
-        const editing = f && (f.id === "permissions-yaml" || f.closest(".chat") || f.closest(".confirm-delete") || f.closest(".config-edit") ||
+        const editing = f && (f.id === "permissions-yaml" || f.id === "owners-input" || f.closest(".chat") || f.closest(".confirm-delete") || f.closest(".config-edit") ||
             f.closest(".credentials-edit") || f.closest(".playbook-run"));
         if (!editing) await renderAgentDetail();
     },
@@ -381,4 +381,23 @@ function categoriesSection(a, data) {
         box.append(el("p", { id: "readiness-note", class: "muted" }, "Readiness: " + ex.message));
     });
     return box;
+}
+
+/* ownersEditor: who may approve the agent's calls besides the servers'
+ * approvers (CONTRACT.md §7, O1): the gateway's approver forms, set with
+ * agent-admin owners through the root bridge. */
+function ownersEditor(a, data) {
+    const owners = data.owners || [];
+    const input = el("input", { id: "owners-input", class: "mono", "aria-label": "Owners", value: owners.join(" "),
+                                placeholder: "user:alice group:web-team" });
+    const save = el("button", { class: "secondary" }, "Save owners");
+    save.addEventListener("click", () => act(save, "Setting the owners of " + a.name,
+        () => admin(["owners", a.name, ...input.value.split(/\s+/).filter(Boolean)])));
+    return el("div", { id: "owners" },
+        el("h3", null, "Owners"),
+        el("p", { class: "muted" }, owners.length
+            ? "Besides the servers' approvers, " + owners.join(", ") + " may approve this agent's calls, and are mailed about them."
+            : "No owners: the servers' approvers decide this agent's calls. Owners (user:NAME, group:NAME, role:NAME, remote-user:SUB, " +
+              "remote-group:NAME) may approve them too."),
+        el("div", { class: "actions" }, input, save));
 }

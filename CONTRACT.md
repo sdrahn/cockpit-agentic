@@ -284,6 +284,7 @@ the host never writes itself:
   mode: supervised        # advisory | supervised | bounded
   paused: false           # true: the gateway denies every call (§8)
   paused_by: "alice 2026-11-03T12:00:00Z"
+  owners: ["user:alice"]  # added: may approve its calls besides the servers' approvers (§7)
   permissions:            # gateway permissions, with two flags
     - {server: zypp, tool: check_updates, read_only: true}
     - {server: zypp, tool: confirm_install}
@@ -657,6 +658,13 @@ the agent nor its host can grant or forge one.
    and an agent cannot reach the control socket anyway (§1). Name the
    approvers of servers that agents use explicitly, e.g.
    `approvers: {zypp: ['role:admin', 'group:agent-clients']}`.
+   An agent's **owners** may decide its calls too, whatever the server's
+   rules: `owners` in its agent data (§6), rules of the gateway's
+   approver forms (`user:`, `group:`, `role:`, `remote-user:`,
+   `remote-group:`; never `self`, nor an agent's own account), which the
+   policy module `owners.rego` adds to the gateway's approver rules
+   (`mcp.approvals`: `allow`, `allow_without_self`, and `notify`, so they
+   are mailed as the server's approvers are).
 4. The call returns. The host writes `approval.resolved`
    (`approved`/`declined`), then `tool.result`. The gateway's own audit
    records the decision and the approver.
@@ -913,6 +921,7 @@ aggregation, policy distribution and approvals across hosts) is parked
 | `/usr/sbin/custos-setup` | root 0755 | the bundled diagnostics install's setup (§17a; package `custos-diagnostics`) |
 | `/usr/lib/systemd/system/agent@.{service,socket}`, `agent-schedule@.{service,timer}` | root 0644 | unit templates |
 | `/usr/share/mcp-gateway/policy/custos/agents.rego` | root 0644 | the autonomy modes (§6) |
+| `/usr/share/mcp-gateway/policy/custos/owners.rego` | root 0644 | owners approve their agents' calls (§7) |
 | `/usr/share/custos/gateway/servers.d/agents.yaml` | root 0644 | the `agents` server definition; copy to `/etc/mcp-gateway/servers.d/` to allow delegation |
 | `/usr/share/custos/categories.d/*.yaml` | root 0644 | the task categories' catalog (§6a) |
 | `/etc/custos/categories.d/*.yaml` | root 0644 | the administrator's categories: a file of a shipped name replaces it, an empty one disables it |
@@ -1179,6 +1188,7 @@ standard error:
 | `templates` | the templates (§14a), as JSON: `{"transactional", "templates": {"<template>": {"title", "description", "system", "mode", "needs"?, "dir", "servers", "categories"?, "envelopes"?, "error"?}}}`, where `error` says why one cannot be used (a category not in the catalog, say). Needs no root |
 | `check NAME\|FILE` | validates only; needs no root for a FILE |
 | `mode NAME MODE`, `permissions NAME < list.yaml` | the gateway agent data (§6). Like `pause`, `resume`, `stop-all` and `release-all`, it returns once the gateway's OPA has loaded the change (it reads it back on `/run/mcp-gateway/opa.sock`, for up to 20 s), so the change is in force when the command returns |
+| `owners NAME [RULE…]` | sets who may approve the agent's calls besides the servers' approvers (§7), in its agent data; none clears them. Refuses `self` and an agent's own user or group; returns once the gateway's OPA has loaded it |
 | `set-credential NAME CRED < secret` | `systemd-creds encrypt`; for OpenShell agents `gateway-client-secret` or `gateway-token` (§16a) |
 | `credentials [NAME…]` | the named agents' credentials, or all agents', as JSON: `{"<name>": {"credentials": [{"name", "stored", "stored_at"?, "used_by": ["model"\|"gateway"], "held_by"?: "openshell"}], "missing": ["<cred>"]}}`. Names only, never a value. A credential the configuration names (`model.credential`; an OpenShell agent's gateway credential) that is not stored is listed with `stored: false` and in `missing`: the agent does not start without it. An OpenShell agent's gateway credential is `held_by` OpenShell, `stored` once its relay's socket is enabled. Needs root (the store is root's) |
 | `remove-credential NAME CRED [--force]` | removes a stored credential; the one `model.credential` names only with `--force`. Refuses `gateway-token` and `gateway-client-secret`, which OpenShell holds |
@@ -1378,9 +1388,12 @@ inherited, not specified again.
 
 ## 21. Open items
 
-- **O1 — owner as approver.** Gateway approver rules are per server. A
-  rule "the owner of agent X approves its calls" needs a group per
-  owner, or a gateway rule such as `owner-of:<principal>`.
+- **O1 — owner as approver.** Settled: an agent's `owners` (its agent
+  data, `agent-admin owners`, Cockpit) may approve its calls besides the
+  servers' approvers, by Custos's module of the gateway's approver policy
+  (`owners.rego`, §7), without a gateway change. Tested with OPA against
+  the gateway's policy, and on a host where an owner without any other
+  approver right decides a pending call.
 - **O2 — notice to call matching.** Settled: the gateway's approval
   notice names the call by its progress token (§7,
   sdrahn/mcp-gateway#333). Only against a gateway without it can two
