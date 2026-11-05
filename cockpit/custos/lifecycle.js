@@ -169,6 +169,10 @@ function initDefaults() {
     document.getElementById("defaults-open").addEventListener("click", async () => {
         form.hidden = false;
         note({ msg: "Reading…" });
+        // The fields wait for the current defaults: what someone typed
+        // before they arrive would be overwritten.
+        const fields = [...form.elements].filter(e => e.name !== "cancel");
+        fields.forEach(e => { e.disabled = true });
         try {
             const d = JSON.parse(await cockpit.spawn(["agent-admin", "defaults"], { err: "message" }));
             const m = d.model || {};
@@ -181,6 +185,7 @@ function initDefaults() {
         } catch (ex) {
             note({ msg: ((ex && ex.message) || String(ex)).replace(/^agent-admin: /, ""), cls: "error-text" });
         }
+        fields.forEach(e => { e.disabled = false });
         provider();
     });
     f.cancel.addEventListener("click", () => { form.hidden = true; note(null) });
