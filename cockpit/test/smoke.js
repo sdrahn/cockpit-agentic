@@ -35,7 +35,7 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
     const page = await browser.newPage({ viewport: { width: 1400, height: 960 } });
     const errors = [];
-    page.on("pageerror", e => errors.push(e.message));
+    page.on("pageerror", e => { errors.push(e.message); if (process.env.DEBUG) console.error("page error:", e.message) });
     page.on("console", m => { if (m.type() === "error") errors.push(m.text()); });
     const url = "file://" + path.join(root, "custos", "index.html");
     const check = (cond, what) => {

@@ -48,6 +48,15 @@ removed.
   journal (`custos-promotion`, `category.promoted`,
   `category.demoted`), and `agent-admin show` lists the categories.
 
+### Fixed
+
+- The Cockpit page hung when `agent-admin` refused something: **Check**
+  and **Save and apply** in an agent's configuration editor, and every
+  other action that runs `agent-admin` or `systemctl`, never showed the
+  error, and Cockpit reported an unexpected error instead. The page
+  threw in a handler of Cockpit's own promise, which does not reject the
+  promise it returns. The test stub now behaves like Cockpit's promises.
+
 ## v0.1.1 — 2026-11-04
 
 Fixes from testing 0.1.0. The package builds on OBS. The Cockpit page

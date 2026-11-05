@@ -231,16 +231,23 @@
         file(path, opts) {
             opts = opts || {};
             return {
-                read() {
+                read() { return cockpitPromise(readStub()); },
+            };
+            function readStub() {
+                {
                     log.push(["read", path, "", "", opts.superuser || ""]);
                     const m = path.match(/^\/etc\/custos\/agents\/([^/]+)\/agent\.yaml$/);
                     if (!m) return Promise.reject({ problem: "not-found" });
                     if (opts.superuser !== "require") return Promise.reject({ problem: "access-denied" });
                     return configs[m[1]] ? Promise.resolve(configs[m[1]]) : Promise.reject({ problem: "not-found" });
-                },
-            };
+                }
+            }
         },
-        spawn(args, opts) {
+        spawn(args, opts) { return cockpitPromise(spawnStub(args, opts)); },
+    };
+
+    function spawnStub(args, opts) {
+        {
             opts = opts || {};
             log.push(["spawn", args.join(" "), (opts.environ || []).join(" "), "", opts.superuser || ""]);
             if (args[0] === "agent-admin") {
@@ -367,6 +374,30 @@
                 return lines(agentJournal);
             }
             return Promise.reject(Object.assign(new Error("not stubbed"), { exit_status: 1 }));
-        },
-    };
+        }
+    }
+
+    // Cockpit's own promises (cockpit.spawn, cockpit.file): unlike native
+    // ones, a handler that throws does not reject the promise then returns.
+    // The exception escapes as uncaught and the chain never settles, so a
+    // page must not throw in their handlers.
+    function cockpitPromise(r) {
+        const wrap = h => h && (v => {
+            try {
+                return h(v);
+            } catch (e) {
+                setTimeout(() => { throw e; });
+                return new Promise(() => {});
+            }
+        });
+        const chain = q => ({
+            then(ok, bad) { return chain(q.then(wrap(ok), wrap(bad))); },
+            catch(bad) { return this.then(undefined, bad); },
+        });
+        // Run when first asked for its result: after input().
+        let p = null;
+        const c = chain({ then: (ok, bad) => (p || (p = Promise.resolve(r))).then(ok, bad) });
+        c.input = text => { if (r && r.input) r.input(text); return c; };
+        return c;
+    }
 })();
