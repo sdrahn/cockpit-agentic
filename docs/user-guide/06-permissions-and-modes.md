@@ -368,9 +368,9 @@ may decide the agent's calls on those servers, owners included
 ([chapter 7](07-approvals.md)): by mail to its notification recipients,
 as a desktop notification (`mcp-gateway-notify`), and on its approval
 page, until they dismiss it or a week has passed. `agent-admin
-evaluate` prints `approvers notified (notice …)` for each demotion. An
-mcp-gateway without notices (before its requirement R3) gets none, and
-the demotion stands all the same.
+evaluate` prints `approvers notified (notice …)` for each demotion; if
+the gateway refuses the notice, it says why, and the demotion stands all
+the same.
 
 ## How the gateway applies modes {#how-enforced}
 
