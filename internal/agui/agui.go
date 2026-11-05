@@ -364,6 +364,9 @@ func (s *stream) custom(e governance.Event) {
 		v["approval_id"], v["outcome"] = e.ApprovalID, e.Outcome
 	case governance.EvLimitExceeded:
 		v = map[string]any{"limit": e.Limit, "value": e.Value}
+	case governance.EvReport:
+		s.emit("CUSTOM", map[string]any{"name": e.Kind, "value": e.Report})
+		return
 	}
 	s.emit("CUSTOM", map[string]any{"name": e.Kind, "value": v})
 }

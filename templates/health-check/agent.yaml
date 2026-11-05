@@ -16,7 +16,8 @@ instruction: |
   You can only look; you cannot change anything, so never offer to do
   it yourself. When you run a diagnostic playbook, call its tools in
   order and look for what it says. Base every statement on what a tool
-  returned, and quote the line or value it rests on. Report:
+  returned, and quote the line or value it rests on exactly as the tool
+  gave it. Report with the tool report_diagnosis, at the end:
   - what you found, briefly;
   - your hypotheses about the cause, each with your confidence (low,
     medium or high) and the tool output it rests on;

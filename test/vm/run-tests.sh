@@ -716,7 +716,7 @@ fi
 mkdir -p /etc/custos/playbooks
 cat >/etc/custos/playbooks/probe-check.yaml <<'EOF'
 probe-check:
-  title: PROBE check
+  title: PROBE REPORT check
   description: The test server's probe.
   steps:
     - {tool: custos-test__probe, why: "The probe."}
@@ -737,6 +737,19 @@ pb_run() { api pb /v1/activities -X POST -d "$(jq -nc --arg p "$1" '{playbook: $
 check "an activity runs the playbook: its probe is called" eventually 30 bash -c \
 	"$(declare -f api pb_run); pb_run probe-check | jq -e '.playbook == \"probe-check\" and .state == \"finished\" and (.calls | map(.tool) | index(\"custos-test__probe\"))' >/dev/null"
 check "journal: invocation.start names the playbook" eventually 10 journal_has pb invocation.start '.AGENT_PLAYBOOK == "probe-check"'
+# The diagnosis report (§4a): the host verifies each quote against the
+# output of the tool it names; feedback is recorded outside the agent.
+pb_act=$(api pb /v1/activities | jq -r '[.activities[] | select(.playbook == "probe-check" and .report)][0].id // empty')
+check "the activity has the playbook's diagnosis report" test -n "$pb_act"
+check "the host verified the quote that is in the probe's output, and only that one" bash -c \
+	"$(declare -f api); api pb /v1/activities/$pb_act | jq -e '.report | .kind == \"diagnosis\" and .playbook == \"probe-check\" and .hypotheses[0].confidence == \"high\" and
+		(.evidence[0] | .verified and (.call_id | length > 0)) and (.evidence[1].verified | not)' >/dev/null"
+check "journal: diagnosis.report with the verified evidence" eventually 10 journal_has pb diagnosis.report \
+	".AGENT_INVOCATION == \"$pb_act\" and (.AGENT_REPORT | fromjson | .evidence[0].verified)"
+check "agent-admin feedback on the report" agent-admin feedback pb "$pb_act" --hypothesis h1=confirmed --plan useful --executed --comment "functional test"
+check "journal: diagnosis.feedback by root" eventually 10 bash -c \
+	"journalctl -o json --no-pager --since '@$t0' SYSLOG_IDENTIFIER=custos-promotion AGENT_EVENT=diagnosis.feedback AGENT_NAME=pb | jq -e 'select(.AGENT_INVOCATION == \"$pb_act\" and .AGENT_BY == \"root\" and (.AGENT_FEEDBACK | fromjson | .hypotheses.h1 == \"confirmed\"))' >/dev/null"
+check "agent-admin feedback refuses a hypothesis the report does not have" not agent-admin feedback pb "$pb_act" --hypothesis h9=confirmed
 check "a playbook whose tool the gateway does not offer is refused (422)" code_is 422 api pb /v1/activities -X POST -d '{"playbook":"change-check"}'
 check "an unknown playbook is refused (404)" code_is 404 api pb /v1/activities -X POST -d '{"playbook":"no-such"}'
 n0=$(journal pb invocation.start | jq -s 'map(select(.AGENT_ORIGIN == "schedule")) | length')

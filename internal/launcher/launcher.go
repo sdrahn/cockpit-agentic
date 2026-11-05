@@ -118,11 +118,16 @@ func New(ctx context.Context, o Options) (*Launcher, error) {
 	if cfg.Model.Temperature != nil {
 		gcc.Temperature = cfg.Model.Temperature
 	}
+	report, err := l.Governor.NewReportTool()
+	if err != nil {
+		return nil, err
+	}
 	a, err := llmagent.New(llmagent.Config{
 		Name:                  strings.ReplaceAll(cfg.Name, "-", "_"),
 		Description:           cfg.Description,
 		Model:                 llm,
 		Instruction:           cfg.Instruction,
+		Tools:                 []tool.Tool{report},
 		Toolsets:              []tool.Toolset{tools, ct.Toolset()},
 		GenerateContentConfig: gcc,
 	})

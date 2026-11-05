@@ -67,6 +67,16 @@ removed.
   playbooks failed-units, disk-pressure and journal-errors daily and
   update-status weekly.
 
+- Diagnosis reports (CONTRACT.md §4a): an agent reports with the host's
+  tool `report_diagnosis`: a summary, findings, hypotheses with its
+  confidence, the evidence as quotes from its tools' output, and a
+  remediation plan for the administrator. Custos verifies each quote
+  against what that tool returned in the activity and marks the others
+  unverified. The report is in the activity (`report`), the journal
+  (`diagnosis.report`) and on AG-UI (`agent.report`).
+  `agent-admin feedback` records an administrator's verdict on it
+  (`diagnosis.feedback`).
+
 ### Fixed
 
 - A deleted agent stayed on the Cockpit page, as stopped, until the

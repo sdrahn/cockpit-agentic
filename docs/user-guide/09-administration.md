@@ -22,6 +22,7 @@ person behind `sudo` (`SUDO_USER`), else `USER`.
 | `agent-admin create NAME --template TEMPLATE [--from FILE]` | create an agent from a template, with its permissions and mode ([below](#templates)) |
 | `agent-admin templates` | the agent templates, as JSON (no root needed) |
 | `agent-admin playbooks` | the diagnostic playbooks, as JSON (no root needed; [below](#playbooks)) |
+| `agent-admin feedback NAME ACTIVITY [--hypothesis ID=VERDICT…] [--plan useful\|not_useful] [--executed] [--comment TEXT]` | your feedback on a diagnosis report ([below](#reports)) |
 | `agent-admin draft NAME [--template TEMPLATE]` | a new agent's starting configuration, with the model defaults (no root needed) |
 | `agent-admin defaults [--from FILE \| --clear]` | the model for new agents ([chapter 5](05-configuration.md#model-defaults)) |
 | `agent-admin edit NAME --from FILE` | replace its configuration and apply it |
@@ -322,6 +323,36 @@ web-health:
 ```
 
 `agent-admin playbooks` lists a file that does not parse with its error.
+
+### Diagnosis reports and your feedback {#reports}
+
+An agent ends a playbook with a **diagnosis report**: a summary, its
+findings, its hypotheses about the cause, each with its confidence (low,
+medium or high, the model's own estimate), the evidence each rests on,
+and a remediation plan, step by step, for you to carry out. Each piece of
+evidence is a quote from a tool's output. Custos checks it: a quote that
+is not in what that tool returned in this activity is marked
+**unverified**, whatever the model says. Trust a hypothesis by its
+verified evidence, not by its confidence.
+
+```bash
+curl -s --unix-socket /run/agents/NAME/api.sock http://agent/v1/activities/ACTIVITY | jq .report
+journalctl -o json AGENT_NAME=NAME AGENT_EVENT=diagnosis.report | jq -r .AGENT_REPORT | jq .
+```
+
+Tell Custos whether it was right; your feedback is the evidence for
+letting the agent do more later
+([chapter 6](06-permissions-and-modes.md#readiness)):
+
+```bash
+agent-admin feedback NAME ACTIVITY --hypothesis h1=confirmed --hypothesis h2=rejected \
+  --plan useful --executed --comment "the journal had no size limit"
+```
+
+Per hypothesis `confirmed`, `rejected` or `unsure`; the plan `useful` or
+`not_useful`; `--executed` when you carried it out. It is recorded with
+your name (`diagnosis.feedback`), outside the agent, and refused for an
+activity without a report or a hypothesis it does not have.
 
 ## Cancelling an activity {#cancel}
 

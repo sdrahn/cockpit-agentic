@@ -5,7 +5,11 @@
 //
 // The last message decides the answer:
 //
-//	a tool result                  → text "done: <the result>"
+//	a tool result                  → text "done: <the result>", except:
+//	  the probe's, when the first user text has REPORT
+//	                                 → call report_diagnosis, quoting "probe ok"
+//	                                   (in the probe's output) and a line that is not
+//	  report_diagnosis's             → text "reported: <the result>"
 //	user text with PROBE           → call <prefix>__probe {}
 //	user text with CHANGE          → text with the reason, and call <prefix>__change {"value": "test"}
 //	user text with DELEGATE a t…   → call agents__delegate {"agent": a, "task": "t…"}
@@ -70,6 +74,38 @@ func (m *Model) Respond(req *request) message {
 		return text("ok")
 	}
 	last := req.Messages[len(req.Messages)-1]
+	first := ""
+	for _, msg := range req.Messages {
+		if msg.Role == "user" && msg.Content != nil {
+			first = *msg.Content
+			break
+		}
+	}
+	if last.Role == "tool" && answers(req.Messages, last.ToolCallID) == "report_diagnosis" {
+		c := ""
+		if last.Content != nil {
+			c = *last.Content
+		}
+		return text("reported: " + c)
+	}
+	if last.Role == "tool" && strings.Contains(first, "REPORT") && answers(req.Messages, last.ToolCallID) == m.Prefix+"__probe" &&
+		offered["report_diagnosis"] {
+		b, _ := json.Marshal(map[string]any{
+			"summary":    "The probe answers.",
+			"findings":   []any{map[string]any{"id": "f1", "text": "The probe said ok.", "evidence": []any{"e1"}}},
+			"hypotheses": []any{map[string]any{"id": "h1", "text": "The test server works.", "confidence": "high", "evidence": []any{"e1", "e2"}}},
+			"evidence": []any{
+				map[string]any{"id": "e1", "tool": m.Prefix + "__probe", "quote": "probe ok"},
+				map[string]any{"id": "e2", "tool": m.Prefix + "__probe", "quote": "probe failed"},
+			},
+			"plan": []any{map[string]any{"text": "Nothing to do.", "command": "true"}},
+		})
+		var tc toolCall
+		tc.ID = fmt.Sprintf("call_%d", m.n.Add(1))
+		tc.Type = "function"
+		tc.Function.Name, tc.Function.Arguments = "report_diagnosis", string(b)
+		return message{Role: "assistant", ToolCalls: []toolCall{tc}}
+	}
 	if last.Role == "tool" {
 		c := ""
 		if last.Content != nil {
@@ -112,6 +148,18 @@ func (m *Model) Respond(req *request) message {
 		return call("", m.Prefix+"__probe", map[string]any{})
 	}
 	return text("ok")
+}
+
+// answers is the tool the call with the id was for.
+func answers(msgs []message, id string) string {
+	for _, msg := range msgs {
+		for _, tc := range msg.ToolCalls {
+			if tc.ID == id {
+				return tc.Function.Name
+			}
+		}
+	}
+	return ""
 }
 
 func (m *Model) ServeHTTP(w http.ResponseWriter, r *http.Request) {
