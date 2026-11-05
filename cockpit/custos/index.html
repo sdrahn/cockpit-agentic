@@ -111,8 +111,10 @@
                 <h2>Model defaults for new agents</h2>
                 <p class="muted">The model a new agent's configuration starts with, blank or from a template
                 (<code>/etc/custos/defaults.yaml</code>, CONTRACT.md §14b). Each agent keeps the model in its own
-                configuration: changing the defaults changes no existing agent. Secrets are not kept here: a credential
-                is a name, and each agent gets its own secret (you are asked for it when you create one). Saving needs
+                configuration: changing the defaults changes no existing agent. Secrets are not kept here: the credential
+                is the name the key is stored under, such as <code>model-key</code>, never the key itself. Each agent
+                gets its own key, stored encrypted (you are asked for it when you create one). A model server that
+                needs no key needs no credential. Saving needs
                 administrative access.</p>
                 <div class="fields">
                     <label>Provider <select name="provider">
@@ -121,7 +123,7 @@
                         <option value="vertex">vertex: Google's Vertex AI</option></select></label>
                     <label>Model <input name="model" class="mono" placeholder="qwen3-32b" autocomplete="off"></label>
                     <label class="for-openai">Endpoint <input name="endpoint" class="mono" placeholder="http://127.0.0.1:8000/v1" autocomplete="off"></label>
-                    <label>Credential <input name="credential" class="mono" placeholder="model-key (optional for openai)" autocomplete="off"></label>
+                    <label>Credential name (not the key) <input name="credential" class="mono" placeholder="model-key (optional for openai)" autocomplete="off"></label>
                     <label>Temperature <input name="temperature" class="mono" inputmode="decimal" placeholder="the model's" autocomplete="off"></label>
                 </div>
                 <div class="actions">

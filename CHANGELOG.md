@@ -30,6 +30,14 @@ removed.
   `/run/agents`. It now removes it, and the page no longer lists a
   directory without a socket and without gateway data, which also
   clears what 0.2.0 left behind.
+- A key given as `model.credential`, where the name of the stored key
+  goes, made the agent fail with `no such file or directory`.
+  `agent-admin check`, `create`, `edit` and `defaults` now refuse a
+  value that looks like a key (`sk-…` and other keys' prefixes, or a long
+  string with many digits) without repeating it. After `create` and
+  `edit`, agent-admin says when the model's credential is not stored yet,
+  with the `set-credential` command. The agent's own error says the same,
+  and Cockpit's model defaults ask for the credential's name.
 
 ## v0.2.0 — 2026-11-05
 

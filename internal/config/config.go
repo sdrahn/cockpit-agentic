@@ -44,6 +44,40 @@ var credRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 // ValidCredential reports whether s is a valid credential name.
 func ValidCredential(s string) bool { return credRE.MatchString(s) }
 
+// secretPrefixes start the API keys of common model services and
+// proxies (OpenAI and LiteLLM sk-, Hugging Face, Groq, xAI, Perplexity,
+// NVIDIA, Replicate, GitHub, GitLab, Slack), in the lower case a
+// credential name allows.
+var secretPrefixes = []string{"sk-", "sk_", "pk-", "rk-", "hf_", "gsk_", "xai-", "pplx-", "nvapi-", "r8_",
+	"ghp_", "gho_", "github_pat_", "glpat-", "xoxb-", "xoxp-"}
+
+// LooksLikeSecret reports whether a credential name looks like the
+// secret itself: a key's prefix, or 32 characters or more with at least
+// eight digits. model.credential takes the name the secret is stored
+// under (agent-admin set-credential), never the secret.
+func LooksLikeSecret(s string) bool {
+	for _, p := range secretPrefixes {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	if len(s) < 32 {
+		return false
+	}
+	digits := 0
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			digits++
+		}
+	}
+	return digits >= 8
+}
+
+// SecretAsName says that a credential name looks like the secret, without
+// repeating it (it may be one: it must not reach a log).
+const SecretAsName = "model.credential looks like a key, not a name: it takes the name the key is stored under " +
+	"with agent-admin set-credential, such as model-key"
+
 // ValidName reports whether s is a valid agent name.
 func ValidName(s string) bool { return nameRE.MatchString(s) }
 
@@ -278,7 +312,11 @@ func (m Model) Check() error {
 		bad("model.credential: provider gemini needs an API key credential")
 	}
 	if m.Credential != "" && !ValidCredential(m.Credential) {
-		bad("model.credential: %q: want a credential name such as model-key", m.Credential)
+		if LooksLikeSecret(strings.ToLower(m.Credential)) {
+			bad("%s", SecretAsName)
+		} else {
+			bad("model.credential: %q: want a credential name such as model-key", m.Credential)
+		}
 	}
 	return errors.Join(errs...)
 }

@@ -321,6 +321,8 @@
                              if (cmd === "defaults" && name === "--from") {
                                  const v = k => { const m = input.match(new RegExp("^  " + k + ": (.*)$", "m")); return m ? JSON.parse(m[1]) : undefined };
                                  if (!v("name")) return Promise.reject(new Error("agent-admin: defaults: model.name: missing")).then(ok, bad);
+                                 if (/^sk-/.test(v("credential") || "")) return Promise.reject(new Error("agent-admin: defaults: model.credential looks like a key, " +
+                                     "not a name: it takes the name the key is stored under with agent-admin set-credential, such as model-key")).then(ok, bad);
                                  defaults.model = { provider: v("provider"), name: v("name"), endpoint: v("endpoint"), credential: v("credential") };
                              }
                              if (cmd === "set-credential") credentials[name + "." + arg] = input;

@@ -148,16 +148,21 @@ func checkName(name string) error {
 
 // Check validates a configuration file (or an agent's) without changing anything.
 func (a *Admin) Check(target string) error {
+	var cfg *config.Config
+	var err error
 	if config.ValidName(target) {
-		_, err := config.Load(a.agentDir(target))
-		return err
+		cfg, err = config.Load(a.agentDir(target))
+	} else {
+		var b []byte
+		if b, err = a.readFrom(target); err != nil {
+			return err
+		}
+		cfg, err = config.Parse(b)
 	}
-	b, err := a.readFrom(target)
 	if err != nil {
 		return err
 	}
-	_, err = config.Parse(b)
-	return err
+	return a.checkModelCredential(cfg)
 }
 
 // readFrom reads a configuration from a file, or from In for "-" (as a
@@ -185,7 +190,7 @@ func (a *Admin) Create(name, from string) error {
 }
 
 // create installs a new agent from its configuration.
-func (a *Admin) create(name string, b []byte) error {
+func (a *Admin) create(name string, b []byte) (err error) {
 	if err := checkName(name); err != nil {
 		return err
 	}
@@ -200,6 +205,14 @@ func (a *Admin) create(name string, b []byte) error {
 	if _, err := os.Stat(dir); err == nil {
 		return fmt.Errorf("agent %s exists", name)
 	}
+	if err := a.checkModelCredential(cfg); err != nil {
+		return err
+	}
+	defer func() {
+		if err == nil {
+			a.noteModelCredential(cfg)
+		}
+	}()
 	user := "agent-" + name
 	sysusers := fmt.Sprintf("# agent-admin: the user of agent %[1]s (CONTRACT.md §2)\nu %[2]s - \"Custos agent %[1]s\" /var/lib/agents/%[1]s /usr/sbin/nologin\nm %[2]s mcp-users\nm %[2]s agent-clients\n", name, user)
 	sf := a.p(filepath.Join(SysusersDir, user+".conf"))
@@ -385,7 +398,7 @@ func (a *Admin) createSandbox(cfg *config.Config, image string) error {
 // Edit replaces an agent's configuration and applies it: a systemd agent
 // restarts if it runs; an OpenShell agent gets the change in its sandbox
 // (editOpenShell). The backend and the OpenShell gateway stay as created.
-func (a *Admin) Edit(name, from string) error {
+func (a *Admin) Edit(name, from string) (err error) {
 	if err := checkName(name); err != nil {
 		return err
 	}
@@ -405,6 +418,14 @@ func (a *Admin) Edit(name, from string) error {
 	if err != nil {
 		old = nil // the sandbox's inputs count as changed
 	}
+	if err := a.checkModelCredential(cfg); err != nil {
+		return err
+	}
+	defer func() {
+		if err == nil {
+			a.noteModelCredential(cfg)
+		}
+	}()
 	if old != nil && old.Sandbox.Kind != cfg.Sandbox.Kind {
 		return fmt.Errorf("sandbox.kind: agent %s runs with %s, not %s; delete and create it to change the backend", name, old.Sandbox.Kind, cfg.Sandbox.Kind)
 	}
@@ -654,6 +675,48 @@ func (a *Admin) SetCredential(name, cred string, secret io.Reader) error {
 		return err
 	}
 	return nil
+}
+
+// credentialStored reports whether the agent's credential cred is in
+// the credential store; known is false when that cannot be told (not
+// root: the store is root's alone).
+func (a *Admin) credentialStored(name, cred string) (stored, known bool) {
+	_, err := os.Stat(a.p(filepath.Join(CredstoreDir, "agent-"+name+"."+cred)))
+	switch {
+	case err == nil:
+		return true, true
+	case errors.Is(err, os.ErrNotExist):
+		return false, true
+	}
+	return false, false
+}
+
+// checkModelCredential refuses a model.credential that looks like the
+// secret itself (config.LooksLikeSecret) unless a credential of that name
+// is stored: a key written into agent.yaml is no credential, and the
+// agent would not start. When the store cannot be read, it lets it pass.
+func (a *Admin) checkModelCredential(cfg *config.Config) error {
+	c := cfg.Model.Credential
+	if c == "" || !config.LooksLikeSecret(c) {
+		return nil
+	}
+	if stored, known := a.credentialStored(cfg.Name, c); stored || !known {
+		return nil
+	}
+	return errors.New(config.SecretAsName)
+}
+
+// noteModelCredential says what an agent still needs when its model's
+// credential is not stored yet: it does not start without it.
+func (a *Admin) noteModelCredential(cfg *config.Config) {
+	c := cfg.Model.Credential
+	if c == "" {
+		return
+	}
+	if stored, known := a.credentialStored(cfg.Name, c); known && !stored {
+		fmt.Fprintf(a.Out, "agent %[1]s: its model credential %[2]s is not stored yet, and the agent does not start without it: "+
+			"agent-admin set-credential %[1]s %[2]s (the secret on stdin)\n", cfg.Name, c)
+	}
 }
 
 // GatewayData is data.mcp.agents.<name> (§6).

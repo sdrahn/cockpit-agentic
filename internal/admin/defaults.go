@@ -78,6 +78,10 @@ func (a *Admin) SetDefaults(b []byte) error {
 	if err != nil {
 		return err
 	}
+	if d.Model != nil && config.LooksLikeSecret(d.Model.Credential) {
+		// The file is everyone's to read (agent-admin draft as anyone).
+		return fmt.Errorf("defaults: %s", config.SecretAsName)
+	}
 	if d.Model == nil {
 		if err := os.Remove(a.p(DefaultsFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err

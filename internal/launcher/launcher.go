@@ -170,10 +170,21 @@ func gatewayTransport(cfg *config.Config) mcp.Transport {
 func newModel(ctx context.Context, cfg *config.Config, creds string) (model.LLM, error) {
 	key := ""
 	if c := cfg.Model.Credential; c != "" {
-		if creds == "" {
-			return nil, fmt.Errorf("model.credential %q: no credentials directory (ImportCredential=agent-%s.*)", c, cfg.Name)
+		// Without a stored credential systemd may set up no credentials
+		// directory at all (ImportCredential=agent-%i.* matched nothing).
+		var b []byte
+		err := os.ErrNotExist
+		if creds != "" {
+			b, err = os.ReadFile(filepath.Join(creds, "agent-"+cfg.Name+"."+c))
 		}
-		b, err := os.ReadFile(filepath.Join(creds, "agent-"+cfg.Name+"."+c))
+		if errors.Is(err, os.ErrNotExist) {
+			// The name may be the key itself: it must not reach the journal.
+			if config.LooksLikeSecret(c) {
+				return nil, errors.New(config.SecretAsName)
+			}
+			return nil, fmt.Errorf("model.credential %[1]s is not stored for agent %[2]s: "+
+				"agent-admin set-credential %[2]s %[1]s (the secret on stdin)", c, cfg.Name)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("model.credential: %w", err)
 		}
