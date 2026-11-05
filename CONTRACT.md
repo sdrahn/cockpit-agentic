@@ -428,8 +428,11 @@ at once (blast radius), need the fleet, which is parked (O13). An
 envelope part that the installed gateway cannot enforce makes `promote`
 fail rather than be ignored.
 Undoing an action (a snapshot rollback, say) is tool-specific and not
-part of the envelope. A rollback condition demotes the category; telling
-the approvers is open (O11).
+part of the envelope. A rollback condition demotes the category. The
+control plane shows the approvers each automatic demotion of the last
+week (the evaluator's `category.demoted` records, root's only, §10);
+telling them through mcp-gateway's notification channels needs
+mcp-gateway (O11).
 
 ### Observation, override rate and readiness
 
@@ -1481,9 +1484,14 @@ inherited, not specified again.
   categories, and the Cockpit page's view of an agent's categories with
   their readiness, the actions to review, **Promote…** and **Demote**.
   Tested with OPA against the gateway's policy, in the functional tests
-  and in a real Cockpit. Open: telling the approvers of an automatic
-  demotion; reviews by the gateway's approvers rather than by root; and
-  in the measures: the agent data in force at a call's time, emergency
+  and in a real Cockpit; the Cockpit page shows the approvers the
+  automatic demotions of the last week (Approvals tab) and marks such a
+  category in the agent's view. Open, as requirements for mcp-gateway:
+  telling the approvers of an automatic demotion through its
+  notification channels (a notice API for Custos), and reviews of
+  autonomous actions by the gateway's approvers rather than by root, as
+  a gateway feature (it already authenticates approvers and decides who
+  may approve an agent's calls). Open in Custos: in the measures: the agent data in force at a call's time, emergency
   stops as incidents, the envelope's size, and the proposals behind each
   number.
 - **O12 — envelope limits in the gateway.** A per-agent, per-category

@@ -102,7 +102,11 @@ later.
 The pending calls, each with the gateway's half and the agent's half,
 and the buttons for the scopes the gateway offers
 ([chapter 7](07-approvals.md#cockpit)). *Decided today* lists the day's
-decisions from the journal.
+decisions from the journal. *Demoted automatically* appears when the
+demotion evaluator set a task category back to supervised in the last
+7 days: the agent, the category, when and why; its changes wait for your
+approval again ([chapter 6](06-permissions-and-modes.md#auto-demote)).
+Both need access to the journal (`systemd-journal` or `wheel`).
 
 ## Agents tab {#agents}
 

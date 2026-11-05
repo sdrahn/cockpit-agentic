@@ -357,6 +357,10 @@ demotion is recorded as `category.demoted` by `custos-demote`, with the
 trigger as the reason. Run the evaluator by hand with `agent-admin
 evaluate`, which prints each demotion. A demotion stops what follows; it
 does not undo what ran (for that, a snapshot, say, is the tool's).
+Cockpit shows the automatic demotions of the last week on the Approvals
+tab, and the category in the agent's view says it was demoted
+automatically ([chapter 8](08-cockpit.md#approvals)); mcp-gateway's
+notifications (desktop, mail, webhooks) do not carry them yet.
 
 ## How the gateway applies modes {#how-enforced}
 

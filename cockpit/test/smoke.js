@@ -683,6 +683,19 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.click("#owners button:text-is('Save owners')");
     await page.waitForFunction(() => document.querySelector("#error") && !document.querySelector("#error").hidden);
     check((await page.textContent("#error")).includes("an agent never approves"), "an agent as owner is refused, with agent-admin's reason");
+    // Automatic demotions (O11): approvers see them on the Approvals tab,
+    // and the agent's view marks the category; an agent's own record is
+    // not shown.
+    await page.goto(url + "?demoted#/approvals");
+    await page.waitForSelector("#demotion-disk-watch-security-response");
+    const dem = await page.textContent("#demotions");
+    check(dem.includes("Demoted automatically") && dem.includes("override rate 7.1 % above 5.0 %") && !dem.includes("forged"),
+          "the Approvals tab lists automatic demotions from root's records only");
+    check((await spawned("journalctl --no-pager --since -7d -o json _UID=0 SYSLOG_IDENTIFIER=custos-promotion AGENT_EVENT=category.demoted AGENT_BY=custos-demote")).every(c => c[4] === ""),
+          "they are read as the person");
+    await page.click("#demotion-disk-watch-security-response button");
+    await page.waitForSelector("#category-security-response .demoted-auto");
+    check((await page.textContent("#category-security-response")).includes("demoted automatically"), "the agent's category says it was demoted automatically");
     // The host's enablement state (§6b): which categories it may use;
     // disabled ones are not promoted; Enable… through the root bridge.
     await page.goto(url + "?diag#/agents/disk-watch");
