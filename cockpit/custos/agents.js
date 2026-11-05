@@ -254,8 +254,11 @@ function diagnosticsEvidence(box, r) {
     box.append(el("div", { id: "diagnostics-evidence" },
         el("h3", null, "Diagnostics evidence"),
         el("p", { class: "muted" }, "What this agent's diagnosis reports showed in the last " + days + " days, and what people " +
-           "said of them (agent-admin feedback). It is the first evidence for a category enabled later; it is shown, not counted " +
-           "in the readiness above."),
+           "said of them (agent-admin feedback). " + (r.diagnostics_apply
+            ? "This host started diagnostics-only, so it counts in every category's readiness above: at least " +
+              ((r.thresholds && r.thresholds.diagnostics_feedback) || 0) + " reports with feedback, and at least " +
+              pctText((r.thresholds && r.thresholds.diagnostics_confirmed_rate) || 0) + " of the decided hypotheses confirmed."
+            : "This host did not start diagnostics-only: it is shown, not counted in the readiness above.")),
         el("ul", null,
             el("li", null, d.reports + (d.reports === 1 ? " report, " : " reports, ") + d.hypotheses + " hypotheses; " +
                d.verified_quotes + " of " + d.quotes + " quotes verified by Custos"),

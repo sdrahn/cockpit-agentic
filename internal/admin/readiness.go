@@ -36,8 +36,11 @@ func (a *Admin) Thresholds() (readiness.Thresholds, error) {
 	switch {
 	case th.ObservationDays < 0, th.Proposals < 0, th.WindowDays < 1:
 		return th, fmt.Errorf("%s: observation_days and proposals are 0 or more, window_days 1 or more", PromotionConfig)
-	case th.OverrideRate < 0 || th.OverrideRate > 1, th.IncidentRate < 0 || th.IncidentRate > 1:
-		return th, fmt.Errorf("%s: override_rate and incident_rate are fractions from 0 to 1 (0.05 is 5 %%)", PromotionConfig)
+	case th.OverrideRate < 0 || th.OverrideRate > 1, th.IncidentRate < 0 || th.IncidentRate > 1,
+		th.DiagnosticsConfirmedRate < 0 || th.DiagnosticsConfirmedRate > 1:
+		return th, fmt.Errorf("%s: override_rate, incident_rate and diagnostics_confirmed_rate are fractions from 0 to 1 (0.05 is 5 %%)", PromotionConfig)
+	case th.DiagnosticsFeedback < 0:
+		return th, fmt.Errorf("%s: diagnostics_feedback is 0 or more", PromotionConfig)
 	}
 	return th, nil
 }
@@ -48,8 +51,10 @@ type Report struct {
 	Thresholds readiness.Thresholds          `json:"thresholds"`
 	Categories map[string]readiness.Measures `json:"categories"`
 	// Diagnostics is the agent's diagnostics history over the window
-	// (§6b): evidence shown with the readiness, not a threshold.
-	Diagnostics readiness.Diagnostics `json:"diagnostics"`
+	// (§6b). DiagnosticsApply: the host started diagnostics-only, so it
+	// is part of every category's readiness (diagnostics' own aside).
+	Diagnostics      readiness.Diagnostics `json:"diagnostics"`
+	DiagnosticsApply bool                  `json:"diagnostics_apply"`
 }
 
 // Readiness measures an agent's categories (or one), from the agent's
@@ -77,8 +82,20 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 		return nil, err
 	}
 	r := &Report{Agent: name, Thresholds: th, Categories: map[string]readiness.Measures{}, Diagnostics: readiness.DiagnosticsOf(recs)}
+	// A host has an enablement state only when it started diagnostics-only
+	// (§6b): there, what the diagnostics agent did is part of readiness.
+	e, err := a.GetEnablement()
+	if err != nil {
+		return nil, err
+	}
+	r.DiagnosticsApply = e != nil
 	for _, c := range cats {
-		r.Categories[c] = readiness.Measure(c, d.Permissions, recs, decisions, th, now)
+		m := readiness.Measure(c, d.Permissions, recs, decisions, th, now)
+		if r.DiagnosticsApply && c != Diagnostics {
+			m.Unmet = append(m.Unmet, r.Diagnostics.Unmet(th)...)
+			m.Ready = len(m.Unmet) == 0
+		}
+		r.Categories[c] = m
 	}
 	return r, nil
 }

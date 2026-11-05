@@ -246,8 +246,9 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     const dev = await page.textContent("#diagnostics-evidence");
     check(dev.includes("12 reports, 19 hypotheses; 28 of 31 quotes verified by Custos") &&
           dev.includes("8 of 12 reports with feedback: 9 hypotheses confirmed, 1 rejected, 2 unsure (90.0 % confirmed)") &&
-          dev.includes("plans: 6 useful, 1 not useful, 5 carried out") && dev.includes("not counted"),
-          "the diagnostics evidence: reports, verified quotes, feedback, plans; shown, not counted");
+          dev.includes("plans: 6 useful, 1 not useful, 5 carried out") &&
+          dev.includes("counts in every category's readiness above: at least 10 reports with feedback, and at least 70.0 %"),
+          "the diagnostics evidence: reports, verified quotes, feedback, plans; counted on a host that started diagnostics-only");
     check((await page.textContent("#category-config-lifecycle")).includes("ready") &&
           !(await page.textContent("#category-config-lifecycle")).includes("not ready"), "a ready category");
     const sec = await page.$eval("#category-security-response", r => [...r.cells].map(c => c.textContent));

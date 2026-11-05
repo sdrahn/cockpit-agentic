@@ -98,6 +98,13 @@ removed.
   stores its key from a file and installs the playbooks' exec commands;
   idempotent, one line per step.
 
+- On a host that started diagnostics-only, the agent's diagnostics
+  history counts in readiness (CONTRACT.md §6a, §6b): a category is
+  ready only with at least 10 diagnosis reports with feedback and 70 %
+  of the decided hypotheses confirmed (`diagnostics_feedback`,
+  `diagnostics_confirmed_rate` in `/etc/custos/promotion.yaml`), so
+  `promote` follows them; Cockpit says so.
+
 - Cockpit shows a diagnostics-only host's enablement state on the Agents
   tab (enabled and disabled categories, who changed it, a state changed
   outside agent-admin), with **Enable…**; a disabled category is marked

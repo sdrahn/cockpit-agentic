@@ -228,11 +228,20 @@ shows what the agent's diagnosis reports showed over the same window:
 how many reports, how many of their quotes Custos verified, how many you
 gave feedback on, how many hypotheses you confirmed, rejected or were
 unsure of, and what you said of the plans
-([chapter 9](09-administration.md#reports)). On a host that started
-diagnostics-only, this is the first evidence for a category you enable
-later. It is shown next to the readiness, not counted in it. Only
-feedback given as root (`agent-admin feedback`, or Cockpit with
-administrative access) counts.
+([chapter 9](09-administration.md#reports)). Only feedback given as
+root (`agent-admin feedback`, or Cockpit with administrative access)
+counts.
+
+On a host that started diagnostics-only, this history is part of every
+category's readiness (but `diagnostics`' own): a category you enabled is
+ready only when the agent also has at least 10 reports with your
+feedback in the window, and you confirmed at least 70 % of the hypotheses
+you confirmed or rejected. Set them in `/etc/custos/promotion.yaml`
+(`diagnostics_feedback`, `diagnostics_confirmed_rate`; 0 turns either
+off). Only the agent's own history counts: an agent you create later
+earns its own by running playbooks, or you promote it despite its
+readiness, with a reason. On a host installed with the full capability
+the history is shown, not counted.
 
 ## Promoting a category {#promote}
 

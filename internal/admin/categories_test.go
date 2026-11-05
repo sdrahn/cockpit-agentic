@@ -361,3 +361,77 @@ func TestPromoteWhenReady(t *testing.T) {
 		t.Errorf("record %v", r)
 	}
 }
+
+// withDiagnostics adds n diagnosis reports to a readiness journal, each
+// with one hypothesis and root's feedback: the first confirmed ones
+// confirmed, the others rejected.
+func withDiagnostics(read func(...string) ([]byte, error), at time.Time, n, confirmed int) func(...string) ([]byte, error) {
+	var lines []string
+	line := func(m map[string]any) string { b, _ := json.Marshal(m); return string(b) }
+	for i := 0; i < n; i++ {
+		inv, us := fmt.Sprintf("d-%d", i), strconv.FormatInt(at.Add(time.Duration(i)*time.Minute).UnixMicro(), 10)
+		verdict := "rejected"
+		if i < confirmed {
+			verdict = "confirmed"
+		}
+		lines = append(lines,
+			line(map[string]any{"AGENT_EVENT": "diagnosis.report", "AGENT_INVOCATION": inv, "_UID": "981", "__REALTIME_TIMESTAMP": us,
+				"AGENT_REPORT": `{"hypotheses":[{"id":"h1"}],"evidence":[{"verified":true}]}`}),
+			line(map[string]any{"AGENT_EVENT": "diagnosis.feedback", "AGENT_INVOCATION": inv, "_UID": "0", "__REALTIME_TIMESTAMP": us,
+				"AGENT_FEEDBACK": `{"hypotheses":{"h1":"` + verdict + `"}}`}))
+	}
+	return func(args ...string) ([]byte, error) {
+		b, err := read(args...)
+		for _, a := range args {
+			if a == "mcp-gateway.service" {
+				return b, err
+			}
+		}
+		return append(append(b, '\n'), []byte(strings.Join(lines, "\n"))...), err
+	}
+}
+
+// On a host that started diagnostics-only, the agent's diagnostics
+// history is part of every category's readiness (§6b); elsewhere not.
+func TestReadinessCountsDiagnostics(t *testing.T) {
+	a, _ := withCategories(t)
+	start := a.Now().AddDate(0, 0, -20)
+	ready := readinessJournal(60, 0, start) // every other threshold met
+	a.JournalJSON = ready
+	r, _ := a.Readiness("patch-pilot", "patch-errata")
+	if !r.Categories["patch-errata"].Ready || r.DiagnosticsApply {
+		t.Fatalf("without an enablement state: %+v", r)
+	}
+
+	writeFile(a.p(GatewayEnablement), []byte("_enablement:\n  state: categories\n  enabled: [diagnostics, patch-errata, config-lifecycle]\n"), 0o644)
+	r, _ = a.Readiness("patch-pilot", "patch-errata")
+	pe := r.Categories["patch-errata"]
+	if pe.Ready || !r.DiagnosticsApply || strings.Join(pe.Unmet, "; ") != "diagnosis reports with feedback 0 of 10; no hypothesis confirmed or rejected yet" {
+		t.Errorf("no history: %+v", pe)
+	}
+	a.JournalJSON = withDiagnostics(ready, start, 10, 6)
+	r, _ = a.Readiness("patch-pilot", "patch-errata")
+	if pe := r.Categories["patch-errata"]; pe.Ready || strings.Join(pe.Unmet, "; ") != "confirmed hypotheses 60.0 % below 70.0 %" {
+		t.Errorf("60 %% confirmed: %+v", pe)
+	}
+	a.JournalJSON = withDiagnostics(ready, start, 10, 8)
+	if r, _ = a.Readiness("patch-pilot", "patch-errata"); !r.Categories["patch-errata"].Ready {
+		t.Errorf("80 %% confirmed of 10: %+v", r.Categories["patch-errata"])
+	}
+	// promote follows readiness.
+	a.JournalJSON = withDiagnostics(ready, start, 10, 6)
+	if err := a.Promote("patch-pilot", "patch-errata", "alice", Promotion{Envelope: []byte(sat)}); err == nil || !strings.Contains(err.Error(), "confirmed hypotheses 60.0 %") {
+		t.Errorf("promote: %v", err)
+	}
+	// The site turns them off.
+	writeFile(a.p(PromotionConfig), []byte("diagnostics_feedback: 0\ndiagnostics_confirmed_rate: 0\n"), 0o644)
+	if r, _ = a.Readiness("patch-pilot", "patch-errata"); !r.Categories["patch-errata"].Ready {
+		t.Errorf("turned off: %+v", r.Categories["patch-errata"])
+	}
+	for _, bad := range []string{"diagnostics_feedback: -1\n", "diagnostics_confirmed_rate: 1.5\n"} {
+		writeFile(a.p(PromotionConfig), []byte(bad), 0o644)
+		if _, err := a.Readiness("patch-pilot"); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
