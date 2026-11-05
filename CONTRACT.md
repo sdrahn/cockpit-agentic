@@ -322,6 +322,18 @@ the host never writes itself:
   `/usr/share/mcp-gateway/policy/custos/agents.rego`. The gateway
   reloads the data within seconds of a change and tells agents that
   their tool lists changed.
+- Each denial the module causes has a reason (`deny_reasons`): the
+  agent is paused, the emergency stop, no agent data, an unknown mode, a
+  role bound to the agent's user, an issuer not trusted for agents. A
+  call that a permission of the agent data names but that is no
+  permission now is explained (`unmatched_reasons`): its task category is
+  not enabled on this host (§6b), a diagnostics permission that is not
+  read-only, an advisory agent. The gateway puts the reason in the
+  denial the agent receives and in its audit. With an mcp-gateway whose
+  policy does not take reasons from modules (before its requirement R1,
+  `docs/requirements/mcp-gateway-for-custos-0.3.md`), the decisions are
+  the same and the reasons read `denied by policy` or `no matching
+  permission`.
 
 **Showing the posture.** The control plane reads the agent data file
 for the mode, the pause flag and the permissions. It reads the gateway's
@@ -1564,9 +1576,9 @@ inherited, not specified again.
   the Cockpit report view with confidence, provenance and feedback, and
   running a playbook from an agent's view; the diagnostics evidence in
   readiness (§6b); `custos-setup` and the package `custos-diagnostics`
-  (§17a), tested on a fresh host in the functional tests. Open: sealing the enablement state against root (the TPM, say);
-  going back to `diagnostics-only` (one way is enough for now); and a
-  reason in the gateway's audit for a denial ("category not enabled"),
-  which needs mcp-gateway: requirement R1 in
-  `docs/requirements/mcp-gateway-for-custos-0.3.md`.
-  Sealing the state is not needed for 0.3.0 (detection is enough).
+  (§17a), tested on a fresh host in the functional tests; the reason in
+  the gateway's audit for a denial ("task category … is not enabled on
+  this host", §6), with mcp-gateway's R1. Open: sealing the enablement
+  state against root (the TPM, say); going back to `diagnostics-only`
+  (one way is enough for now). Sealing the state is not needed for
+  0.3.0 (detection is enough).

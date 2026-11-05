@@ -9,6 +9,14 @@ removed.
 
 ### Added
 
+- The gateway's denials of an agent's call say why (with mcp-gateway's
+  `deny_reasons` and `unmatched_reasons`, its requirement R1): "task
+  category patch-errata is not enabled on this host (diagnostics-only):
+  agent-admin enable patch-errata", "the agent is paused", "the
+  emergency stop is in effect", "the agent is advisory" and the others,
+  in the agent's error and the gateway's audit, instead of "denied by
+  policy" or "no matching permission" (user guide chapter 12). An older
+  mcp-gateway decides the same and keeps its generic reasons.
 - The rollback condition `tool_error` and the incident rate take each
   call's outcome from the gateway's audit (mcp-gateway's `mcp-result`,
   its requirement R2): a call the gateway saw fail (a tool error, an

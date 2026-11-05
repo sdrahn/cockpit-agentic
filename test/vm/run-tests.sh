@@ -942,11 +942,17 @@ section "Diagnostics-only (release gate)"
 # out of it, and its result is the broader install's.
 # opa_effect <agent> <tool>: the decision of the gateway's OPA for a call
 # of custos-test's tool by the agent (the input the gateway gives it).
-opa_effect() {
+opa_decision() {
 	jq -nc --arg a "agent-$1" --arg t "$2" '{input: {principal: {sub: $a, uid: 990, groups: [$a, "mcp-users"], transport: "unix", session_id: "s"},
 		action: "tools.call", resource: {server: "custos-test", kind: "tool", name: $t}, args: {}, grants: []}}' |
-		curl -sS --max-time 10 --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/authz/decision -d @- | jq -r '.result.effect // "none"'
+		curl -sS --max-time 10 --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/authz/decision -d @-
 }
+opa_effect() { opa_decision "$@" | jq -r '.result.effect // "none"'; }
+# reason_is <agent> <tool> <reason>: the reason of the OPA's denial.
+reason_is() { [ "$(opa_decision "$1" "$2" | jq -r '.result.reason // "none"')" = "$3" ]; }
+# The gateway names a module's reasons (deny_reasons, unmatched_reasons:
+# its requirement R1) when its shipped policy has them.
+gateway_reasons() { grep -rqs unmatched_reason /usr/share/mcp-gateway/policy/; }
 effect_is() { [ "$(opa_effect "$1" "$2")" = "$3" ]; }
 # change_asks <agent>: a CHANGE waits for an approval, which is declined.
 change_asks() {
@@ -994,6 +1000,17 @@ printf '%s\n' 'dg:' '  mode: supervised' '  permissions:' '    - {server: custos
 	'    - {server: custos-test, tool: change, category: patch-errata}' >"$dgdata"
 check "the gateway's OPA denies the disabled category's call" eventually 30 effect_is dg change deny
 check "the gateway's OPA allows the diagnostics call" effect_is dg probe allow
+if gateway_reasons; then
+	check "the denial's reason: the category is not enabled" reason_is dg change \
+		"task category patch-errata is not enabled on this host (diagnostics-only): agent-admin enable patch-errata"
+	check "a tool no permission names keeps \"no matching permission\"" reason_is dg wipe "no matching permission"
+	sed -i 's/^  mode: supervised$/  mode: supervised\n  paused: true/' "$dgdata"
+	check "a paused agent's denial says so" eventually 30 reason_is dg probe "the agent is paused (agent-admin resume)"
+	sed -i '/^  paused: true$/d' "$dgdata"
+	eventually 30 effect_is dg probe allow
+else
+	skip "the denial's reasons (this mcp-gateway's policy has no deny_reasons)"
+fi
 check "the gateway hides the disabled category's tool from the agent" eventually 30 runs_with dg CHANGE 'not offered: custos-test__change'
 # Tampering shows.
 cp "$enablement" "$work/enablement.yaml"
