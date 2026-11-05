@@ -23,6 +23,8 @@ terms the other chapters use.
 | the journal | the system | the audit record: the agents' records next to the gateway's |
 | the Cockpit page | `custos-cockpit` | where people watch, approve and intervene ([chapter 8](08-cockpit.md)) |
 | `agent-admin` | `custos` | the command that creates, changes and removes agents ([chapter 9](09-administration.md)) |
+| the demotion evaluator | `custos` | `custos-demote.timer`, as root and outside every agent: takes a task category's autonomy back when its override rate or its rollback conditions say so ([chapter 6](06-permissions-and-modes.md#auto-demote)) |
+| agent templates | `custos` | starting points for agents that look after one system, with their permissions ([chapter 9](09-administration.md#templates)) |
 
 An agent never holds a password, an API key of a system service, or a
 direct connection to a system tool. What it can change, it changes
@@ -50,7 +52,7 @@ an honest agent and makes the record richer.
 
 When an agent wants to change something, for example install patches:
 
-1. The model asks for the tool `zypp__install_patches`. The launcher
+1. The model asks for the tool `zypp__confirm_install`. The launcher
    writes a `tool.call` record to the journal with the model's stated
    reason (its *rationale*) and a digest of the arguments, never the
    arguments themselves.
@@ -71,13 +73,15 @@ When an agent wants to change something, for example install patches:
 
 | Term | Meaning |
 |---|---|
-| **agent** | one configured agent on the host, named like `patch-pilot` (lower-case letters, digits and `-`, 2–32 characters) |
+| **agent** | one configured agent on the host, named like `patch-pilot` (2–32 lower-case letters, digits and `-`, starting with a letter and ending with a letter or digit) |
 | **agent user** | the agent's system account `agent-<name>`, without a password, member of `mcp-users` and `agent-clients` |
 | **principal** | who the gateway sees: an agent is always `agent-<name>`, never the person who asked it |
 | **activity** | one unit of an agent's work: a chat turn, a scheduled run, a task from another agent or a program, with its tool calls |
 | **session user** | for whom an activity runs: a person (chat), `system:schedule`, `system:event`, or `agent-<other>` (delegation) |
 | **autonomy mode** | `advisory`, `supervised` (the default) or `bounded`: how far the agent may act without a person ([chapter 6](06-permissions-and-modes.md)) |
-| **permission** | one entry in the agent's gateway data naming a server and tool it may call, marked `read_only` or `autonomous` where that applies |
+| **permission** | one entry in the agent's gateway data naming a server and tool it may call, marked `read_only`, `autonomous` or with a `category` where that applies |
+| **task category** | a kind of work, such as `patch-errata`, whose permissions are promoted together: within the windows of its **envelope** they run without an approval, until it is demoted ([chapter 6](06-permissions-and-modes.md#categories)) |
+| **template** | a shipped starting point for an agent: configuration, permissions and mode ([chapter 9](09-administration.md#templates)) |
 | **approval** | the gateway's hold on one call until a person decides; its id looks like `a-6c88df4c…` |
 | **supervisor** | a person in the group `agent-clients`, who can see the agents and chat with them |
 | **sandbox backend** | where an agent runs: `systemd` (the default) or `openshell` ([chapter 11](11-openshell.md)) |

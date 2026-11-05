@@ -12,7 +12,7 @@ the programs print it, to its section. Two commands tell most of the
 story:
 
 ```bash
-journalctl -u agent@NAME.service -t agent-NAME --since -30min     # the agent: its unit and its records
+journalctl -u agent@NAME.service --since -30min                  # the agent: its unit, its errors and its records
 journalctl -u mcp-gateway.service --since -30min                 # the gateway: decisions and refusals
 ```
 
@@ -37,6 +37,8 @@ journalctl -u mcp-gateway.service --since -30min                 # the gateway: 
 | `model.provider: missing`, `model.provider: "…": want gemini, vertex or openai` | set the provider ([chapter 5](05-configuration.md#models)) |
 | `model.endpoint: "…": want an http(s) URL` | a full URL, `http://127.0.0.1:8000/v1` |
 | `model.endpoint: only for provider openai` | remove it for `gemini` and `vertex` |
+| `model.name: missing` | name the model, `model.name: qwen3-32b` |
+| `model.credential: "…": want a credential name such as model-key` | `credential` is the name of a stored secret, not the key: `set-credential NAME model-key` and `model.credential: model-key` |
 | `model.credential: provider gemini needs an API key credential` | `set-credential NAME model-key` and `model.credential: model-key` |
 | `instruction and instruction_file: set one of them` | keep one |
 | `gateway.servers: name at least one gateway server` | list the servers the model uses |
@@ -45,10 +47,14 @@ journalctl -u mcp-gateway.service --since -30min                 # the gateway: 
 | `gateway.url: "…": want an https URL (http only on the host's loopback, for tests)` | `https://host.openshell.internal:8443/mcp` |
 | `gateway.url: an openshell agent reaches the gateway over HTTPS (CONTRACT.md §3a)` | add `gateway.url` |
 | `gateway.oauth: only with sandbox kind openshell (OpenShell's gateway mints the tokens)` | remove `oauth`, or use the `openshell` backend |
+| `gateway.oauth.token_url: …`, `gateway.oauth.client_id: …`, `gateway.oauth.scopes: …`, `gateway.oauth.refresh_before_seconds: want 0 or more` | the agent's OAuth client ([chapter 11](11-openshell.md#configuration)) |
 | `schedules[N].name: "…": want a unique lower-case name` | rename the schedule |
 | `schedules[N].on_calendar: want a systemd calendar expression (systemd.time(7))` | test it with `systemd-analyze calendar '…'` |
+| `schedules[N].prompt: missing` | give the schedule its prompt |
+| `limits.…: N: must be positive`, `sessions.retention_days: must be positive` | a positive number, or leave it out for the default |
 | `client_tools: "…": want deny or {allow: [...]}` | `client_tools: deny` |
 | `sandbox.kind: "…": want systemd or openshell` | fix the kind |
+| `sandbox.openshell_gateway: only for kind openshell` | remove it for a systemd agent |
 | an unknown key (`field … not found`) | remove or correct the key: unknown keys are errors |
 
 ## An agent does not start or answer {#agent-start}
@@ -160,6 +166,13 @@ anyway. Check in this order:
 | *The gateway's records are not readable here* (Audit) | no access to the gateway's journal | as above |
 | `Approving your own request needs your password: …` | the approval is the person's own, which only `self` allows | use mcp-gateway's page or its command line, which ask for the password |
 | an agent shows *unreachable* | its socket refused the person, or the agent failed | the row says why; see [above](#agent-start) |
+| `mcp-gateway is not running (/run/mcp-gateway/control.sock not found).`, `No access to mcp-gateway's control socket (…).` | the gateway is down, or the person may not use its control socket | `systemctl status mcp-gateway.service`; mcp-gateway's documentation for its socket's group |
+| `Approval … is no longer pending (decided elsewhere, or timed out).` | someone else decided it, or it expired | none: the list refreshes |
+| `Cancelling … failed: only its user, who started it, or an administrator may` | the activity is someone else's | ask its user, or turn on administrative access |
+| `Reading it needs administrative access (turn it on in Cockpit's top bar).` (Edit configuration) | `agent.yaml` is readable by root and the agent only | turn on administrative access |
+| `This agent does not offer chat (interaction.agui is off).` | the agent's configuration | `interaction: {agui: true}` ([chapter 5](05-configuration.md#interaction)) |
+| `The agent did not answer: …` (chat) | the agent failed or does not answer | the text says why; see [above](#agent-start) |
+| a template listed as `(cannot be used: …)` in **Start from** | the template names a category the catalog lacks, or a file of it is wrong | the text says which; fix or hide the template in `/etc/custos/templates` ([chapter 9](09-administration.md#templates)) |
 
 ## A promoted category still asks for an approval {#promotion}
 
@@ -175,6 +188,7 @@ anyway. Check in this order:
 | You see | Cause | Fix |
 |---|---|---|
 | `importing the provider profile: …`, or `Unknown gateway` from `openshell` | OpenShell's gateway is not registered for root, or has another name | copy the registration to `/root/.config/openshell` ([chapter 11](11-openshell.md#install-openshell)); `sandbox.openshell_gateway` |
+| `configuring the token's renewal: …` | OpenShell refused the renewal settings for the provider | the text after the colon is OpenShell's; check `gateway.oauth` and the OpenShell version ([chapter 11](11-openshell.md#oauth)) |
 | `minting the first token (the issuer refused the client?): …` | wrong client id or secret, or the client lacks the client credentials grant | fix the client at the identity provider; `set-credential` again |
 | a certificate error from the agent's calls | OpenShell does not trust the gateway's CA | `additional_ca_bundle` ([chapter 11](11-openshell.md#trust)) |
 | `401 invalid token` in the gateway's journal (`token rejected`) | wrong issuer or audience, expired, bad signature | the token's `iss` and `aud` must be `http.issuer` and `http.audience`; check with `mcp-gateway-admin setup http --token` |
@@ -184,7 +198,7 @@ anyway. Check in this order:
 | sandboxes fail to start with rootless Podman (`memory.swap.max`) | cgroup controllers not delegated to the user | the `user@.service` drop-in, then restart the user's manager ([chapter 11](11-openshell.md#install-openshell)) |
 | brief `500` errors, refused connections (`connect: permission denied`) or dropped ones (`EOF`) around a token renewal | OpenShell's proxy while it renews | none: the agent retries them, and reconnects; a dropped `tools/call` is not sent again (it may have run), so that activity fails and is started again |
 | `agent-openshell-start: sandbox agent-NAME is not Ready after 120s: …` in `journalctl -u agent-openshell@NAME.service`; the agent's socket does not answer | OpenShell did not get the sandbox *Ready* within 2 minutes. The text after the colon says why: `sandbox agent-NAME is Stopping` (a stop that does not finish), OpenShell's refusal of the start (`previous driver operation is still pending`, `sandbox must be Stopped…`), or `openshell does not know sandbox agent-NAME` | the unit tries again after 5 seconds (`Restart=on-failure`). If it keeps failing: `openshell sandbox get agent-NAME` and `openshell logs agent-NAME`. A sandbox OpenShell no longer knows is made again by `agent-admin set-credential` |
-| `sandbox … is still there … after its deletion` (edit) | OpenShell did not delete the old sandbox in 2 minutes | `openshell sandbox list`; delete it by hand, then `agent-admin edit` again |
+| `sandbox … is still there … after its deletion` (edit, set-credential) | OpenShell did not delete the old sandbox in 2 minutes | `openshell sandbox list`; delete it by hand, then `agent-admin edit` again |
 
 ## agent-admin says the gateway's policy did not load the change {#policy-not-loaded}
 
@@ -214,7 +228,7 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | any `version:`, `name:`, `model.`, `gateway.`, `schedules[…]`, `client_tools:`, `sandbox.kind:` message | [Configuration errors](#configuration-errors) |
 | `no task category "…" (the catalog has: …)` | the name is not in `agent-admin categories` ([chapter 6](06-permissions-and-modes.md#categories)) |
 | `agent … category … is not ready (…); see agent-admin readiness …, or promote with --despite-readiness --reason TEXT` | the measures are below the thresholds ([chapter 6](06-permissions-and-modes.md#readiness)): wait and keep approving, adjust `/etc/custos/promotion.yaml`, or promote with a reason |
-| `/etc/custos/promotion.yaml: …` | a key that is not `observation_days`, `proposals`, `override_rate`, `incident_rate` or `window_days`, or a rate outside 0 to 1 |
+| `/etc/custos/promotion.yaml: …` | a key that is not `observation_days`, `proposals`, `override_rate`, `incident_rate` or `window_days`; a rate outside 0 to 1; a negative `observation_days` or `proposals`; `window_days` below 1 |
 | `reading agent …'s journal`, `reading mcp-gateway's journal` | `agent-admin readiness` needs root or the `systemd-journal` group |
 | `agent … has no permission in category …` | give a permission `category:` first |
 | `agent … is advisory, which caps every category` | [A promoted category still asks](#promotion) |
@@ -226,7 +240,20 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | `agent …: no action … of activity … in category … ran without an approval in the last week` | the activity and call are not in `agent-admin review NAME CATEGORY`'s list: it had an approval, is older than a week, or belongs to another category |
 | `agent …: category … has not been promoted: its calls all had approvals` | only promoted categories have actions to review |
 | `agent-admin: custos-demote.timer could not be enabled …` | nothing demotes automatically: `systemctl enable --now custos-demote.timer` |
-| `envelope: no windows`, `envelope: windows[…]: …` | write at least one window: `days`, `from`, `to` (`HH:MM`, `from` before `to`), `tz` |
+| `envelope: no windows`, `envelope: windows[…]: …` | write at least one window: `days`, `from`, `to` (`HH:MM`, `from` before `to`), `tz` (an IANA zone such as `Europe/Berlin`) |
+| `envelope: unknown key "…"` | an envelope has `windows` and `rollback` only ([chapter 6](06-permissions-and-modes.md#promote)) |
+| `--despite-readiness needs --reason TEXT` | say why, with `--reason` |
+| `agent … category … is already bounded with this envelope` | nothing to do; give another envelope to change it |
+| `verdict "…": want ok or incident` | `ok` or `incident` |
+| `agent …: demoting …: …` (from `agent-admin evaluate`) | the evaluator could not demote the category: the text says why, often [the policy not loading](#policy-not-loaded) |
+| `no template "…" (agent-admin templates lists them)`, `"…" is not a valid template name` | `agent-admin templates` lists them ([chapter 9](09-administration.md#templates)) |
+| `template …: …` | a file of that template is wrong (in `/etc/custos/templates` your own): the text names the file and the problem |
+| `agent … was created, but setting the template's permissions failed (agent-admin permissions … < …): …` | the agent exists without permissions: run the `agent-admin permissions` command the message gives, once the cause is fixed |
+| `defaults: …`, `/etc/custos/defaults.yaml: …` | the model defaults are checked like `model:` ([chapter 5](05-configuration.md#model-defaults)) |
+| `the starting configuration is not valid: …` (`draft`, `create --template`) | the template's configuration with the model defaults does not check: fix the defaults or the template |
+| `"…" is not a valid credential name` | lower-case letters, digits, `-` and `_`, such as `model-key` ([chapter 5](05-configuration.md#model-credentials)) |
+| `…: empty` (`set-credential`) | nothing on stdin: pipe the secret in |
+| `sandbox.openshell_gateway: agent …'s sandbox is on OpenShell gateway "…"; delete and create it to move it` | the OpenShell gateway is fixed at `create` |
 | `permissions[…]: autonomous is for permissions without a category` | drop `autonomous`; promote the category instead |
 | `agent …: category … is not promoted` (demote) | it is supervised already |
 | `agent … exists` | the agent exists: `edit`, or `delete` first |
@@ -235,7 +262,7 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | `mode "…": want advisory, supervised or bounded` | [chapter 6](06-permissions-and-modes.md#modes) |
 | `permissions[N]: server missing`, `permissions[N]: unknown key "…"` | [chapter 6](06-permissions-and-modes.md#permissions) |
 | `…: no data for agent …` | the agent has no gateway data: recreate it, or `agent-admin delete` and `create` |
-| `the gateway's policy did not load the change within 20s` | [The gateway's policy does not take a change](#policy-not-loaded) |
+| `the gateway's policy did not load the change within 20s` | [agent-admin says the gateway's policy did not load the change](#policy-not-loaded) |
 | `agent … reaches the gateway by its socket; … is for OpenShell agents` | `gateway-token` and `gateway-client-secret` are for OpenShell agents |
 | `agent … has an OAuth client (gateway.oauth): set gateway-client-secret, OpenShell mints its tokens` | use `gateway-client-secret` |
 | `agent … has no OAuth client (gateway.oauth): set gateway-token` | use `gateway-token`, or add `gateway.oauth` |

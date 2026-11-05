@@ -45,7 +45,7 @@ sandbox: {kind: systemd}
 | `name` | yes | the agent's name: `^[a-z][a-z0-9-]{0,30}[a-z0-9]$`. It must match the directory and the `NAME` given to `agent-admin` |
 | `description` | no | one line shown in Cockpit |
 | `model` | yes | [the model](#models) |
-| `instruction` or `instruction_file` | one of them | the system instruction: inline text, or a file read at start (a relative path is relative to `/etc/custos/agents/<name>/`; put the file there yourself) |
+| `instruction` or `instruction_file` | no; at most one of them | the system instruction: inline text, or a file read at start (a relative path is relative to `/etc/custos/agents/<name>/`; put the file there yourself) |
 | `gateway` | yes | [the gateway and the tools shown](#gateway-keys) |
 | `limits` | no | [local limits](#limits) |
 | `interaction` | no | [chat](#interaction) |
@@ -59,9 +59,15 @@ sandbox: {kind: systemd}
 
 | Provider | Keys | Credential |
 |---|---|---|
-| `openai` | `name`, `endpoint` (an `http://` or `https://` URL ending in the API's base, such as `http://127.0.0.1:8000/v1`), `temperature` | optional API key (`credential`) |
+| `openai` | `name`, `endpoint` (an `http://` or `https://` URL ending in the API's base, such as `http://127.0.0.1:8000/v1`) | optional API key (`credential`) |
 | `gemini` | `name` (such as `gemini-2.5-flash`) | required: the Gemini API key (`credential`) |
 | `vertex` | `name` | none in the file: Google's Application Default Credentials and the project and location, from the environment ([below](#vertex)) |
+
+Every provider also takes `temperature` (a number; the model's own
+default if absent). `credential` is the **name** of a secret stored with
+`agent-admin set-credential`, such as `model-key`, never the key itself
+([below](#model-credentials)). An unknown key in `model:`, such as
+`api_key`, is refused.
 
 `openai` covers any server that implements OpenAI's chat completions
 with tool calls: vLLM, llama.cpp's server, Ollama's OpenAI endpoint,
@@ -111,8 +117,10 @@ shred -u /root/model-key.txt
 ```
 
 `set-credential` writes `/etc/credstore.encrypted/agent-patch-pilot.model-key`
-(root, 0600). The agent's unit imports it (`ImportCredential=agent-%i.*`)
-and the launcher reads it from `$CREDENTIALS_DIRECTORY`. Then set
+(root, 0600), encrypted with the host's key and, on a host with a TPM2,
+sealed to the TPM as well. The agent's unit imports it
+(`ImportCredential=agent-%i.*`): systemd decrypts it when the agent
+starts, and the launcher reads it from `$CREDENTIALS_DIRECTORY`. Then set
 `model.credential: model-key` and run `agent-admin edit`. The name is
 your choice (lower-case letters, digits, `-` and `_`, starting with a
 letter or digit), but `gateway-token` and `gateway-client-secret` are

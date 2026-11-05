@@ -29,14 +29,14 @@ nothing from the internet: Custos works air-gapped.
 
 | Package | Installs | Install it |
 |---|---|---|
-| `custos` | `agent-launcher`, `agent-admin`, the units, the gateway policy module, the `agents` server definition, the example agent | always |
+| `custos` | `agent-launcher`, `agent-admin`, the units (with `custos-demote.timer`, the demotion evaluator), the gateway policy module, the `agents` server definition, the task categories' catalog, the agent templates, the example agent, the OpenShell relay and image files | always |
 | `custos-selinux` | the SELinux module `custos` | where SELinux runs (pulled in automatically with `selinux-policy-targeted`) |
 | `custos-cockpit` | the Cockpit page *Custos* (`/usr/share/cockpit/custos`) | on hosts people supervise through Cockpit |
-| `custos-docs` | this guide and the contract, with a collection file for mcp-docs | where people or agents read the documentation on the host |
+| `custos-docs` | this guide and the contract, with a collection file for mcp-docs | where people or agents read the documentation on the host (pulled in automatically where `custos` and `mcp-docs` are both installed) |
 | `custos-tests` | the functional tests (openQA) | test systems only: they change the system for good |
 
-`custos` requires `mcp-gateway`. `custos-cockpit` requires
-`cockpit-bridge` and recommends `mcp-gateway-cockpit`, mcp-gateway's own
+`custos` requires `mcp-gateway`. `custos-cockpit` requires `custos` of
+the same version and `cockpit-bridge`, and recommends `mcp-gateway-cockpit`, mcp-gateway's own
 page, which is useful for the gateway's settings.
 
 ## Adding the repository {#repository}
@@ -68,8 +68,9 @@ Without Cockpit, leave out `custos-cockpit` and `cockpit`. On a host
 without SELinux, leave out the two `-selinux` packages.
 
 The packages create the group `agent-clients` (people who may supervise
-agents) and the directories `/etc/custos/agents`, `/var/lib/agents` and
-`/run/agents`. They install the autonomy policy as
+agents) and the directories `/etc/custos/agents`,
+`/etc/custos/categories.d`, `/etc/custos/templates` (your own
+categories and templates), `/var/lib/agents` and `/run/agents`. They install the autonomy policy as
 `/usr/share/mcp-gateway/policy/custos/agents.rego`, which mcp-gateway's
 policy engine loads together with the gateway's own policy, and the
 files `/etc/mcp-gateway/policy/agents/_control.yaml` (the emergency
@@ -150,5 +151,7 @@ zypper remove custos-cockpit custos-docs custos custos-selinux
 ```
 
 The agents' system users stay (uids are not reused while files may
-belong to them), and so do `/etc/mcp-gateway/policy/agents/_control.yaml`
-and `_http.yaml` if they were changed.
+belong to them). Changed `/etc/mcp-gateway/policy/agents/_control.yaml`
+and `_http.yaml` are kept as `.rpmsave`. Your own files stay where they
+are: `/etc/custos/defaults.yaml`, `/etc/custos/promotion.yaml` and what
+you put in `/etc/custos/categories.d` and `/etc/custos/templates`.

@@ -30,6 +30,16 @@ many policies), allow it first
 
 ## Step 2: the configuration {#step-2}
 
+If every agent on this host uses the same model server, set it once as
+the default for new agents; their configurations then start with it
+([chapter 5](05-configuration.md#model-defaults)):
+
+```bash
+agent-admin defaults --from - <<'EOF'
+model: {provider: openai, name: qwen3-32b, endpoint: "http://127.0.0.1:8000/v1"}
+EOF
+```
+
 Copy the example and adjust the model:
 
 ```bash
@@ -58,10 +68,27 @@ talks to it, and stops after 10 minutes without work.
 
 A new agent can do nothing yet: the gateway denies it every tool.
 
+### Or: from the template {#step-3-template}
+
+Custos also ships `patch-pilot` as a template, which goes further: a
+snapper snapshot before installing, and task categories
+([chapter 9](09-administration.md#templates)). Steps 2 to 4 are then one
+command; the configuration takes the model defaults, the permissions and
+the mode come from the template:
+
+```bash
+agent-admin draft patch-pilot --template patch-pilot     # look first
+agent-admin create patch-pilot --template patch-pilot
+```
+
+In Cockpit: *Agents*, **Create agent**, **Start from** *Patch pilot*.
+Then continue with [step 5](#step-5).
+
 ## Step 4: what the agent may do {#step-4}
 
 List the permissions. The example's file allows reading package and unit
-state, and installing patches, which needs an approval:
+state (`check_updates`, `search_packages`, `plan_install`), and
+installing a package (`confirm_install`), which needs an approval:
 
 ```bash
 cat /usr/share/custos/examples/patch-pilot/permissions.yaml
@@ -83,13 +110,13 @@ curl -s --unix-socket /run/agents/patch-pilot/api.sock http://agent/v1/activitie
   -X POST -d '{"prompt": "List the pending security patches.", "wait": true}' | jq '{state, summary}'
 ```
 
-The agent calls `zypp__list_updates` (read-only, allowed) and answers.
+The agent calls `zypp__check_updates` (read-only, allowed) and answers.
 The activity appears in the *Activity* tab.
 
 ## Step 6: a change, and its approval {#step-6}
 
 Ask for a change: *Install the pending security patches.* The agent
-calls `zypp__install_patches`. The gateway holds the call, and the
+calls `zypp__confirm_install`. The gateway holds the call, and the
 activity shows **waiting for approval**. In the *Approvals* tab, a
 person who may approve ([chapter 7](07-approvals.md)) sees:
 
