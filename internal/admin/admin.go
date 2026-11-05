@@ -75,6 +75,8 @@ type Admin struct {
 	// HealthCheck runs a rollback health check (sh -c, as root); nil:
 	// runHealthCheck.
 	HealthCheck func(cmd string) error
+	// By is the person, for the records of refusals (category.refused).
+	By string
 }
 
 // New is agent-admin on a host. Its standard output is its own messages
@@ -814,6 +816,9 @@ func (a *Admin) SetPermissions(name string, from io.Reader) error {
 	if err != nil {
 		return err
 	}
+	if err := a.checkEnabled(name, "permissions", perms); err != nil {
+		return err
+	}
 	d, err := a.readGateway(name)
 	if err != nil {
 		return err
@@ -846,6 +851,9 @@ func (a *Admin) parsePermissions(b []byte) ([]map[string]any, error) {
 				}
 				if p["autonomous"] != nil {
 					return nil, fmt.Errorf("permissions[%d]: autonomous is for permissions without a category; a category is promoted with agent-admin promote", i)
+				}
+				if c == Diagnostics && p["read_only"] != true {
+					return nil, fmt.Errorf("permissions[%d]: category diagnostics only reads: add read_only: true, or use another category", i)
 				}
 			default:
 				return nil, fmt.Errorf("permissions[%d]: unknown key %q", i, k)
@@ -1046,6 +1054,8 @@ func (a *Admin) Trigger(instance string) error {
 type Posture struct {
 	Agents  map[string]*GatewayData `json:"agents"`
 	Control Control                 `json:"control"`
+	// Enablement is the enablement state (§6b); absent: every category.
+	Enablement *Enablement `json:"enablement,omitempty"`
 }
 
 // Control is the emergency stop's state (_control.yaml, §8).
@@ -1096,6 +1106,12 @@ func (a *Admin) Show(names ...string) (*Posture, error) {
 		return nil, fmt.Errorf("%s: %w", a.p(GatewayStop), err)
 	}
 	p.Control = doc.Control
+	if p.Enablement, err = a.GetEnablement(); err != nil {
+		return nil, err
+	}
+	if p.Enablement != nil {
+		p.Enablement.Tampered = a.enablementTampered(p.Enablement)
+	}
 	return p, nil
 }
 

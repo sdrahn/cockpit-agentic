@@ -37,8 +37,10 @@
 # none by default): that issuer issues agent-<name> subjects to agents
 # only. Such a subject from any other issuer is denied everything.
 # data.mcp.agents._control.stopped (agents/_control.yaml, agent-admin
-# stop-all) denies every agent everything: the emergency stop. Agent
-# names start with a letter, so _control is no agent's.
+# stop-all) denies every agent everything: the emergency stop.
+# data.mcp.agents._enablement (agents/_enablement.yaml, agent-admin
+# enable) disables task categories (below). Agent names start with a
+# letter, so _control and _enablement are no agent's.
 package mcp.authz
 
 import rego.v1
@@ -66,7 +68,52 @@ agent_flags := ["read_only", "autonomous", "category"]
 
 perms contains q if {
 	some p in agent_data.permissions
+	permission_enabled(p)
 	q := agent_permission(p)
+}
+
+# Category enablement (CONTRACT.md §6b): data.mcp.agents._enablement
+# (agents/_enablement.yaml, agent-admin enable) says which task
+# categories this host may use at all. A permission of a disabled
+# category is no permission: its calls are denied in every mode, and
+# discovery does not show its tools. Without the data every category is
+# enabled; an unknown state enables none.
+enablement := object.get(data.mcp.agents, "_enablement", {})
+
+enablement_state := object.get(enablement, "state", "")
+
+permission_enabled(p) if {
+	not misdeclared_diagnostics(p)
+	category_usable(p)
+}
+
+# diagnostics only reads: a permission in it that is not read-only is
+# none.
+misdeclared_diagnostics(p) if {
+	p.category == "diagnostics"
+	not p.read_only == true
+}
+
+category_usable(_) if enablement_state == ""
+
+category_usable(p) if {
+	enablement_state == "diagnostics-only"
+	p.category == "diagnostics"
+}
+
+category_usable(p) if {
+	enablement_state == "categories"
+	not has_category(p)
+}
+
+category_usable(p) if {
+	enablement_state == "categories"
+	p.category == "diagnostics"
+}
+
+category_usable(p) if {
+	enablement_state == "categories"
+	p.category in object.get(enablement, "enabled", [])
 }
 
 agent_permission(p) := object.remove(p, agent_flags) if {

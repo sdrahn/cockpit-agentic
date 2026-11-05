@@ -241,6 +241,9 @@ func (a *Admin) CreateFromTemplate(name, tmpl, from string) error {
 	if err != nil {
 		return fmt.Errorf("template %s: permissions.yaml: %w", tmpl, err)
 	}
+	if err := a.checkEnabled(name, "create --template "+tmpl, perms); err != nil {
+		return fmt.Errorf("template %s: %w", tmpl, err)
+	}
 	if err := a.create(name, cfg); err != nil {
 		return err
 	}

@@ -62,7 +62,7 @@ func TestShippedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, n := range []string{"patch-errata", "security-response", "config-lifecycle"} {
+	for _, n := range []string{"patch-errata", "security-response", "config-lifecycle", "diagnostics", "compliance-audit"} {
 		if c[n].Title == "" {
 			t.Errorf("%s: missing or without a title: %v", n, c)
 		}

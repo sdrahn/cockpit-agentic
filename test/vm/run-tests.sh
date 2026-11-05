@@ -710,6 +710,79 @@ check "t1's gateway data is gone" not test -e /etc/mcp-gateway/policy/agents/t1.
 check "t1's state is gone" not test -e /var/lib/agents/t1
 check "t1's socket directory is gone (the Cockpit page lists /run/agents)" not test -e /run/agents/t1
 check "t1's schedule is gone" not systemctl is-enabled -q 'agent-schedule@t1_check.timer'
+
+section "Diagnostics-only (release gate)"
+# CONTRACT.md §6b: on a diagnostics-only host only the diagnostics
+# category is usable, enforced by the gateway; enable is the one action
+# out of it, and its result is the broader install's.
+# opa_effect <agent> <tool>: the decision of the gateway's OPA for a call
+# of custos-test's tool by the agent (the input the gateway gives it).
+opa_effect() {
+	jq -nc --arg a "agent-$1" --arg t "$2" '{input: {principal: {sub: $a, uid: 990, groups: [$a, "mcp-users"], transport: "unix", session_id: "s"},
+		action: "tools.call", resource: {server: "custos-test", kind: "tool", name: $t}, args: {}, grants: []}}' |
+		curl -sS --max-time 10 --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/authz/decision -d @- | jq -r '.result.effect // "none"'
+}
+effect_is() { [ "$(opa_effect "$1" "$2")" = "$3" ]; }
+# change_asks <agent>: a CHANGE waits for an approval, which is declined.
+change_asks() {
+	local id aid
+	id=$(start_activity "$1" CHANGE)
+	eventually 30 activity_state_is "$1" "$id" waiting_approval || return 1
+	aid=$(approval_of "$1" "$id")
+	gw "/v1/approvals/$aid" -X POST -d '{"decision":"deny","scope":"once"}' >/dev/null
+	eventually 30 activity_state_is "$1" "$id" finished
+}
+dg_perms() { printf '%s\n' '- {server: custos-test, tool: probe, read_only: true, category: diagnostics}' "$@" | agent-admin permissions dg; }
+enablement_is() { agent-admin show | jq -e ".enablement | $1" >/dev/null; }
+promotion_record() { journalctl -o json --no-pager --since "@$t0" SYSLOG_IDENTIFIER=custos-promotion "AGENT_EVENT=$1" | jq -e "select($2)" >/dev/null; }
+enablement=/etc/mcp-gateway/policy/agents/_enablement.yaml
+dgdata=/etc/mcp-gateway/policy/agents/dg.yaml
+check "the catalog has diagnostics and compliance-audit" bash -c "agent-admin categories | jq -e '.diagnostics.title and .\"compliance-audit\".title' >/dev/null"
+check "no enablement state before: every category enabled" not test -e "$enablement"
+agent-admin delete dg >/dev/null 2>&1
+check "agent-admin create dg" agent-admin create dg --from "$(config dg custos-test)"
+check "diagnostics refuses a permission that is not read-only" not dg_perms '- {server: custos-test, tool: change, category: diagnostics}'
+check "dg gets a diagnostics permission" dg_perms
+check "agent-admin diagnostics-only" agent-admin diagnostics-only
+check "show: diagnostics-only, recorded, not tampered" enablement_is \
+	'.state == "diagnostics-only" and .enabled == ["diagnostics"] and (.record | startswith("n-")) and (has("tampered") | not)'
+check "journal: categories.enabled by root" eventually 10 promotion_record categories.enabled '.AGENT_BY == "root" and (.AGENT_ENABLEMENT_TO | contains("diagnostics-only"))'
+check "diagnostics: PROBE runs" eventually 30 runs_with dg PROBE 'probe ok'
+check "agent-admin refuses a permission of a disabled category" not dg_perms '- {server: custos-test, tool: change, category: patch-errata}'
+check "agent-admin refuses a permission without a category" not dg_perms '- {server: custos-test, tool: change}'
+check "journal: category.refused, with the person" eventually 10 promotion_record category.refused '.AGENT_NAME == "dg" and .AGENT_CATEGORY == "patch-errata" and .AGENT_BY == "root"'
+check "agent-admin refuses a template of a disabled category" bash -c "agent-admin create pp --template patch-pilot 2>&1 | grep -q 'patch-errata.* not enabled'"
+check "no agent pp was created" not test -e /etc/custos/agents/pp
+# The gate: the gateway refuses the category even with its permission in
+# the agent's data, written past agent-admin as an administrator might.
+cp "$dgdata" "$work/dg.yaml"
+printf '%s\n' 'dg:' '  mode: supervised' '  permissions:' '    - {server: custos-test, tool: probe, read_only: true, category: diagnostics}' \
+	'    - {server: custos-test, tool: change, category: patch-errata}' >"$dgdata"
+check "the gateway's OPA denies the disabled category's call" eventually 30 effect_is dg change deny
+check "the gateway's OPA allows the diagnostics call" effect_is dg probe allow
+check "the gateway hides the disabled category's tool from the agent" eventually 30 runs_with dg CHANGE 'not offered: custos-test__change'
+# Tampering shows.
+cp "$enablement" "$work/enablement.yaml"
+sed -i 's/state: diagnostics-only/state: categories/' "$enablement"
+check "show reports an enablement state changed by hand" enablement_is '.tampered | length > 0'
+cp "$work/enablement.yaml" "$enablement"
+check "show: the restored state matches its record" enablement_is 'has("tampered") | not'
+# Enabling: one action, recorded; the category starts supervised.
+check "agent-admin enable patch-errata" agent-admin enable patch-errata
+check "journal: categories.enabled from diagnostics-only" eventually 10 promotion_record categories.enabled '.AGENT_ENABLEMENT_FROM | contains("diagnostics-only")'
+check "the gateway's OPA asks for the enabled category's call" eventually 30 effect_is dg change ask
+check "enabled, the category starts supervised: its change waits for an approval" change_asks dg
+# Every category enabled decides as a host without enablement state (the
+# broader install).
+check "agent-admin enable --all" agent-admin enable --all
+all="$(opa_effect dg probe) $(opa_effect dg change)"
+rm -f "$enablement"
+broader() { [ "$(opa_effect dg probe) $(opa_effect dg change)" = "$all" ] && [ "$all" = "allow ask" ]; }
+sleep 2
+check "every category enabled decides as the broader install: $all" eventually 30 broader
+cp "$work/dg.yaml" "$dgdata"
+check "agent-admin delete dg" agent-admin delete dg
+
 rm -f /etc/mcp-gateway/servers.d/custos-test.yaml /etc/mcp-gateway/servers.d/agents.yaml
 systemctl stop custos-fakemodel.service >/dev/null 2>&1
 

@@ -119,13 +119,15 @@ In Cockpit:
 A task category names a kind of work, such as `patch-errata`. An
 agent's autonomy is promoted one category at a time, never for the whole
 agent: promoting `patch-errata` changes nothing for `config-lifecycle`.
-The catalog ships three categories:
+The catalog ships these categories:
 
 | Category | For |
 |---|---|
+| `diagnostics` | reading host state, logs and metrics, and reporting: read-only permissions only, never promoted ([below](#diagnostics-only)) |
 | `patch-errata` | installing patches and errata, refreshing repositories |
 | `security-response` | responding to a security finding: isolating a service, rotating a credential, blocking an address |
 | `config-lifecycle` | changing configuration files; starting, stopping or restarting services |
+| `compliance-audit` | checking the system against a compliance profile and applying its remediations |
 
 `agent-admin categories` lists the catalog. To add a category, put a
 file in `/etc/custos/categories.d/`, for example `backups.yaml` with
@@ -144,6 +146,43 @@ A permission in a category is supervised until its category is
 promoted, whatever the agent's mode. `advisory` still caps everything.
 A permission without a category keeps the agent's mode and its
 `autonomous` flag, and `autonomous` cannot be combined with `category`.
+
+## Diagnostics-only hosts and enabling categories {#diagnostics-only}
+
+A host installed with the bundled health-check and diagnostics agent is
+**diagnostics-only**: only the `diagnostics` category can be used. The
+other categories are installed but disabled, and so are permissions
+without a category. The gateway enforces it: a call of a disabled
+category is denied in every mode, and the agent is not even shown its
+tools. `agent-admin` refuses to give an agent such a permission, to
+promote a disabled category, or to create an agent from a template that
+needs one; each refusal is in the journal (`category.refused`, with who
+tried).
+
+```bash
+agent-admin show | jq .enablement     # the state: diagnostics-only, or the enabled categories
+agent-admin enable patch-errata       # enable one category (or several)
+agent-admin enable --all              # every category: the full capability
+```
+
+`enable` is the one action out of diagnostics-only. It needs root (sudo
+or Cockpit's administrative access) and is recorded with who ran it
+(`categories.enabled`). An enabled category starts supervised, as on a
+host installed with the full capability: promote it later on the path
+below. What the diagnostics agent did until then is the first evidence
+for that. There is no way back to diagnostics-only.
+
+The state is `/etc/mcp-gateway/policy/agents/_enablement.yaml`. Change it
+only with `agent-admin enable`: `agent-admin show` compares it with its
+record in the journal and reports a state changed by hand
+(`"tampered": "the state differs from its record n-…"`). A host without
+the file (every host installed with the full capability) has every
+category enabled.
+
+`agent-admin diagnostics-only` makes a freshly installed host
+diagnostics-only; the installer's setup runs it. It refuses a host that
+has an enablement state already, or an agent with permissions outside
+`diagnostics`.
 
 ## Is a category ready to promote? {#readiness}
 

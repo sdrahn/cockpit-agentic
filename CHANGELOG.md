@@ -39,6 +39,18 @@ removed.
   playbooks (§14c) and `custos-setup` for the installer (§17a). Not
   implemented yet; the journal's message IDs are reserved.
 
+- Diagnostics-only hosts (CONTRACT.md §6b, the bundled diagnostics
+  install): the task categories `diagnostics` (read-only permissions
+  only, never promoted) and `compliance-audit`; an enablement state in
+  which only `diagnostics` is usable, enforced by the gateway (calls of
+  a disabled category are denied and its tools not shown) and by
+  `agent-admin`, which refuses and records (`category.refused`)
+  permissions, promotions and templates of a disabled category;
+  `agent-admin enable CATEGORY…|--all`, the one recorded action out of
+  it; `agent-admin diagnostics-only` for the installer's setup; and
+  `agent-admin show` reporting a state changed by hand. The functional
+  tests check it as a release gate.
+
 ### Fixed
 
 - A deleted agent stayed on the Cockpit page, as stopped, until the

@@ -228,3 +228,92 @@ test_category_is_not_passed_to_the_gateway if {
 		not q.category
 	}
 }
+
+# Category enablement (CONTRACT.md §6b).
+diag_agents := {"patch-pilot": {"mode": "supervised", "permissions": [
+	{"server": "systemd", "tool": "list_units", "read_only": true, "category": "diagnostics"},
+	{"server": "systemd", "tool": "get_unit_log", "category": "diagnostics"},
+	{"server": "zypp", "tool": "list_updates", "read_only": true},
+	{"server": "zypp", "tool": "patch", "category": "patch-errata"},
+	{"server": "systemd", "tool": "restart_unit", "category": "config-lifecycle"},
+]}}
+
+enabled_effect(enablement, server, tool) := e if {
+	e := authz.decision.effect with input as call(pp, server, tool, {})
+		with data.mcp.agents as object.union(diag_agents, enablement)
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+}
+
+# Without enablement data every category is usable, as before.
+test_enablement_absent if {
+	enabled_effect({}, "systemd", "list_units") == "allow"
+	enabled_effect({}, "zypp", "list_updates") == "allow"
+	enabled_effect({}, "zypp", "patch") == "ask"
+	enabled_effect({}, "systemd", "restart_unit") == "ask"
+}
+
+test_diagnostics_only if {
+	d := {"_enablement": {"state": "diagnostics-only", "enabled": ["diagnostics"]}}
+	enabled_effect(d, "systemd", "list_units") == "allow"
+
+	# Other categories, and permissions without one, are denied.
+	enabled_effect(d, "zypp", "patch") == "deny"
+	enabled_effect(d, "systemd", "restart_unit") == "deny"
+	enabled_effect(d, "zypp", "list_updates") == "deny"
+}
+
+# A diagnostics permission that is not read-only is none, in any state.
+test_diagnostics_reads_only if {
+	enabled_effect({}, "systemd", "get_unit_log") == "deny"
+	enabled_effect({"_enablement": {"state": "diagnostics-only"}}, "systemd", "get_unit_log") == "deny"
+}
+
+test_categories_enabled if {
+	d := {"_enablement": {"state": "categories", "enabled": ["diagnostics", "patch-errata"]}}
+	enabled_effect(d, "systemd", "list_units") == "allow"
+	enabled_effect(d, "zypp", "list_updates") == "allow"
+
+	# Enabled: supervised, as on a host without enablement data.
+	enabled_effect(d, "zypp", "patch") == "ask"
+	enabled_effect(d, "systemd", "restart_unit") == "deny"
+}
+
+# Every category enabled behaves as no enablement data at all.
+test_all_enabled_is_the_broader_install if {
+	all := {"_enablement": {"state": "categories", "enabled": ["diagnostics", "patch-errata", "config-lifecycle", "security-response", "compliance-audit"]}}
+	every t in [["systemd", "list_units"], ["zypp", "list_updates"], ["zypp", "patch"], ["systemd", "restart_unit"], ["systemd", "get_unit_log"]] {
+		enabled_effect(all, t[0], t[1]) == enabled_effect({}, t[0], t[1])
+	}
+}
+
+# An unknown state enables nothing.
+test_enablement_unknown_state if {
+	d := {"_enablement": {"state": "everything"}}
+	enabled_effect(d, "systemd", "list_units") == "deny"
+	enabled_effect(d, "zypp", "list_updates") == "deny"
+}
+
+# A promoted category that is disabled is still denied.
+test_disabled_bounded_category if {
+	a := {"patch-pilot": {
+		"mode": "supervised", "permissions": [{"server": "zypp", "tool": "patch", "category": "patch-errata"}],
+		"categories": {"patch-errata": {"mode": "bounded", "envelope": {"windows": []}}},
+	}}
+	authz.decision.effect == "allow" with input as call(pp, "zypp", "patch", {})
+		with data.mcp.agents as a
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+	authz.decision.effect == "deny" with input as call(pp, "zypp", "patch", {})
+		with data.mcp.agents as object.union(a, {"_enablement": {"state": "diagnostics-only"}})
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+}
+
+# Discovery hides a disabled category's tools: the model is not offered them.
+test_discovery_hides_disabled_categories if {
+	disc := object.union(call(pp, "zypp", "patch", {}), {"discovery": true})
+	authz.decision.effect != "deny" with input as disc
+		with data.mcp.agents as diag_agents
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+	authz.decision.effect == "deny" with input as disc
+		with data.mcp.agents as object.union(diag_agents, {"_enablement": {"state": "diagnostics-only"}})
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+}

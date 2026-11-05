@@ -2,7 +2,7 @@
 
 Status: draft 1 (contract version `1`); §6a is a draft 2 design, partly
 implemented (O11); §4a, §6b, §14c and §17a are a design for the bundled
-diagnostics install, not implemented (O16). The project was named
+diagnostics install, of which §6b is implemented (O16). The project was named
 cockpit-agentic until before its first release; the names and paths
 below are Custos's (`custos`, `/etc/custos`, …) and are the ones contract
 version 1 keeps.
@@ -521,8 +521,9 @@ the emergency stop (§8) still override everything.
 
 ## 6b. Category enablement (draft, O16)
 
-*Draft, not implemented (O16).* Whether a category may be used at all on
-this host is separate from its mode. A host is in one of two
+*Draft, implemented (O16): the states, the gateway's enforcement,
+`enable`, the refusals and their records, the tamper check.* Whether a
+category may be used at all on this host is separate from its mode. A host is in one of two
 **enablement states**:
 
 | State | Usable categories |
@@ -771,8 +772,8 @@ write them with `SYSLOG_IDENTIFIER=custos-promotion`, `AGENT_CONTRACT`,
 **Diagnostics and enablement records** (§4a, §6b; draft, O16). The host
 writes `diagnosis.report` with the agent's fields; `agent-admin` writes
 `diagnosis.feedback`, `categories.enabled` and `category.refused` with
-`SYSLOG_IDENTIFIER=custos-promotion`, `AGENT_CONTRACT` and these added
-fields:
+`SYSLOG_IDENTIFIER=custos-promotion`, `AGENT_CONTRACT`, `AGENT_NAME` (empty
+for `categories.enabled`, which is the host's) and these added fields:
 
 | Field | Value |
 |---|---|
@@ -1119,13 +1120,14 @@ standard error:
 | `remove-credential NAME CRED [--force]` | removes a stored credential; the one `model.credential` names only with `--force`. Refuses `gateway-token` and `gateway-client-secret`, which OpenShell holds |
 | `pause NAME`, `resume NAME` | §8 (gateway data and `/v1/pause`) |
 | `enable CATEGORY… \| --all` | enables task categories on a `diagnostics-only` or partly enabled host (§6b): writes `_enablement.yaml` and the record `categories.enabled`, and returns once the gateway's OPA has loaded it. The categories start supervised. Refuses a category not in the catalog |
+| `diagnostics-only` | makes a fresh host `diagnostics-only` (§6b): the bundled install's step, which `custos-setup` runs (§17a). Refuses a host with enablement data (there is no way back in version 1) and one with an agent that has a permission outside `diagnostics` |
 | `feedback NAME ACTIVITY [--hypothesis ID=confirmed\|rejected\|unsure…] [--plan useful\|not_useful] [--executed] [--comment TEXT]` | feedback on an activity's report (§4a), recorded as `diagnosis.feedback` with the person |
 | `playbooks` | the playbooks (§14c), as JSON: `{"<playbook>": {"title", "description", "needs", "steps", "dir", "error"?}}`. Needs no root |
 | `stop-all`, `release-all` | the emergency stop (§8) and its end. `release-all` starts again the agents' sockets and schedule timers that are enabled: what an administrator disabled stays stopped. Both record who (`_control.by`: the person behind `sudo`, `SUDO_USER`, else `USER`) and when (`at`) |
 | `delete NAME [--keep-state]` | disables and stops units; removes configuration, gateway data, credentials, drop-ins, timers and, unless kept, state. The user stays, since uids are not reused while files may still belong to them |
 | `trigger NAME_SCHEDULE` | starts the schedule's activity (run by `agent-schedule@.service`) |
 | `list` | the agents |
-| `show [NAME…]` | the gateway data (§6) of the named agents, or of all, and the emergency stop (§8), as JSON: `{"agents": {"<name>": {"mode", "paused", "paused_by"?, "permissions", "categories"?}}, "control": {"stopped", "by"?, "at"?}}`, where `categories` is §6a's entries. Needs no root: the files are readable by everyone |
+| `show [NAME…]` | the gateway data (§6) of the named agents, or of all, and the emergency stop (§8), as JSON: `{"agents": {"<name>": {"mode", "paused", "paused_by"?, "permissions", "categories"?}}, "control": {"stopped", "by"?, "at"?}, "enablement"?: {"state", "enabled", "changed_by", "record", "tampered"?}}`, where `categories` is §6a's entries and `enablement` §6b's state (absent: every category), with `tampered` saying why it does not match its record. Needs no root: the files are readable by everyone; without access to the journal there is no tamper check |
 | `categories` | the catalog (§6a), as JSON: `{"<category>": {"title", "description"?}}`. Needs no root |
 | `promote NAME CATEGORY --envelope FILE [--despite-readiness --reason TEXT]`, `demote NAME CATEGORY [--reason TEXT]` | a category's promotion with its envelope (`FILE` `-` is stdin), and its demotion (§6a). They write `categories.<category>` in the gateway data and a promotion record (§10), and return once the gateway has loaded the change, as `mode` does. `promote` refuses a category that is not ready, naming what is not met, unless it is given `--despite-readiness` with a reason; its record's `AGENT_READINESS` is the category's measures |
 | `evaluate` | the demotion evaluator (§6a), which `custos-demote.service` runs: demotes every bounded category whose override rate or rollback conditions say so, printing one line per demotion. An agent whose journal it cannot read is reported, and the others are still evaluated |
@@ -1261,10 +1263,10 @@ inherited, not specified again.
 | Requirement | Contract | State in this repository |
 |---|---|---|
 | Opt-in choice at deployment, not selected by default, the four backends in the documented order | §17a | the installer screen is the installer team's (*outside*); `custos-setup` as its interface: open (O16) |
-| A "diagnostics-only" enablement state in which only `diagnostics` is usable, enforced by the runtime, not by files an administrator edits | §6b | design (O16): the gateway denies and hides disabled categories; `agent-admin` refuses to load them; tampering is detected, sealing open |
-| Release-gate test: other categories refused in diagnostics-only | §6b, §19 | open (O16): in the functional tests, and so in the air-gapped gate |
-| Attempts to use a disabled category recorded | §6b, §10 | design (O16): the gateway's audit (calls), `category.refused` (loading) |
-| Enabling more categories: one documented, authenticated, logged action; the result identical to a broader install with them | §6b, §17 | design (O16): `agent-admin enable`, `categories.enabled`; the gate compares the states |
+| A "diagnostics-only" enablement state in which only `diagnostics` is usable, enforced by the runtime, not by files an administrator edits | §6b | done: the gateway denies and hides disabled categories (tested with OPA and on the gateway); `agent-admin` refuses to load them; a state changed by hand is reported; sealing open (O16) |
+| Release-gate test: other categories refused in diagnostics-only | §6b, §19 | done: the functional tests' section "Diagnostics-only (release gate)", on every VM run and in the air-gapped gate |
+| Attempts to use a disabled category recorded | §6b, §10 | done: the gateway's audit (calls), `category.refused` (loading) |
+| Enabling more categories: one documented, authenticated, logged action; the result identical to a broader install with them | §6b, §17 | done: `agent-admin enable`, `categories.enabled`; the gate compares the gateway's decisions with a host without enablement state |
 | Enabled categories start supervised | §6a, §6b | done (§6a); nothing new needed |
 | The diagnostics history as trust evidence for promotion | §4a, §6b | design (O16): reports and feedback in the readiness view |
 | Diagnostics: read host state, logs and metrics; correlate and summarize; root-cause hypotheses; written remediation plans for the administrator | §4a, §6b | design (O16): the `diagnostics` category (read-only), the report |
@@ -1396,8 +1398,11 @@ inherited, not specified again.
   own cloud account, vendor-hosted), in the user guide's chapter 14.
   Open: the field briefing in that order.
 - **O16 — bundled diagnostics install.** §20b; designed in §4a, §6b,
-  §14c and §17a, not implemented. The order: the enablement state and
-  its refusals with the gate test; the playbooks and the `health-check`
+  §14c and §17a. Done: the enablement state (§6b) with the gateway's
+  enforcement, `agent-admin enable` and `diagnostics-only`, the refusals
+  and records, the tamper check, and the gate's checks in the functional
+  tests (section "Diagnostics-only (release gate)", so also in the
+  air-gapped gate). Next: the playbooks and the `health-check`
   template; the report with verified evidence; the Cockpit report view
   with confidence, provenance and feedback, and the diagnostics evidence
   in readiness; `custos-setup` and the `custos-diagnostics` package. Open

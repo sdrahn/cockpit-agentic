@@ -1,0 +1,9 @@
+# A task category (CONTRACT.md §6a, §6b), installed in
+# /usr/share/custos/categories.d/. A file of the same name in
+# /etc/custos/categories.d/ replaces it; an empty one disables it.
+# Its permissions are read-only (agent-admin refuses others, the gateway
+# ignores them): it is never promoted, and it is the one category a
+# diagnostics-only host uses.
+diagnostics:
+  title: Health checks and diagnostics
+  description: Reading host state, logs and metrics, running the diagnostic playbooks, and writing reports with root-cause hypotheses and remediation plans for the administrator.

@@ -30,6 +30,9 @@ const usage = `usage: agent-admin COMMAND …
   credentials [NAME…]                    the agents' credentials: names, what uses them, missing ones; never
                                          the values (JSON)
   remove-credential NAME CRED [--force]  remove a stored credential (--force: one its model uses)
+  enable CATEGORY… | --all               enable task categories on a diagnostics-only host (CONTRACT.md §6b);
+                                         they start supervised
+  diagnostics-only                       make a fresh host diagnostics-only (the bundled install, custos-setup)
   mode NAME advisory|supervised|bounded  set the autonomy mode (enforced by mcp-gateway)
   permissions NAME                       replace its gateway permissions (YAML list on stdin)
   categories                             the task categories (CONTRACT.md §6a), as JSON
@@ -49,6 +52,7 @@ const usage = `usage: agent-admin COMMAND …
 
 func main() {
 	a := admin.New()
+	a.By = by()
 	if err := run(a, os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "agent-admin:", err)
 		os.Exit(1)
@@ -159,6 +163,16 @@ func run(a *admin.Admin, args []string) error {
 			return err
 		}
 		return a.RemoveCredential(args[0], args[1], has("--force"))
+	case "enable":
+		var cats []string
+		for _, x := range args {
+			if x != "--all" {
+				cats = append(cats, x)
+			}
+		}
+		return a.Enable(by(), cats, has("--all"))
+	case "diagnostics-only":
+		return a.InitDiagnosticsOnly(by())
 	case "mode":
 		if err := need(2); err != nil {
 			return err
