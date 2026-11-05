@@ -107,6 +107,7 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     const rows = await page.$$eval("#agents tbody tr", es => es.map(e => e.id));
     check(rows.join(",") === "agent-row-disk-watch,agent-row-old-agent,agent-row-patch-pilot,agent-row-sandboxed,agent-row-triage",
           "the agents: on /run/agents, and those with gateway data only");
+    check(!rows.includes("agent-row-gone-agent"), "a deleted agent's leftover directory (no socket, no gateway data) is not listed");
     check((await page.textContent("#agent-row-old-agent")).includes("stopped"),
           "an agent whose directory is there without a socket is stopped (systemd's RemoveOnStop)");
     const effect = async tool => page.$eval("#boundaries", (t, tool) =>

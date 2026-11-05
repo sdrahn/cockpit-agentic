@@ -93,6 +93,11 @@ administrative access) can reach the sockets. Agents are members too,
 but only for delegation through the gateway's bridge (§9): their own
 units cannot see `/run/agents`.
 
+Removing an agent removes its directory. A directory without a socket
+is a stopped agent only while the host still has the agent: systemd
+removes a stopped socket, not its directory. The Cockpit page counts it
+as an agent while the gateway has its data (§6).
+
 ## 3a. Sandbox backends and lifecycle
 
 Where an agent process runs, and what starts, sandboxes and stops it, is

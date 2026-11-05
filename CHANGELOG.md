@@ -23,6 +23,14 @@ removed.
 - `run-tests.sh --model URL NAME` (custos-tests): the same checks with
   an agent on a real model, for openQA and other test systems.
 
+### Fixed
+
+- A deleted agent stayed on the Cockpit page, as stopped, until the
+  host restarted: `agent-admin delete` left its directory in
+  `/run/agents`. It now removes it, and the page no longer lists a
+  directory without a socket and without gateway data, which also
+  clears what 0.2.0 left behind.
+
 ## v0.2.0 — 2026-11-05
 
 Autonomy per task category, and agent templates. An agent's autonomy is
