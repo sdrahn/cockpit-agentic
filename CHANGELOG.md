@@ -14,6 +14,14 @@ removed.
   that leaves a Custos host, each with its switch (Custos itself sends
   no telemetry, model updates or incident reports); fencing a systemd
   agent to its model; installing without a network.
+- The air-gapped release gate (CONTRACT.md O15): on release branches, CI
+  installs the packages, Ollama and a tested open-weight model
+  (`test/airgap/versions`: Qwen3 0.6B) from an offline mirror in a Leap 16
+  VM without network, and runs the functional tests, with an agent on
+  that model calling a read-only tool and asking for an approved change.
+  An agent's attempt to reach a host outside fails the gate.
+- `run-tests.sh --model URL NAME` (custos-tests): the same checks with
+  an agent on a real model, for openQA and other test systems.
 
 ## v0.2.0 — 2026-11-05
 
