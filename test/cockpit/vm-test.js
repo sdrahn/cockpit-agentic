@@ -215,6 +215,103 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
         await shot("policy");
     });
 
+    // The paths that broke in 0.1.1 against the real Cockpit, where the
+    // stub-based smoke test had passed: a refused action's error, a refused
+    // configuration, and an agent whose socket never answers.
+    await step("a refused action keeps its error", async () => {
+        await go("/agents/patch-pilot");
+        await frame().locator("#promote-form").waitFor({ timeout: 60000 });
+        await frame().locator("#promote-form summary").click();
+        await frame().locator("#category-select").selectOption("patch-errata");
+        await frame().locator("#promote-form button:text-is('Promote')").click();
+        const error = frame().locator("#error");
+        await error.getByText(/Promoting patch-errata failed: .*not ready/).waitFor({ timeout: 60000 });
+        check(true, "promoting a category that is not ready shows agent-admin's refusal");
+        await page.waitForTimeout(12000); // two refreshes of the Agents tab
+        check(await error.isVisible() && (await error.textContent()).includes("Promoting patch-errata failed"),
+              "the error survives the page's refreshes");
+        await error.locator("button:text-is('Dismiss')").click();
+        check(!(await error.isVisible()), "Dismiss clears it");
+        check(vm("agent-admin show patch-pilot | jq -e '(.agents[\"patch-pilot\"].categories // {})[\"patch-errata\"].mode != \"bounded\"' >/dev/null") !== null,
+              "patch-errata stayed supervised");
+    });
+
+    await step("a refused configuration shows its error", async () => {
+        await go("/agents/patch-pilot");
+        const ed = frame().locator("#config-patch-pilot");
+        await ed.locator("button:text-is('Edit configuration')").click({ timeout: 60000 });
+        const text = ed.locator(".config-yaml");
+        await text.waitFor();
+        const before = vm("sha256sum /etc/custos/agents/patch-pilot/agent.yaml");
+        await text.fill((await text.inputValue()) + "limitz: {}\n");
+        await ed.locator("button:text-is('Check')").click();
+        await ed.getByText(/limitz/).waitFor({ timeout: 30000 });
+        check(true, "Check shows why the configuration is refused");
+        await ed.locator("button:text-is('Save and apply')").click();
+        // Hung, the note stayed at "Saving patch-pilot…" (0.1.1).
+        const saved = await ed.locator(".config-edit .actions span").evaluate(n => new Promise(r => {
+            const end = Date.now() + 30000;
+            const tick = () => (!n.textContent.startsWith("Saving") && n.textContent.includes("limitz")) || Date.now() > end
+                ? r(n.textContent) : setTimeout(tick, 200);
+            tick();
+        }));
+        check(saved.includes("limitz") && await ed.locator("button:text-is('Save and apply')").isEnabled(),
+              "Save and apply shows the refusal and can be used again", saved);
+        check(vm("sha256sum /etc/custos/agents/patch-pilot/agent.yaml") === before, "the installed configuration is unchanged");
+        await ed.locator("button:text-is('Cancel')").click();
+    });
+
+    await step("model defaults and an agent from a template", async () => {
+        await go("/agents");
+        await frame().locator("#defaults-open").click({ timeout: 60000 });
+        const d = frame().locator("#model-defaults");
+        await d.locator("select[name=provider]").selectOption("openai");
+        await d.locator("input[name=model]").fill("qwen3-32b");
+        await d.locator("input[name=endpoint]").fill("http://127.0.0.1:8008/v1");
+        await d.locator("input[name=credential]").fill("");
+        await d.locator("button[name=save]").click();
+        await frame().locator("#defaults-note").getByText("Saved").waitFor({ timeout: 60000 });
+        check(vm("grep -q 'endpoint: http://127.0.0.1:8008/v1' /etc/custos/defaults.yaml && stat -c %a /etc/custos/defaults.yaml | grep -qx 644") !== null,
+              "Model defaults, with administrative access, writes /etc/custos/defaults.yaml");
+        await d.locator("button[name=cancel]").click();
+        await frame().locator("#create-open").click();
+        const form = frame().locator("#create-agent");
+        await form.locator("#create-from option[value=service-doctor]").waitFor({ state: "attached", timeout: 60000 });
+        await form.locator("#create-from").selectOption("service-doctor");
+        await form.locator("#create-name").fill("doctor");
+        const yaml = form.locator("textarea");
+        await frame().locator("#create-agent textarea").evaluate(t => new Promise(r => {
+            const ok = () => t.value.includes("name: doctor") && t.value.includes("127.0.0.1:8008");
+            const tick = () => ok() ? r() : setTimeout(tick, 200);
+            tick();
+        }));
+        check((await yaml.inputValue()).includes("# Agent template service-doctor"), "the template's configuration, with the defaults' model, fills the editor");
+        check((await frame().locator("#create-template").textContent()).includes("config-lifecycle"), "the template's categories are shown");
+        await shot("create-template");
+        await form.locator("button[name=create]").click();
+        await frame().locator("#agent-created").getByText("from the template").waitFor({ timeout: 90000 });
+        check(vm("grep -qx 'name: doctor' /etc/custos/agents/doctor/agent.yaml && grep -q '127.0.0.1:8008' /etc/custos/agents/doctor/agent.yaml && " +
+                 "agent-admin show doctor | jq -e '.agents.doctor.mode == \"supervised\" and (.agents.doctor.permissions | length) > 3' >/dev/null && " +
+                 "systemctl is-active -q agent@doctor.socket") !== null,
+              "the agent is created from the template: its configuration, permissions and mode, its socket");
+        vm("agent-admin delete doctor; agent-admin defaults --clear");
+    });
+
+    await step("an agent that does not answer", async () => {
+        // Its model names a credential that was never stored: the service
+        // fails at start and systemd restarts it, holding the socket.
+        vm("agent-admin delete nokey >/dev/null 2>&1; printf '%s\\n' 'version: 1' 'name: nokey' " +
+           "'model: {provider: openai, name: m, endpoint: \"http://127.0.0.1:8008/v1\", credential: missing}' " +
+           "'gateway: {servers: [custos-test]}' | agent-admin create nokey --from -");
+        await go("/agents");
+        const row = frame().locator("#agent-row-nokey");
+        await row.getByText(/not answering/).waitFor({ timeout: 60000 });
+        check(true, "an agent whose service fails at start is listed as not answering");
+        check(await frame().locator("#agent-row-patch-pilot").isVisible() && await frame().locator("#agent-row-triage").isVisible(),
+              "the other agents are listed as usual");
+        vm("agent-admin delete nokey");
+    });
+
     await step("the emergency stop", async () => {
         await go("/activity");
         await frame().locator("#stop-all").click();
