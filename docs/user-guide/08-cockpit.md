@@ -110,6 +110,16 @@ Both need access to the journal (`systemd-journal` or `wheel`).
 
 ## Agents tab {#agents}
 
+On a host that started diagnostics-only, **Task categories on this
+host** comes first: which categories are enabled and which are disabled
+(the gateway denies their calls), who changed it last, and a warning
+when the state was changed outside agent-admin. **Enable…** enables the
+ones you pick, after a confirmation (`agent-admin enable`, with
+administrative access); they start supervised, and there is no way back
+([chapter 6](06-permissions-and-modes.md#diagnostics-only)). In an
+agent's *Task categories*, a disabled category is marked *disabled on
+this host* and has no **Promote…**.
+
 *Agents on this host* lists every agent: those with a socket in
 `/run/agents`, and those that have gateway data but are stopped. Each
 shows its state, autonomy mode, host and model, schedules and current

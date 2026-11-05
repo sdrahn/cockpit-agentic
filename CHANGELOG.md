@@ -110,6 +110,10 @@ removed.
   back to supervised in the last week, with the agent and the trigger
   (from root's records only), and the agent's view marks such a
   category.
+- Cockpit shows a diagnostics-only host's enablement state on the Agents
+  tab (enabled and disabled categories, who changed it, a state changed
+  outside agent-admin), with **Enable…**; a disabled category is marked
+  in an agent's task categories and offers no **Promote…**.
 
 ### Fixed
 
