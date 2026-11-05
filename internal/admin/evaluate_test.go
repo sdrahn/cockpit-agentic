@@ -196,3 +196,31 @@ func TestRealHealthCheck(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 }
+
+// A proposal declined in the same second just before the promotion is the
+// supervised period's: the promotion time is kept to the fraction of the
+// second (as the functional tests found, demoting at once for 100 %).
+func TestDeclineInTheSecondBeforeThePromotion(t *testing.T) {
+	a, _, _ := withCategoriesRec(t)
+	at := time.Date(2026, 11, 3, 12, 0, 0, 900_000_000, time.UTC)
+	a.Now = func() time.Time { return at }
+	j := &fakeJournal{}
+	a.JournalJSON = j.read
+	f := map[string]string{"INVOCATION": "e-1", "CALL_ID": "c1", "TOOL": "zypp__install_patches"}
+	j.rec(at.Add(-600*time.Millisecond), "tool.call", f)
+	j.rec(at.Add(-500*time.Millisecond), "approval.pending", map[string]string{"INVOCATION": "e-1", "CALL_ID": "c1",
+		"TOOL": "zypp__install_patches", "APPROVAL_ID": "a-1"})
+	j.decision(at.Add(-400*time.Millisecond), "a-1", false)
+	if err := promote(a, "patch-errata", sat); err != nil {
+		t.Fatal(err)
+	}
+	d, _ := a.readGateway("patch-pilot")
+	if pb := d.Categories["patch-errata"].PromotedBy; pb != "alice 2026-11-03T12:00:00.9Z" {
+		t.Errorf("promoted_by %q", pb)
+	}
+	later := at.Add(time.Hour)
+	a.Now = func() time.Time { return later }
+	if d := evaluate(t, a); len(d) != 0 || mode(a, "patch-errata") != "bounded" {
+		t.Errorf("demoted for a decline before the promotion: %v", d)
+	}
+}

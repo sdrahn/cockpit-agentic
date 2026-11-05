@@ -81,6 +81,11 @@ removed.
   moment later, so a refused **Release all agents** (or delete, mode,
   …) seemed to do nothing. An action's error now stays until the next
   action or **Dismiss**.
+- The demotion evaluator and the review counted records from the whole
+  second of a promotion, so a proposal declined in the same second just
+  before it counted against the new promotion, which could be demoted
+  at once for its override rate. `promoted_by` and `demoted_by` keep
+  the time to the fraction of the second.
 
 ## v0.1.1 — 2026-11-04
 
