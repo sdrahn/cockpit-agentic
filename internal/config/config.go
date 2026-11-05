@@ -252,6 +252,37 @@ func (c *Config) defaults() {
 	}
 }
 
+// Check checks a model block (model: in agent.yaml, or the host's
+// defaults for new agents), returning all problems at once.
+func (m Model) Check() error {
+	var errs []error
+	bad := func(f string, a ...any) { errs = append(errs, fmt.Errorf(f, a...)) }
+	switch m.Provider {
+	case "gemini", "vertex":
+		if m.Endpoint != "" {
+			bad("model.endpoint: only for provider openai")
+		}
+	case "openai":
+		if !strings.HasPrefix(m.Endpoint, "https://") && !strings.HasPrefix(m.Endpoint, "http://") {
+			bad("model.endpoint: %q: want an http(s) URL", m.Endpoint)
+		}
+	case "":
+		bad("model.provider: missing")
+	default:
+		bad("model.provider: %q: want gemini, vertex or openai", m.Provider)
+	}
+	if m.Name == "" {
+		bad("model.name: missing")
+	}
+	if m.Provider == "gemini" && m.Credential == "" {
+		bad("model.credential: provider gemini needs an API key credential")
+	}
+	if m.Credential != "" && !ValidCredential(m.Credential) {
+		bad("model.credential: %q: want a credential name such as model-key", m.Credential)
+	}
+	return errors.Join(errs...)
+}
+
 // Check returns all problems at once, so an editor can show them together.
 func (c *Config) Check() error {
 	var errs []error
@@ -262,28 +293,8 @@ func (c *Config) Check() error {
 	if !ValidName(c.Name) {
 		bad("name: %q: want lower-case letters, digits and '-', 2-32 characters, starting with a letter", c.Name)
 	}
-	switch c.Model.Provider {
-	case "gemini", "vertex":
-		if c.Model.Endpoint != "" {
-			bad("model.endpoint: only for provider openai")
-		}
-	case "openai":
-		if !strings.HasPrefix(c.Model.Endpoint, "https://") && !strings.HasPrefix(c.Model.Endpoint, "http://") {
-			bad("model.endpoint: %q: want an http(s) URL", c.Model.Endpoint)
-		}
-	case "":
-		bad("model.provider: missing")
-	default:
-		bad("model.provider: %q: want gemini, vertex or openai", c.Model.Provider)
-	}
-	if c.Model.Name == "" {
-		bad("model.name: missing")
-	}
-	if c.Model.Provider == "gemini" && c.Model.Credential == "" {
-		bad("model.credential: provider gemini needs an API key credential")
-	}
-	if c.Model.Credential != "" && !ValidCredential(c.Model.Credential) {
-		bad("model.credential: %q: want a credential name such as model-key", c.Model.Credential)
+	if err := c.Model.Check(); err != nil {
+		errs = append(errs, err)
 	}
 	if c.Instruction != "" && c.InstructionFile != "" {
 		bad("instruction and instruction_file: set one of them")

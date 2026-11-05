@@ -704,6 +704,7 @@ aggregation, policy distribution and approvals across hosts) is parked
 | `/etc/custos/categories.d/*.yaml` | root 0644 | the administrator's categories: a file of a shipped name replaces it, an empty one disables it |
 | `/usr/share/custos/templates/<template>/` | root 0644 | the agent templates (§14a), and `exec.d-disk-usage.yaml`, the `exec` command some of them use, for `/etc/mcp-gateway/exec.d/` |
 | `/etc/custos/templates/<template>/` | root 0644 | the administrator's templates: one of a shipped name replaces it, one without `template.yaml` hides it |
+| `/etc/custos/defaults.yaml` | root 0644 | the model for new agents (§14b); absent: none |
 | `/etc/custos/agents/<name>/agent.yaml` | root:agent-`<name>` 0640 | configuration (§14) |
 | `/etc/sysusers.d/agent-<name>.conf` | root 0644 | the agent's user |
 | `/etc/mcp-gateway/policy/agents/<name>.yaml` | root 0644 | mode, pause, permissions (§6). All agents' files, the emergency stop's `_control.yaml` and the agents' token issuers' `_http.yaml` (§6; both shipped by the package) are in this one directory: mcp-gateway's OPA (`--watch`) watches only directories it loaded a file from when it started |
@@ -767,6 +768,26 @@ and gives it the template's permissions and mode; its categories stay
 supervised. Promoting one is a separate step, as for any agent. A
 template grants nothing by itself: the gateway enforces the permissions
 as it does any agent's.
+
+## 14b. Defaults for new agents
+
+`/etc/custos/defaults.yaml` (root 0644, written by `agent-admin defaults`;
+absent: none) holds the host's model for new agents:
+
+```yaml
+model:                       # as in agent.yaml (§14), checked the same way
+  provider: openai
+  name: granite-4
+  endpoint: http://ai.example.com:8000/v1
+  credential: model-key      # a name only; each agent's secret is its own
+```
+
+Unknown keys are errors. A new agent's starting configuration
+(`agent-admin draft`, and `create --template` without `--from`) takes the
+`model` block over: it replaces the template's or the blank
+configuration's. An agent keeps the model in its own `agent.yaml`, so
+changing or removing the defaults changes no existing agent. The file
+holds no secret.
 
 ## 15. Units and sandbox
 
@@ -865,7 +886,9 @@ standard error:
 |---|---|
 | `create NAME --from FILE` | `FILE` `-` (here and for `edit` and `check`) is stdin, so a control plane needs no file of its own. Validates; writes the sysusers.d file and runs `systemd-sysusers`; installs `agent.yaml`; writes the gateway agent data (supervised, no permissions); writes the schedules' timer drop-ins; enables the socket and timers |
 | `edit NAME --from FILE` | validates, replaces `agent.yaml`, syncs schedules; systemd agents: `try-restart agent@<name>.service`; OpenShell agents: the policy, the profile and the sandbox as in §16a (at least `try-restart agent-openshell@<name>.service`). `sandbox.kind` (and `sandbox.openshell_gateway`) stay as created |
-| `create NAME --template TEMPLATE [--from FILE]` | `create` from a template (§14a): its configuration with `name: NAME`, or `FILE`'s; then the template's permissions and mode in the gateway agent data |
+| `create NAME --template TEMPLATE [--from FILE]` | `create` from a template (§14a): its configuration as `draft` gives it (named `NAME`, with the model defaults), or `FILE`'s; then the template's permissions and mode in the gateway agent data |
+| `draft NAME [--template TEMPLATE]` | a new agent's starting configuration on standard output: the template's, or a blank one, named `NAME`, with the model defaults (§14b). Needs no root |
+| `defaults [--from FILE \| --clear]` | the model defaults (§14b), as JSON: `{"model"?: {"provider", "name", "endpoint"?, "credential"?, "temperature"?}}`, needing no root; `--from` checks and replaces them (`FILE` `-` is stdin), `--clear` removes them |
 | `templates` | the templates (§14a), as JSON: `{"transactional", "templates": {"<template>": {"title", "description", "system", "mode", "needs"?, "dir", "servers", "categories"?, "envelopes"?, "error"?}}}`, where `error` says why one cannot be used (a category not in the catalog, say). Needs no root |
 | `check NAME\|FILE` | validates only; needs no root for a FILE |
 | `mode NAME MODE`, `permissions NAME < list.yaml` | the gateway agent data (§6). Like `pause`, `resume`, `stop-all` and `release-all`, it returns once the gateway's OPA has loaded the change (it reads it back on `/run/mcp-gateway/opa.sock`, for up to 20 s), so the change is in force when the command returns |

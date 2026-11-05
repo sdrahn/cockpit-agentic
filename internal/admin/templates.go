@@ -217,7 +217,8 @@ func WithName(cfg []byte, name string) []byte {
 
 // CreateFromTemplate installs a new agent from a template: its
 // configuration from FILE when given (as edited in a control plane),
-// otherwise the template's for NAME; then the template's permissions and
+// otherwise the template's for NAME with the host's model defaults
+// (Draft); then the template's permissions and
 // mode. Categories stay supervised: promoting one is a separate,
 // deliberate step (§6a).
 func (a *Admin) CreateFromTemplate(name, tmpl, from string) error {
@@ -233,12 +234,8 @@ func (a *Admin) CreateFromTemplate(name, tmpl, from string) error {
 		if cfg, err = a.readFrom(from); err != nil {
 			return err
 		}
-	} else {
-		b, err := os.ReadFile(filepath.Join(t.Dir, "agent.yaml"))
-		if err != nil {
-			return err
-		}
-		cfg = WithName(b, name)
+	} else if cfg, err = a.Draft(name, tmpl); err != nil {
+		return err
 	}
 	perms, err := a.templatePermissions(t.Dir)
 	if err != nil {

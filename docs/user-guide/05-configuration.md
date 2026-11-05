@@ -71,6 +71,35 @@ network, the agent needs nothing from the internet.
 `model.endpoint` is only for `openai`: with `gemini` or `vertex` it is
 an error (`model.endpoint: only for provider openai`).
 
+### The model for new agents {#model-defaults}
+
+When all agents on a host use the same model server, set it once as
+the default for new agents:
+
+```bash
+agent-admin defaults --from - <<'EOF'
+model:
+  provider: openai
+  name: granite-4
+  endpoint: http://ai.example.com:8000/v1
+  credential: model-key        # optional: a name, not the secret
+EOF
+agent-admin defaults           # show them, as JSON
+agent-admin defaults --clear   # remove them
+```
+
+They are kept in `/etc/custos/defaults.yaml` and checked like a
+configuration's `model:`. A new agent's configuration starts with them,
+blank (`agent-admin draft NAME`) or from a template
+(`agent-admin draft NAME --template T`, `agent-admin create NAME
+--template T`): they replace the template's model. The agent then has
+the model in its own `agent.yaml`, so changing the defaults later
+changes no existing agent; change those with `agent-admin edit`. The
+defaults hold no secret: each agent's credential is stored for it
+([below](#model-credentials)). In Cockpit: *Agents*, **Model defaults**.
+After creating an agent whose model names a credential, the page asks
+for its secret.
+
 ### Model credentials {#model-credentials}
 
 A secret never goes into `agent.yaml`. Store it encrypted with
