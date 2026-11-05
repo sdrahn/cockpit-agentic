@@ -40,6 +40,19 @@ func (j *fakeJournal) decision(at time.Time, id string, ok bool) {
 	j.gw = append(j.gw, string(b))
 }
 
+// result: the gateway's mcp-result of a call it forwarded (R2), with the
+// progress token the agent sent.
+func (j *fakeJournal) result(at time.Time, f map[string]any) {
+	m := map[string]any{"audit": true, "msg": "mcp", "event": "mcp-result", "sub": "agent-patch-pilot", "server": "zypp",
+		"name": "install_patches", "duration_ms": 900}
+	for k, v := range f {
+		m[k] = v
+	}
+	msg, _ := json.Marshal(m)
+	b, _ := json.Marshal(map[string]string{"MESSAGE": string(msg), "__REALTIME_TIMESTAMP": strconv.FormatInt(at.UnixMicro(), 10)})
+	j.gw = append(j.gw, string(b))
+}
+
 // proposal: a call of the category that waited for an approval, decided ok.
 func (j *fakeJournal) proposal(at time.Time, inv, id string, ok bool) {
 	f := map[string]string{"INVOCATION": inv, "CALL_ID": "c1", "TOOL": "zypp__install_patches"}
@@ -158,6 +171,45 @@ func TestRollbackToolError(t *testing.T) {
 	j.autonomous(at.Add(10*time.Minute), "e-2", "error")
 	d := evaluate(t, a)
 	if len(d) != 1 || !strings.Contains(d[0].Reason, "rollback tool_error: zypp__install_patches failed") || !strings.Contains(d[0].Reason, "zypper: conflict") {
+		t.Fatalf("demotions %v", d)
+	}
+}
+
+// The gateway's outcome (R2): an autonomous call that failed demotes
+// although the agent recorded it as ok, or not at all. An approved or
+// granted call's failure is not the promotion's; another agent's is not
+// this one's.
+func TestRollbackToolErrorFromTheGateway(t *testing.T) {
+	a, _, j, _ := promoted(t, "rollback: {on: [tool_error, limit_exceeded]}\n")
+	at := a.Now().Add(-time.Hour)
+	j.result(at, map[string]any{"outcome": "tool_error", "approval_id": "a-1"})
+	j.result(at, map[string]any{"outcome": "error", "grant": "g-1"})
+	j.result(at, map[string]any{"outcome": "tool_error", "sub": "agent-other"})
+	j.result(at, map[string]any{"outcome": "tool_error", "server": "fs", "name": "write_file"})
+	j.result(at, map[string]any{"outcome": "cancelled"})
+	j.result(at.Add(-48*time.Hour), map[string]any{"outcome": "tool_error"}) // before the promotion
+	j.autonomous(at.Add(time.Minute), "e-2", "ok")                           // the agent says ok
+	j.result(at.Add(time.Minute), map[string]any{"outcome": "ok", "progress_token": "custos:e-2/c1"})
+	if d := evaluate(t, a); len(d) != 0 {
+		t.Fatalf("demoted for another call's failure: %v", d)
+	}
+	j.result(at.Add(10*time.Minute), map[string]any{"outcome": "tool_error", "error": "zypper exited 4", "progress_token": "custos:e-3/c1"})
+	d := evaluate(t, a)
+	if len(d) != 1 || !strings.Contains(d[0].Reason, "rollback tool_error: zypp__install_patches failed") ||
+		!strings.Contains(d[0].Reason, "the gateway: tool_error: zypper exited 4") {
+		t.Fatalf("demotions %v", d)
+	}
+}
+
+// limit_exceeded joins the gateway's autonomous calls to the agent's
+// activities by the progress token.
+func TestRollbackLimitWithTheGatewaysCall(t *testing.T) {
+	a, _, j, _ := promoted(t, "rollback: {on: [limit_exceeded]}\n")
+	at := a.Now().Add(-time.Hour)
+	j.result(at, map[string]any{"outcome": "ok", "progress_token": "custos:e-9/c1"})
+	j.rec(at.Add(time.Minute), "limit.exceeded", map[string]string{"INVOCATION": "e-9", "REASON": "max_tool_calls=40"})
+	d := evaluate(t, a)
+	if len(d) != 1 || !strings.Contains(d[0].Reason, "rollback limit_exceeded: max_tool_calls=40 in activity e-9") {
 		t.Fatalf("demotions %v", d)
 	}
 }

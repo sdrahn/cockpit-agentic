@@ -44,11 +44,35 @@ var Defaults = Thresholds{ObservationDays: 14, Proposals: 50, OverrideRate: 0.05
 // AGENT_* fields and __REALTIME_TIMESTAMP.
 type Record map[string]string
 
-// Decision is the gateway's mcp-approval record for one approval id.
+// Decision is the gateway's mcp-approval record for one approval id,
+// and, from a gateway that audits each call's outcome (its mcp-result,
+// requirement R2), the outcome of the approved call ("" before it ended,
+// or from a gateway without them).
 type Decision struct {
-	OK bool
-	By string
-	At time.Time
+	OK      bool
+	By      string
+	At      time.Time
+	Outcome string
+}
+
+// Result is the gateway's mcp-result record of a call it forwarded: what
+// the gateway saw come back, whatever the agent records (R2).
+type Result struct {
+	Tool       string // server__name
+	Outcome    string // ok, tool_error, error, cancelled, timeout
+	Error      string // a short text, where the gateway's policy lets it log one
+	ApprovalID string
+	Grant      string
+	// Invocation and CallID are from the call's progress token
+	// (custos:<invocation>/<call id>): the agent's, for correlation only.
+	Invocation, CallID string
+	At                 time.Time
+}
+
+// Failed reports whether a gateway outcome is a failure of the call: a
+// tool error, an error, or a timeout (a cancelled call is no failure).
+func Failed(outcome string) bool {
+	return outcome == "tool_error" || outcome == "error" || outcome == "timeout"
 }
 
 // Measures are one category's readiness (§6a).
@@ -145,7 +169,7 @@ func Measure(category string, perms []map[string]any, recs []Record, decisions m
 		}
 		m.Approved++
 		res, ran := results[k]
-		if cancelledBefore(cancels[k.inv], d.At, res, ran) {
+		if d.Outcome == "cancelled" || cancelledBefore(cancels[k.inv], d.At, res, ran) {
 			m.Cancelled++
 			continue
 		}
@@ -154,6 +178,8 @@ func Measure(category string, perms []map[string]any, recs []Record, decisions m
 			end = now
 		}
 		switch {
+		case Failed(d.Outcome): // what the gateway saw: the agent cannot hide it
+			m.Incidents++
 		case ran && res["AGENT_OUTCOME"] == "error":
 			m.Incidents++
 		case limits[k.inv]:
@@ -291,24 +317,65 @@ func ParseRecords(b []byte) []Record {
 	return out
 }
 
+// gatewayRecord is a line of the gateway's audit log (the MESSAGE of its
+// journal records).
+type gatewayRecord struct {
+	Audit         bool   `json:"audit"`
+	Event         string `json:"event"`
+	ID            string `json:"id"`
+	OK            bool   `json:"ok"`
+	By            string `json:"by"`
+	Principal     string `json:"principal"`
+	Sub           string `json:"sub"`
+	Server        string `json:"server"`
+	Name          string `json:"name"`
+	Outcome       string `json:"outcome"`
+	Error         string `json:"error"`
+	ApprovalID    string `json:"approval_id"`
+	Grant         string `json:"grant"`
+	ProgressToken string `json:"progress_token"`
+}
+
 // ParseDecisions reads the gateway's journal (journalctl -o json -u
 // mcp-gateway.service) for one principal's mcp-approval records: its
 // MESSAGE is a JSON line of the gateway's log, with event, id, ok, by.
+// The outcome of an approved call comes from its mcp-result.
 func ParseDecisions(b []byte, principal string) map[string]Decision {
 	out := map[string]Decision{}
 	for _, r := range ParseRecords(b) {
-		var msg struct {
-			Event     string `json:"event"`
-			ID        string `json:"id"`
-			OK        bool   `json:"ok"`
-			By        string `json:"by"`
-			Principal string `json:"principal"`
-		}
+		var msg gatewayRecord
 		if json.Unmarshal([]byte(r["MESSAGE"]), &msg) != nil || msg.Event != "mcp-approval" || msg.ID == "" || msg.Principal != principal {
 			continue
 		}
 		out[msg.ID] = Decision{OK: msg.OK, By: msg.By, At: At(r)}
 	}
+	for _, res := range ParseResults(b, principal) {
+		if d, ok := out[res.ApprovalID]; ok && res.ApprovalID != "" {
+			d.Outcome = res.Outcome
+			out[res.ApprovalID] = d
+		}
+	}
+	return out
+}
+
+// ParseResults reads the gateway's journal for one principal's
+// mcp-result records (R2), oldest first. Only the gateway's audit
+// records count ("audit": true, from mcp-gateway.service).
+func ParseResults(b []byte, principal string) []Result {
+	var out []Result
+	for _, r := range ParseRecords(b) {
+		var msg gatewayRecord
+		if json.Unmarshal([]byte(r["MESSAGE"]), &msg) != nil || !msg.Audit || msg.Event != "mcp-result" || msg.Sub != principal || msg.Name == "" {
+			continue
+		}
+		res := Result{Tool: msg.Server + "__" + msg.Name, Outcome: msg.Outcome, Error: msg.Error,
+			ApprovalID: msg.ApprovalID, Grant: msg.Grant, At: At(r)}
+		if tok, ok := strings.CutPrefix(msg.ProgressToken, "custos:"); ok {
+			res.Invocation, res.CallID, _ = strings.Cut(tok, "/")
+		}
+		out = append(out, res)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
 	return out
 }
 

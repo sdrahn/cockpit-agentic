@@ -66,13 +66,13 @@ func (a *Admin) Evaluate() ([]Demotion, error) {
 		}
 		sort.Strings(cats)
 		now := a.Now()
-		recs, decisions, err := a.journalRecords(name, now.Add(-OverrideWindow))
+		recs, decisions, results, err := a.journalRecords(name, now.Add(-OverrideWindow))
 		if err != nil {
 			errs = append(errs, err.Error())
 			continue
 		}
 		for _, c := range cats {
-			reason := a.demotionReason(d, c, recs, decisions, th, now)
+			reason := a.demotionReason(d, c, recs, decisions, results, th, now)
 			if reason == "" {
 				continue
 			}
@@ -90,7 +90,7 @@ func (a *Admin) Evaluate() ([]Demotion, error) {
 }
 
 // demotionReason is why category c of agent d is to be demoted, or "".
-func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record, decisions map[string]readiness.Decision, th readiness.Thresholds, now time.Time) string {
+func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record, decisions map[string]readiness.Decision, results []readiness.Result, th readiness.Thresholds, now time.Time) string {
 	st := d.Categories[c]
 	since := promotedAt(st)
 	if from := now.Add(-OverrideWindow); since.Before(from) {
@@ -133,6 +133,24 @@ func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record
 		}
 	}
 	autonomous := map[string]bool{} // invocations
+	// What the gateway saw come back (R2): a call of the category it let
+	// through without an approval or a grant. The agent cannot hide its
+	// failure by leaving out its own record.
+	for _, res := range results {
+		if res.At.Before(since) || res.ApprovalID != "" || res.Grant != "" || !readiness.InCategory(c, res.Tool, d.Permissions) {
+			continue
+		}
+		if res.Invocation != "" {
+			autonomous[res.Invocation] = true
+		}
+		if on("tool_error") && readiness.Failed(res.Outcome) {
+			why := res.Outcome
+			if res.Error != "" {
+				why += ": " + res.Error
+			}
+			return fmt.Sprintf("rollback tool_error: %s failed at %s (the gateway: %s)", res.Tool, res.At.UTC().Format(time.RFC3339), why)
+		}
+	}
 	for _, r := range after {
 		if r["AGENT_EVENT"] != "tool.result" || !readiness.InCategory(c, r["AGENT_TOOL"], d.Permissions) ||
 			r["AGENT_APPROVAL_ID"] != "" || approved[r["AGENT_INVOCATION"]+" "+r["AGENT_CALL_ID"]] {

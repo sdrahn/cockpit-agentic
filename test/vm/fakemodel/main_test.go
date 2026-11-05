@@ -35,6 +35,7 @@ func TestScript(t *testing.T) {
 		{"please PROBE", "custos-test__probe", "", []string{"custos-test__probe"}},
 		{"CHANGE it", "custos-test__change", "Writing the test marker; no other impact.", []string{"custos-test__change"}},
 		{"CHANGE it", "", "not offered: custos-test__change", nil},
+		{"CHANGE FAIL now", "custos-test__change", "Writing a marker that fails.", []string{"custos-test__change"}},
 		{"DELEGATE t1 PROBE now", "agents__delegate", "Handing this to t1.", []string{"agents__delegate"}},
 		{"hello", "", "ok", []string{"custos-test__probe"}},
 	} {

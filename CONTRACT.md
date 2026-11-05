@@ -422,7 +422,7 @@ envelope:
 |---|---|---|
 | `windows` | the gateway's policy (`time.now_ns()` in the agents module); at least one is required. Each has `days` (`mon` … `sun`; every day if absent), `from` and `to` (`HH:MM`, `from` before `to`: a window across midnight is two windows) and `tz` (an IANA zone; `UTC` if absent) | the call needs an approval, as supervised |
 | `rate` | the gateway: a per-agent, per-category counter it keeps itself (mcp-gateway, O12) | the call needs an approval |
-| `rollback` | the demotion evaluator (below), outside the agent. `tool_error`: a call of the category made without an approval since the promotion failed (`tool.result` error); `limit_exceeded`: an activity with such a call reached a limit; `health_check_failed`: `health_check` exited non-zero. `on` names at least one; `health_check` is given exactly when `health_check_failed` is | the category is demoted |
+| `rollback` | the demotion evaluator (below), outside the agent. `tool_error`: a call of the category made without an approval since the promotion failed: the gateway's `mcp-result` for it is `tool_error`, `error` or `timeout` (its requirement R2; a call allowed by a grant is approved), or its `tool.result` is an error; `limit_exceeded`: an activity with such a call reached a limit; `health_check_failed`: `health_check` exited non-zero. `on` names at least one; `health_check` is given exactly when `health_check_failed` is | the category is demoted |
 
 Everything that relaxes an approval is enforced by the gateway or by
 the demotion evaluator, never by the agent. The envelope is per host.
@@ -454,7 +454,7 @@ as globs). Hosts write no category of their own.
 | approved, declined | by the gateway's decision, never by the agent's `approval.resolved` (which also reports a tool's error after an approval as declined) |
 | cancelled | approved, then an `activity.cancel` for its activity after the decision and before the call's `tool.result` |
 | **override rate** | (declined + cancelled) / proposals |
-| incident rate | incidents / (approved − cancelled); an incident is an approved call whose `tool.result` is an error, whose activity has a `limit.exceeded`, or during whose activity (from the proposal to `invocation.end`) the agent was paused (`agent.paused`) |
+| incident rate | incidents / (approved − cancelled); an incident is an approved call that failed (the gateway's `mcp-result` for its approval id is `tool_error`, `error` or `timeout`, or its `tool.result` is an error), whose activity has a `limit.exceeded`, or during whose activity (from the proposal to `invocation.end`) the agent was paused (`agent.paused`). A call the gateway saw cancelled is cancelled |
 | diversity | distinct tools, and distinct tool and `AGENT_ARGS_SHA256` pairs, among the proposals |
 | observed days | from the first proposal to now |
 
@@ -1496,16 +1496,18 @@ inherited, not specified again.
   Tested with OPA against the gateway's policy, in the functional tests
   and in a real Cockpit; the Cockpit page shows the approvers the
   automatic demotions of the last week (Approvals tab) and marks such a
-  category in the agent's view. Open, as requirements for mcp-gateway:
-  telling the approvers of an automatic demotion through its
-  notification channels (a notice API for Custos), and reviews of
+  category in the agent's view. The rollback condition `tool_error` and
+  the incident rate take each call's outcome from the gateway's audit
+  (`mcp-result`, its requirement R2), so the agent cannot hide a failure
+  by leaving out its own `tool.result`. Open, as requirements for
+  mcp-gateway: telling the approvers of an automatic demotion through
+  its notification channels (a notice API for Custos), and reviews of
   autonomous actions by the gateway's approvers rather than by root, as
   a gateway feature (it already authenticates approvers and decides who
-  may approve an agent's calls); and each call's outcome in the
-  gateway's audit, so that the rollback condition `tool_error` and the
-  incident rate need not rest on the agent's own `tool.result` records:
-  requirements R3, R4 and R2 in
-  `docs/requirements/mcp-gateway-for-custos-0.3.md`. Open in Custos: in the measures: the agent data in force at a call's time, emergency
+  may approve an agent's calls): requirements R3 and R4 in
+  `docs/requirements/mcp-gateway-for-custos-0.3.md`. Also open: the
+  autonomous actions offered for review still come from the agent's
+  records (R4 replaces them). Open in Custos: in the measures: the agent data in force at a call's time, emergency
   stops as incidents, the envelope's size, and the proposals behind each
   number.
 - **O12 — envelope limits in the gateway.** A per-agent, per-category
