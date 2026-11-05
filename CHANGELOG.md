@@ -71,9 +71,6 @@ removed.
 - The example `patch-pilot` named tools that no gateway server has
   (`install_patches`, `restart_unit`, …); it names mcp-server-zypp's
   and systemd-mcp's tools now.
-
-### Fixed
-
 - The Cockpit page hung when `agent-admin` refused something: **Check**
   and **Save and apply** in an agent's configuration editor, and every
   other action that runs `agent-admin` or `systemctl`, never showed the
