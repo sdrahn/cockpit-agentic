@@ -169,6 +169,7 @@ function renderDetail(acts) {
                  "and the gateway logged its agents__delegate call.")
             : null,
         a.reason ? el("p", null, el("span", { class: "muted" }, "Reason: "), a.reason) : null,
+        reportView(a),
         el("h3", null, "Tool calls"),
         (a.calls || []).length ? null : el("p", { class: "muted" }, "None yet."),
         (a.calls || []).map(c => el("div", { class: "call" },
@@ -209,6 +210,8 @@ tabs.activity = {
         renderAgentsNote(agents);
         renderSummary(activities, timers);
         renderList(activities);
-        renderDetail(activities);
+        // Not while someone fills in a report's feedback.
+        const f = document.activeElement;
+        if (!(f && f.closest(".report-feedback"))) renderDetail(activities);
     },
 };

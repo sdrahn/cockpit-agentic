@@ -77,6 +77,13 @@ removed.
   `agent-admin feedback` records an administrator's verdict on it
   (`diagnosis.feedback`).
 
+- Cockpit: an activity's diagnosis report, with each hypothesis's
+  confidence (the agent's) next to how many of its quotes Custos
+  verified, each quote marked verified or the agent's claim alone, the
+  plan's commands to copy, and **Was it right?** for the
+  administrator's feedback; and **Diagnostic playbooks** in an agent's
+  view, to run one as the person.
+
 ### Fixed
 
 - A deleted agent stayed on the Cockpit page, as stopped, until the

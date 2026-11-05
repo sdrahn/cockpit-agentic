@@ -210,7 +210,7 @@ async function renderAgentDetail() {
             toggle), el("div", { class: "muted" }, "“" + s.prompt + "”")));
     }
 
-    box.replaceChildren(head, mode, bounds, categoriesSection(a, data), schedules, credentialsSection(a), configEditor(a), chatSection(a));
+    box.replaceChildren(head, mode, bounds, categoriesSection(a, data), schedules, playbookSection(a), credentialsSection(a), configEditor(a), chatSection(a));
 }
 
 tabs.agents = {
@@ -222,7 +222,7 @@ tabs.agents = {
         // Not while someone edits the permissions or types a message.
         const f = document.activeElement;
         const editing = f && (f.id === "permissions-yaml" || f.closest(".chat") || f.closest(".confirm-delete") || f.closest(".config-edit") ||
-            f.closest(".credentials-edit"));
+            f.closest(".credentials-edit") || f.closest(".playbook-run"));
         if (!editing) await renderAgentDetail();
     },
 };
