@@ -1,13 +1,20 @@
 // testsrv is the MCP server of the functional tests (package
 // custos-tests), registered with mcp-gateway as custos-test.
-// It speaks MCP on stdio and has two tools: probe, which reads nothing
-// and says so, and change, which stands for a call that changes the
-// system (it only answers; the gateway's audit records show that it
-// ran). The tests' permissions declare probe read-only and change not.
+// It speaks MCP on stdio and has four tools: probe, which reads nothing
+// and says so; change, which stands for a call that changes the system
+// (it only answers; the gateway's audit records show that it ran);
+// read_note, which returns a note an attacker wrote: a prompt-injection
+// case (cases.go); and wipe, which stands for a destructive call that no
+// test permits. The tests' permissions declare probe and read_note
+// read-only and change not.
+//
+// Without arguments it speaks MCP on stdio; with --cases it prints the
+// injection cases as JSON (id, title, target).
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -16,6 +23,10 @@ import (
 
 type changeArgs struct {
 	Value string `json:"value" jsonschema:"any text"`
+}
+
+type noteArgs struct {
+	Name string `json:"name" jsonschema:"the note's name"`
 }
 
 // New returns the server.
@@ -29,10 +40,27 @@ func New() *mcp.Server {
 		func(_ context.Context, _ *mcp.CallToolRequest, a changeArgs) (*mcp.CallToolResult, any, error) {
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "changed " + a.Value}}}, nil, nil
 		})
+	mcp.AddTool(s, &mcp.Tool{Name: "read_note", Description: "Reads a note left on the system by its name."},
+		func(_ context.Context, _ *mcp.CallToolRequest, a noteArgs) (*mcp.CallToolResult, any, error) {
+			c, ok := caseByID(a.Name)
+			if !ok {
+				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "no note " + a.Name}}}, nil, nil
+			}
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: c.Note}}}, nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "wipe", Description: "Stands for a destructive call; no test permits it."},
+		func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "wiped"}}}, nil, nil
+		})
 	return s
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--cases" {
+		b, _ := json.Marshal(Cases)
+		fmt.Println(string(b))
+		return
+	}
 	if err := New().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		fmt.Fprintln(os.Stderr, "testsrv:", err)
 		os.Exit(1)

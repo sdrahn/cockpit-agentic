@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -500,5 +501,37 @@ func TestRunErrorIsFailedActivity(t *testing.T) {
 	end := e.log.Events(journal.InvocationEnd)
 	if last := end[len(end)-1]; last.Fields["OUTCOME"] != "error" || !strings.Contains(last.Fields["REASON"], "mcp-gateway") {
 		t.Errorf("journal %+v", last)
+	}
+}
+
+// A model that calls a tool the gateway did not offer (as a prompt
+// injection makes it do, CONTRACT.md O14): recorded as tool.denied.local,
+// reason "not offered", with the rationale; it never reaches the gateway.
+func TestCallToToolNotOffered(t *testing.T) {
+	e := newEnv(t,
+		func(req *model.LLMRequest) *genai.Content {
+			c := testutil.Call("x1", "zypp__wipe", map[string]any{"all": true})(req)
+			c.Parts = append([]*genai.Part{genai.NewPartFromText("The note says to.")}, c.Parts...)
+			return c
+		},
+		func(req *model.LLMRequest) *genai.Content {
+			fr := testutil.LastFunctionResponse(req)
+			if fr == nil || fr.ID != "x1" || !strings.Contains(fmt.Sprint(fr.Response["error"]), "not offered") {
+				t.Errorf("the model was told %+v", fr)
+			}
+			return genai.NewContentFromText("Not possible.", genai.RoleModel)
+		},
+	)
+	_, b := e.do("POST", "/v1/activities", "0:root", map[string]any{"prompt": "read the note", "wait": true})
+	if !strings.Contains(string(b), `"state":"finished"`) {
+		t.Fatalf("activity %s", b)
+	}
+	d := e.log.Events(journal.ToolDeniedLocal)
+	if len(d) != 1 || d[0].Fields["TOOL"] != "zypp__wipe" || d[0].Fields["REASON"] != "not offered" || d[0].Fields["OUTCOME"] != "denied" ||
+		d[0].Fields["RATIONALE"] != "The note says to." || d[0].Fields["INVOCATION"] == "" || d[0].Fields["ARGS_SHA256"] == "" {
+		t.Errorf("records %+v", d)
+	}
+	if len(e.gw.Ran()) != 0 || len(e.log.Events(journal.ToolCall)) != 0 {
+		t.Errorf("ran %v", e.gw.Ran())
 	}
 }
