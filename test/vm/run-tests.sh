@@ -864,6 +864,8 @@ check "show: the restored state matches its record" enablement_is 'has("tampered
 check "agent-admin enable patch-errata" agent-admin enable patch-errata
 check "journal: categories.enabled from diagnostics-only" eventually 10 promotion_record categories.enabled '.AGENT_ENABLEMENT_FROM | contains("diagnostics-only")'
 check "the gateway's OPA asks for the enabled category's call" eventually 30 effect_is dg change ask
+check "readiness on a host that started diagnostics-only asks for the diagnostics history" bash -c \
+	"agent-admin readiness dg patch-errata | jq -e '.diagnostics_apply and (.categories[\"patch-errata\"].unmet | any(startswith(\"diagnosis reports with feedback\")))' >/dev/null"
 check "enabled, the category starts supervised: its change waits for an approval" change_asks dg
 # Every category enabled decides as a host without enablement state (the
 # broader install).

@@ -27,10 +27,18 @@ type Thresholds struct {
 	IncidentRate float64 `yaml:"incident_rate" json:"incident_rate"`
 	// WindowDays is how far back the records are read.
 	WindowDays int `yaml:"window_days" json:"window_days"`
+	// On a host that started diagnostics-only (§6b), its diagnostics
+	// history is part of a category's readiness: DiagnosticsFeedback is
+	// the reports with feedback at least, DiagnosticsConfirmedRate the
+	// share of confirmed hypotheses (of those confirmed or rejected) at
+	// least. 0 turns either off.
+	DiagnosticsFeedback      int     `yaml:"diagnostics_feedback" json:"diagnostics_feedback"`
+	DiagnosticsConfirmedRate float64 `yaml:"diagnostics_confirmed_rate" json:"diagnostics_confirmed_rate"`
 }
 
-// Defaults are §6a's.
-var Defaults = Thresholds{ObservationDays: 14, Proposals: 50, OverrideRate: 0.05, IncidentRate: 0.02, WindowDays: 30}
+// Defaults are §6a's and §6b's.
+var Defaults = Thresholds{ObservationDays: 14, Proposals: 50, OverrideRate: 0.05, IncidentRate: 0.02, WindowDays: 30,
+	DiagnosticsFeedback: 10, DiagnosticsConfirmedRate: 0.7}
 
 // Record is one journal record of the agent (journalctl -o json):
 // AGENT_* fields and __REALTIME_TIMESTAMP.
@@ -535,4 +543,22 @@ func DiagnosticsOf(recs []Record) Diagnostics {
 		d.ConfirmedRate = float64(d.Confirmed) / float64(n)
 	}
 	return d
+}
+
+// Unmet says which of the diagnostics thresholds the history does not
+// meet (§6b), in the words of Measures.Unmet.
+func (d Diagnostics) Unmet(th Thresholds) []string {
+	var out []string
+	if d.WithFeedback < th.DiagnosticsFeedback {
+		out = append(out, fmt.Sprintf("diagnosis reports with feedback %d of %d", d.WithFeedback, th.DiagnosticsFeedback))
+	}
+	if th.DiagnosticsConfirmedRate > 0 {
+		switch {
+		case d.Confirmed+d.Rejected == 0:
+			out = append(out, "no hypothesis confirmed or rejected yet")
+		case d.ConfirmedRate < th.DiagnosticsConfirmedRate:
+			out = append(out, fmt.Sprintf("confirmed hypotheses %s below %s", pct(d.ConfirmedRate), pct(th.DiagnosticsConfirmedRate)))
+		}
+	}
+	return out
 }
