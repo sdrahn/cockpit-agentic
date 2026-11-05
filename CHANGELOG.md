@@ -9,6 +9,13 @@ removed.
 
 ### Added
 
+- The demotion evaluator tells the approvers of each automatic demotion
+  through mcp-gateway's notices (its requirement R3): about the agent,
+  for the servers of the category's permissions, by mail, desktop
+  notification and the gateway's approval page, to the servers'
+  approvers and the agent's owners. `agent-admin evaluate` says whether
+  they were notified; a gateway without notices leaves the demotion as
+  it is.
 - The gateway's approvers review a promoted category's autonomous
   actions (mcp-gateway's review items, its requirement R4): the agents
   module marks each call a bounded category makes without an approval

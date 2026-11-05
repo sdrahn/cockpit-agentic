@@ -373,8 +373,18 @@ evaluate`, which prints each demotion. A demotion stops what follows; it
 does not undo what ran (for that, a snapshot, say, is the tool's).
 Cockpit shows the automatic demotions of the last week on the Approvals
 tab, and the category in the agent's view says it was demoted
-automatically ([chapter 8](08-cockpit.md#approvals)); mcp-gateway's
-notifications (desktop, mail, webhooks) do not carry them yet.
+automatically ([chapter 8](08-cockpit.md#approvals)).
+
+The evaluator also tells the people who approve the agent's calls,
+through mcp-gateway: it posts a notice about `agent-NAME` for the
+servers of the category's permissions. The gateway sends it to whoever
+may decide the agent's calls on those servers, owners included
+([chapter 7](07-approvals.md)): by mail to its notification recipients,
+as a desktop notification (`mcp-gateway-notify`), and on its approval
+page, until they dismiss it or a week has passed. `agent-admin
+evaluate` prints `approvers notified (notice …)` for each demotion. An
+mcp-gateway without notices (before its requirement R3) gets none, and
+the demotion stands all the same.
 
 ## How the gateway applies modes {#how-enforced}
 

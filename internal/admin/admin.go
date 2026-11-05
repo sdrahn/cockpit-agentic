@@ -77,6 +77,9 @@ type Admin struct {
 	HealthCheck func(cmd string) error
 	// By is the person, for the records of refusals (category.refused).
 	By string
+	// Notify posts a notice to the approvers through the gateway (R3) and
+	// gives its id; nil: no notices.
+	Notify func(Notice) (string, error)
 }
 
 // New is agent-admin on a host. Its standard output is its own messages
@@ -106,6 +109,7 @@ func New() *Admin {
 			return hex.EncodeToString(b)
 		},
 		OPAData:    opaData,
+		Notify:     postNotice,
 		PolicyWait: 20 * time.Second,
 		Probe: func(name string, args ...string) error {
 			return exec.Command(name, args...).Run()
