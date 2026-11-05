@@ -318,7 +318,11 @@ function categoriesSection(a, data) {
             el("td", null, usable
                 ? el("span", { class: "badge " + (bounded ? "badge-ok" : "badge-waiting") }, bounded ? "bounded (promoted)" : c.mode)
                 : el("span", { class: "badge badge-bad", title: "Not enabled on this host: the gateway denies its calls (agent-admin enable)" },
-                     "disabled on this host")),
+                     "disabled on this host"),
+                !bounded && /^custos-demote /.test(c.demoted_by || "")
+                    ? el("div", { class: "muted demoted-auto" }, "demoted automatically " + when(c.demoted_by.slice("custos-demote ".length)) +
+                         " (see the Approvals tab)")
+                    : null),
             el("td", { class: "muted" }, bounded ? (windowsText(c) || "always") : "–"),
             cells[n].ready, cells[n].over, cells[n].inc, cells[n].props,
             el("td", null, el("span", { class: "actions" }, promote, demote)),

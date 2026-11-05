@@ -156,6 +156,34 @@ async function renderDecided() {
         : [el("p", { class: "muted" }, "Nothing decided today.")]));
 }
 
+/* renderDemotions lists the automatic demotions of the last week (the
+ * demotion evaluator's category.demoted records, CONTRACT.md §6a, §10):
+ * what approvers should know, since the agent asks for approvals again.
+ * Only root's records count (§10, trusted records). Hidden when there are
+ * none, or when the person may not read the journal. */
+async function renderDemotions() {
+    const box = document.getElementById("demotions");
+    let out;
+    try {
+        out = await cockpit.spawn(["journalctl", "--no-pager", "--since", "-7d", "-o", "json", "_UID=0",
+                                   "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT=category.demoted", "AGENT_BY=custos-demote"],
+                                  { err: "message" });
+    } catch {
+        box.hidden = true;
+        return;
+    }
+    const recs = out.split("\n").filter(Boolean).map(l => { try { return JSON.parse(l) } catch { return null } })
+        .filter(r => r && r._UID === "0" && r.AGENT_BY === "custos-demote").reverse();
+    box.hidden = recs.length === 0;
+    box.replaceChildren(el("h2", null, "Demoted automatically"),
+        el("p", { class: "muted" }, "In the last 7 days the demotion evaluator set these task categories back to supervised: " +
+           "their changes wait for your approval again."),
+        ...recs.map(r => el("div", { class: "demotion", id: "demotion-" + r.AGENT_NAME + "-" + r.AGENT_CATEGORY },
+            el("button", { class: "link", onclick: () => cockpit.location.go(["agents", r.AGENT_NAME]) }, r.AGENT_NAME),
+            " · ", el("span", { class: "mono" }, r.AGENT_CATEGORY), " · ",
+            el("span", { class: "muted" }, when(new Date(Number(r.__REALTIME_TIMESTAMP) / 1000))), el("div", null, r.AGENT_REASON || ""))));
+}
+
 tabs.approvals = {
     intervalMs: 2000,
     async refresh() {
@@ -164,7 +192,7 @@ tabs.approvals = {
             refreshState()]);
         renderApprovals(pending);
         setTabCount("approvals", pending.length);
-        await renderDecided();
+        await Promise.all([renderDemotions(), renderDecided()]);
     },
 };
 
