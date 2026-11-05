@@ -30,9 +30,6 @@ removed.
   `/run/agents`. It now removes it, and the page no longer lists a
   directory without a socket and without gateway data, which also
   clears what 0.2.0 left behind.
-
-### Fixed
-
 - A key given as `model.credential`, where the name of the stored key
   goes, made the agent fail with `no such file or directory`.
   `agent-admin check`, `create`, `edit` and `defaults` now refuse a
