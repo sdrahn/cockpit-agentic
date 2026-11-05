@@ -607,7 +607,14 @@ check "agent-admin create t3 says its credential is not stored yet" bash -c \
 	"agent-admin create t3 --from '$f' | grep -q 'agent-admin set-credential t3 model-key'"
 check "without the credential, t3 says how to store it" eventually 30 bash -c \
 	"systemctl start agent@t3.service >/dev/null 2>&1; journalctl -u agent@t3.service --since '@$t0' -o cat --no-pager | grep -q 'model.credential model-key is not stored for agent t3: agent-admin set-credential t3 model-key'"
+check "agent-admin credentials t3: model-key is missing" bash -c \
+	"agent-admin credentials t3 | jq -e '.t3.missing == [\"model-key\"] and (.t3.credentials[0] | .name == \"model-key\" and .stored == false and .used_by == [\"model\"])' >/dev/null"
 check "agent-admin set-credential t3 model-key ($tpm)" bash -c "printf 'test-key' | agent-admin set-credential t3 model-key"
+check "agent-admin credentials t3: model-key is stored, its value not listed" bash -c \
+	"out=\$(agent-admin credentials t3) && jq -e '.t3.missing == [] and .t3.credentials[0].stored and (.t3.credentials[0].stored_at | length > 0)' <<<\"\$out\" >/dev/null && ! grep -q test-key <<<\"\$out\""
+check "agent-admin remove-credential refuses the model's credential without --force" not agent-admin remove-credential t3 model-key
+check "agent-admin remove-credential removes an unused one" bash -c \
+	"printf spare | agent-admin set-credential t3 spare && agent-admin remove-credential t3 spare && ! test -e /etc/credstore.encrypted/agent-t3.spare"
 echo "  credential: $(stat -c '%U:%G %a %C' /etc/credstore.encrypted/agent-t3.model-key 2>&1)"
 check "the credential is stored encrypted, root's and not readable by others" bash -c \
 	"[ \"\$(stat -c %U:%G /etc/credstore.encrypted/agent-t3.model-key)\" = root:root ] && [ \$(( 0\$(stat -c %a /etc/credstore.encrypted/agent-t3.model-key) & 077 )) -eq 0 ]"
