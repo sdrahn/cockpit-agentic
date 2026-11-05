@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,22 @@ func TestReviewRefuses(t *testing.T) {
 
 // The evaluator demotes on an incident review, should the immediate
 // demotion have failed.
+// An incident review the agent wrote itself demotes nothing (and an "ok"
+// it wrote would lower nothing): only root's reviews count.
+func TestEvaluatorIgnoresForgedReview(t *testing.T) {
+	a, _, j, _ := promoted(t, "")
+	j.rec(a.Now().Add(-time.Hour), "category.review", map[string]string{"CATEGORY": "patch-errata", "INVOCATION": "e-1", "CALL_ID": "c1",
+		"VERDICT": "incident", "BY": "bob", "REASON": "wrong host"})
+	var m map[string]string
+	json.Unmarshal([]byte(j.agent[len(j.agent)-1]), &m)
+	m["_UID"] = "981"
+	b, _ := json.Marshal(m)
+	j.agent[len(j.agent)-1] = string(b)
+	if d := evaluate(t, a); len(d) != 0 {
+		t.Fatalf("a forged review demoted: %v", d)
+	}
+}
+
 func TestEvaluatorDemotesOnAReview(t *testing.T) {
 	a, _, j, _ := promoted(t, "")
 	j.rec(a.Now().Add(-time.Hour), "category.review", map[string]string{"CATEGORY": "patch-errata", "INVOCATION": "e-1", "CALL_ID": "c1",

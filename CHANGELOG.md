@@ -100,6 +100,13 @@ removed.
 
 ### Fixed
 
+- Security: an agent could write a review verdict into its own journal
+  (`category.review` with `SYSLOG_IDENTIFIER=custos-promotion`): a
+  later "ok" for one of its autonomous actions replaced an approver's
+  "incident", lowering its override rate, so the demotion evaluator
+  could miss a reason to demote it. Readiness, the review and the
+  evaluator now count only reviews journald records as root's
+  (`_UID=0`); `agent-admin show`'s enablement check, too.
 - A deleted agent stayed on the Cockpit page, as stopped, until the
   host restarted: `agent-admin delete` left its directory in
   `/run/agents`. It now removes it, and the page no longer lists a

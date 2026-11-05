@@ -482,7 +482,8 @@ offered while there are at most 20, otherwise the newest unreviewed ones
 up to 20 reviews in the week. A verdict is `ok`, or `incident`: the
 action should not have run, which needs a reason. It is recorded as
 `category.review` (§10); a later verdict on the same action replaces
-an earlier one. In the measures, each reviewed action counts as a
+an earlier one. Only verdicts root recorded count (§10, trusted
+records): an agent cannot review its own actions. In the measures, each reviewed action counts as a
 decision, and each `incident` as an override:
 
 | Measure | Definition |
@@ -600,7 +601,8 @@ back to `diagnostics-only` is not part of version 1 (O16).
 each change records the SHA-256 of `state` and `enabled` (JSON, sorted
 keys). `agent-admin show` and the control plane compare the data in
 force with the last enablement record and report a state that was
-changed without one. On one host root can still edit any file; sealing
+changed without one; only a record root wrote counts (§10, trusted
+records). On one host root can still edit any file; sealing
 the state (for instance to the TPM) is open (O16).
 
 **Trust evidence.** What the diagnostics agent did before another
@@ -611,7 +613,7 @@ quotes and how many the host verified; the reports with feedback (the
 last feedback of each), the hypotheses confirmed, rejected and unsure and
 the share confirmed of those decided; and the plans marked useful, not
 useful and carried out. Feedback counts only from records journald gives
-the trusted `_UID` 0 (`agent-admin feedback` as root): an agent writes
+the trusted `_UID` 0 (`agent-admin feedback` as root; §10, trusted records): an agent writes
 its own records to the journal, with any identifier it likes, never with
 another `_UID`. They are shown, not thresholds; whether some should
 become thresholds is open (O16).
@@ -773,6 +775,16 @@ the approval `id`, `principal`, `ok`, the approver `by`, `scope` and
 **Promotion records** (§6a). `agent-admin` and the demotion evaluator
 write them with `SYSLOG_IDENTIFIER=custos-promotion`, `AGENT_CONTRACT`,
 `AGENT_NAME` and these added fields:
+
+**Trusted records.** An agent writes its own records to the journal, so
+it can set any field there, `SYSLOG_IDENTIFIER=custos-promotion` and
+`AGENT_EVENT` included, but never journald's trusted fields. A reader
+that bases a decision on a record `agent-admin` writes (a review verdict,
+feedback, an enablement change) takes it only when journald gives it
+`_UID=0`: `agent-admin` runs as root, agents never do. The agent's own
+records (tool calls, approvals, reports) are its account of what it
+did, and readiness reads them as such, next to the gateway's decisions.
+
 
 | Field | Value |
 |---|---|
