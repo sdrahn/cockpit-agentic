@@ -15,26 +15,42 @@ const NAME_RE = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
 /* cockpit.http rejects with the body beside the error (a second argument,
  * which await drops); keepBody keeps it as ex.body and, for the gateway's
- * JSON errors, its text as ex.message. */
-function keepBody(request) {
-    return new Promise((resolve, reject) => request.then(resolve, (ex, body) => {
-        if (ex && typeof body === "string" && body !== "") {
-            ex.body = body;
-            try {
-                const e = JSON.parse(body);
-                if (e && e.error) ex.message = e.error;
-            } catch {
-                ex.message = body.trim(); // the agents' errors are plain text (§5)
+ * JSON errors, its text as ex.message. With timeoutMs it gives up then. */
+function keepBody(request, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        // A socket that systemd holds while its service fails to start
+        // accepts the connection and never answers: give up after
+        // timeoutMs, so one agent cannot stall the page.
+        const timer = timeoutMs && setTimeout(() => {
+            if (request.close) request.close();
+            reject({ problem: "timeout", message: "no answer within " + timeoutMs / 1000 + " s" });
+        }, timeoutMs);
+        request.then(v => {
+            clearTimeout(timer);
+            resolve(v);
+        }, (ex, body) => {
+            clearTimeout(timer);
+            if (ex && typeof body === "string" && body !== "") {
+                ex.body = body;
+                try {
+                    const e = JSON.parse(body);
+                    if (e && e.error) ex.message = e.error;
+                } catch {
+                    ex.message = body.trim(); // the agents' errors are plain text (§5)
+                }
             }
-        }
-        reject(ex);
-    }));
+            reject(ex);
+        });
+    });
 }
+
+/* GET_TIMEOUT_MS bounds a read of an agent's or the gateway's API. */
+const GET_TIMEOUT_MS = 8000;
 
 function client(socket, opts) {
     const http = cockpit.http(Object.assign({ unix: socket }, opts || {}));
     return {
-        get: path => keepBody(http.get(path)).then(JSON.parse),
+        get: path => keepBody(http.get(path), GET_TIMEOUT_MS).then(JSON.parse),
         post: (path, body) => keepBody(http.post(path, body === undefined ? "" : JSON.stringify(body),
                                                  { "Content-Type": "application/json" })),
     };
@@ -192,6 +208,7 @@ async function loadActivities(agents) {
 function describeAgentFailure(ex) {
     if (ex && ex.problem === "access-denied") return "no access to its socket (members of agent-clients have it)";
     if (ex && ex.problem === "not-found") return "not running";
+    if (ex && ex.problem === "timeout") return "not answering (" + ex.message + "): its service may be failing to start; see its Logs";
     return (ex && (ex.message || ex.problem)) || String(ex);
 }
 

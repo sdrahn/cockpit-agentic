@@ -324,6 +324,17 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.waitForSelector("#agent-detail h2");
     check((await page.textContent("#agent-detail")).includes("does not offer chat"), "an agent without AG-UI says so");
 
+    // An agent that never answers (its socket held while its service fails
+    // to start) is listed as such; the others are listed as usual.
+    await page.goto(url + "?hang#/agents");
+    await page.waitForSelector("#agent-row-hung", { timeout: 20000 });
+    check((await page.textContent("#agent-row-hung")).includes("not answering") &&
+          (await page.textContent("#agent-row-hung")).includes("see its Logs"), "an agent that does not answer says so");
+    check(await page.isVisible("#agent-row-patch-pilot") && await page.isVisible("#agent-row-triage"), "the other agents are listed");
+    check((await calls()).some(c => c[0] === "close" && c[1] === "hung"), "the unanswered request is closed");
+    await page.waitForFunction(() => window.__calls.filter(c => c[0] === "GET" && c[1] === "/run/agents/hung/api.sock").length >= 2, null, { timeout: 30000 });
+    check(true, "the page keeps refreshing");
+
     // Creating and deleting agents.
     await page.goto(url + "?create#/agents");
     await page.waitForSelector("#agents tbody tr");

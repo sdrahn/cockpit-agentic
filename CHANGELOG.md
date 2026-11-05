@@ -71,6 +71,12 @@ removed.
 - The example `patch-pilot` named tools that no gateway server has
   (`install_patches`, `restart_unit`, …); it names mcp-server-zypp's
   and systemd-mcp's tools now.
+- The Cockpit page listed no agents at all while one agent's socket
+  was held by systemd but its service failed at start (a credential not
+  yet set, say): the request to that agent was never answered, and the
+  page waited for it, skipping every refresh. A read of an agent's or
+  the gateway's API now gives up after 8 seconds, and the agent is
+  listed as not answering, pointing to its logs.
 
 ## v0.1.1 — 2026-11-04
 

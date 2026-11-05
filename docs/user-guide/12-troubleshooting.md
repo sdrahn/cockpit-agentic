@@ -57,6 +57,12 @@ journalctl -u mcp-gateway.service --since -30min                 # the gateway: 
   `systemctl status agent@NAME.service` and its journal name the error.
   `config.invalid` in the journal means the installed configuration is
   wrong: `agent-admin check NAME`.
+- **The Cockpit page shows the agent as "not answering (no answer
+  within 8 s): its service may be failing to start"**: its socket is
+  there, but its service fails at start and systemd restarts it every 5
+  seconds, so the connection is never answered. Its **Logs**, or
+  `journalctl -u agent@NAME.service`, say why: often one of the next
+  two.
 - **`model.credential "…": no credentials directory`** or
   **`model.credential: open …`**: the credential is not set or has another
   name. `agent-admin set-credential NAME <cred> < secret`, then
@@ -198,6 +204,7 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | `envelope: rollback: …` | `on` lists at least one of `tool_error`, `limit_exceeded`, `health_check_failed`; `health_check` (a command) is given exactly when `health_check_failed` is ([chapter 6](06-permissions-and-modes.md#auto-demote)) |
 | `agent … category … demoted: …` (from `agent-admin evaluate` or `custos-demote.service`) | the demotion evaluator demoted it, for the reason given; promote it again once that is resolved |
 | `an incident needs --reason TEXT: why it should not have run` | give the reason |
+| `not answering (no answer within 8 s): its service may be failing to start; see its Logs` (Cockpit) | [An agent does not start or answer](#agent-start) |
 | `agent …: no action … of activity … in category … ran without an approval in the last week` | the activity and call are not in `agent-admin review NAME CATEGORY`'s list: it had an approval, is older than a week, or belongs to another category |
 | `agent …: category … has not been promoted: its calls all had approvals` | only promoted categories have actions to review |
 | `agent-admin: custos-demote.timer could not be enabled …` | nothing demotes automatically: `systemctl enable --now custos-demote.timer` |
