@@ -476,7 +476,11 @@ section "Owners approve their agent's calls"
 # CONTRACT.md §7, O1: an agent's owners may decide its pending calls
 # besides the servers' approvers (owners.rego in the gateway's approver
 # policy). custos-tester is no approver by the shipped rules.
+# Deciding on the control socket takes its group (socket_group of
+# gateway.yaml), as for any approver; the policy decides the rest.
 id custos-tester >/dev/null 2>&1 || useradd -m custos-tester
+sock_group=$(stat -c %G /run/mcp-gateway/control.sock)
+usermod -aG "$sock_group" custos-tester
 tester_gw() { runuser -u custos-tester -- curl -sS --max-time 30 --unix-socket /run/mcp-gateway/control.sock "http://localhost$1" "${@:2}"; }
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' | agent-admin permissions t1
 agent-admin owners t1 >/dev/null
@@ -484,6 +488,7 @@ id=$(start_activity t1 CHANGE)
 check "a change waits for an approval" eventually 30 activity_state_is t1 "$id" waiting_approval
 aid=$(approval_of t1 "$id")
 lists() { tester_gw /v1/approvals | jq -e --arg a "$aid" 'map(.id) | index($a)' >/dev/null; }
+check "custos-tester reaches the control socket ($sock_group)" bash -c "$(declare -f tester_gw); tester_gw /v1/approvals | jq -e 'type == \"array\"' >/dev/null"
 check "without owners, custos-tester does not see the approval" not lists
 check "agent-admin refuses the agent itself as owner" not agent-admin owners t1 user:agent-t1
 check "agent-admin owners t1 user:custos-tester" agent-admin owners t1 user:custos-tester
@@ -495,6 +500,7 @@ check "the change ran" eventually 30 activity_state_is t1 "$id" finished
 check "the gateway's audit: approved by custos-tester" eventually 10 gw_audit_has ".event == \"mcp-approval\" and .id == \"$aid\" and .ok == true and .by == \"custos-tester\""
 check "agent-admin owners t1 (none)" agent-admin owners t1
 check "without owners again, show has none" bash -c "agent-admin show t1 | jq -e '.agents.t1 | has(\"owners\") | not' >/dev/null"
+gpasswd -d custos-tester "$sock_group" >/dev/null
 
 section Pause
 agent-admin pause t1

@@ -50,7 +50,10 @@ Owners take the gateway's approver forms (`user:`, `group:`, `role:`,
 `remote-user:`, `remote-group:`); `self` and an agent's own account are
 refused. In Cockpit: the agent's view, *Owners*. Owners decide in
 Cockpit, on the gateway's page or with `mcp-gateway-admin approvals`,
-and are recorded as the approver like anyone else.
+and are recorded as the approver like anyone else. Like any approver,
+an owner who decides on this host needs access to the gateway's control
+socket: membership of its `socket_group` (gateway.yaml, `mcp-users` by
+default). Being an owner does not grant it.
 
 ## Deciding in Cockpit {#cockpit}
 
