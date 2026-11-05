@@ -57,15 +57,30 @@ journalctl -u mcp-gateway.service --since -30min                 # the gateway: 
   `systemctl status agent@NAME.service` and its journal name the error.
   `config.invalid` in the journal means the installed configuration is
   wrong: `agent-admin check NAME`.
+- **The Cockpit page shows the agent as "not answering (no answer
+  within 8 s): its service may be failing to start"**: its socket is
+  there, but its service fails at start and systemd restarts it every 5
+  seconds, so the connection is never answered. Its **Logs**, or
+  `journalctl -u agent@NAME.service`, say why: often one of the next
+  two.
 - **`Failed to set up credentials: Protocol error`** and
   **`status=243/CREDENTIALS`** in the unit's journal, on a host with a
   TPM2 (`systemd-analyze has-tpm2`): `set-credential` sealed the secret
-  to the TPM, and before 0.1.2 the agent's unit (`PrivateDevices=yes`)
+  to the TPM, and before 0.2.0 the agent's unit (`PrivateDevices=yes`)
   kept systemd from reaching it. Allow it in a drop-in:
   `mkdir -p /etc/systemd/system/agent@NAME.service.d`,
   `printf '[Service]\nDeviceAllow=/dev/tpmrm0 rw\n' > /etc/systemd/system/agent@NAME.service.d/60-tpm.conf`,
   `systemctl daemon-reload`, `systemctl restart agent@NAME.service`.
   Later units allow it themselves; remove the drop-in then.
+- **`model.credential: open /run/credentials/agent@NAME.service/…:
+  permission denied`**, with SELinux enforcing and nothing in the audit
+  log: before 0.2.0 the `custos` module did not let agents read their
+  unit's credentials (`init_var_run_t`), and the base policy does not
+  log that denial. Add the permission in a local module:
+  `printf '(allow agent_t init_var_run_t (dir (getattr search open read)))\n(allow agent_t init_var_run_t (file (getattr open read)))\n' > /root/custos-credentials.cil`,
+  `semodule -i /root/custos-credentials.cil`,
+  `systemctl restart agent@NAME.service`. Remove it once 0.2.0 is
+  installed: `semodule -r custos-credentials`.
 - **`model.credential "…": no credentials directory`** or
   **`model.credential: open …`**: the credential is not set or has another
   name. `agent-admin set-credential NAME <cred> < secret`, then
@@ -207,6 +222,7 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | `envelope: rollback: …` | `on` lists at least one of `tool_error`, `limit_exceeded`, `health_check_failed`; `health_check` (a command) is given exactly when `health_check_failed` is ([chapter 6](06-permissions-and-modes.md#auto-demote)) |
 | `agent … category … demoted: …` (from `agent-admin evaluate` or `custos-demote.service`) | the demotion evaluator demoted it, for the reason given; promote it again once that is resolved |
 | `an incident needs --reason TEXT: why it should not have run` | give the reason |
+| `not answering (no answer within 8 s): its service may be failing to start; see its Logs` (Cockpit) | [An agent does not start or answer](#agent-start) |
 | `agent …: no action … of activity … in category … ran without an approval in the last week` | the activity and call are not in `agent-admin review NAME CATEGORY`'s list: it had an approval, is older than a week, or belongs to another category |
 | `agent …: category … has not been promoted: its calls all had approvals` | only promoted categories have actions to review |
 | `agent-admin: custos-demote.timer could not be enabled …` | nothing demotes automatically: `systemctl enable --now custos-demote.timer` |

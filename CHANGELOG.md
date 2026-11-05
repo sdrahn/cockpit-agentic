@@ -81,6 +81,12 @@ removed.
   moment later, so a refused **Release all agents** (or delete, mode,
   …) seemed to do nothing. An action's error now stays until the next
   action or **Dismiss**.
+- The Cockpit page listed no agents at all while one agent's socket
+  was held by systemd but its service failed at start (a credential not
+  yet set, say): the request to that agent was never answered, and the
+  page waited for it, skipping every refresh. A read of an agent's or
+  the gateway's API now gives up after 8 seconds, and the agent is
+  listed as not answering, pointing to its logs.
 - An agent whose model credential was stored on a host with a TPM2 did
   not start (`Failed to set up credentials: Protocol error`,
   `243/CREDENTIALS`): `systemd-creds encrypt` seals the secret to the
