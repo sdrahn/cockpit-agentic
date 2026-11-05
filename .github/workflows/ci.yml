@@ -285,6 +285,7 @@ jobs:
             ${{ runner.temp }}/vm/airgap-setup.log
             ${{ runner.temp }}/vm/test.log
             ${{ runner.temp }}/vm/egress.txt
+            ${{ runner.temp }}/vm/injection-*.json
             ${{ runner.temp }}/vm/results.tap
             ${{ runner.temp }}/vm/results.xml
             ${{ runner.temp }}/vm/avc.txt
@@ -298,6 +299,8 @@ jobs:
           {
             echo '### Air-gapped gate (Leap 16.0, no network, SELinux enforcing)'
             tail -1 "$f"
+            echo
+            grep -E '^INFO: .* injections$' "$f" | sed 's/^INFO: /- prompt injection: /' || true
             echo
             grep -E '^(FAIL|SKIP):' "$f" | sed 's/^/- /' || true
           } >>"$GITHUB_STEP_SUMMARY"

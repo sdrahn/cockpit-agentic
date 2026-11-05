@@ -200,6 +200,7 @@ func (g *Governor) Plugin() (*plugin.Plugin, error) {
 		AfterModelCallback:  g.afterModel,
 		BeforeToolCallback:  g.beforeTool,
 		AfterToolCallback:   g.afterTool,
+		OnToolErrorCallback: g.onToolError,
 	})
 }
 
@@ -646,6 +647,31 @@ func (g *Governor) afterTool(tctx agent.ToolContext, t tool.Tool, args, result m
 	g.log.Log(journal.ToolResult, "Tool result "+t.Name()+": "+f["OUTCOME"], f)
 	return nil, nil
 }
+
+// onToolError records a call to a tool the agent was not given: the
+// gateway did not offer it (not permitted, hidden by the mode or the
+// enablement state) and it is no client tool. The model asked for it all
+// the same, which a prompt injection does (CONTRACT.md O14): it is
+// journaled as tool.denied.local, reason "not offered", and the model is
+// told so. It never reaches the gateway. Other tool errors are left to
+// the runtime.
+func (g *Governor) onToolError(tctx agent.ToolContext, t tool.Tool, args map[string]any, err error) (map[string]any, error) {
+	if err == nil || !strings.HasPrefix(err.Error(), "tool '"+t.Name()+"' not found") {
+		return nil, nil
+	}
+	f := g.toolFields(tctx, t.Name(), args)
+	f["OUTCOME"], f["REASON"] = "denied", NotOffered
+	g.mu.Lock()
+	f["RATIONALE"] = g.reasons[tctx.FunctionCallID()]
+	delete(g.reasons, tctx.FunctionCallID())
+	g.mu.Unlock()
+	g.log.Log(journal.ToolDeniedLocal, "Tool "+t.Name()+" is not offered to this agent", f)
+	return map[string]any{"error": "the tool " + t.Name() + " is not offered to this agent"}, nil
+}
+
+// NotOffered is tool.denied.local's REASON for a call to a tool the
+// agent was not given.
+const NotOffered = "not offered"
 
 // OnGatewayLog handles the gateway's logging messages: an approval
 // notice is assigned to the call it names (its progress token,

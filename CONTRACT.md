@@ -882,6 +882,11 @@ driver-style tasks. It is not its basis. Hosts that offer it serve
 offered to the model only if the host's configuration allows them by
 name; tools whose names contain `__` are refused, so they cannot pose
 as gateway tools. Refused ones are journaled as `tool.denied.local`.
+A call the model makes to a tool it was not given at all (neither
+offered by the gateway nor a client tool, as after a prompt injection,
+O14) is refused by the host too, never reaches the gateway, and is
+journaled as `tool.denied.local` with `AGENT_REASON=not offered`, the
+tool, the arguments' digest and the rationale.
 When the model calls one, the stream ends after `TOOL_CALL_END`; the
 frontend answers with a `role: tool` message on the same thread. Client
 tools never reach the gateway and must not be used for anything an
@@ -1350,7 +1355,7 @@ the product and release process, tracked here so that nothing is lost.
 | Per-category, not whole-agent, promotion; audit per category | §6a, §10 | done: `promote`, `demote`, promotion records (O11) |
 | Promotion-readiness view (override rate, incident rate, diversity, envelope size) | §6a | measures, thresholds, `agent-admin readiness` and the Cockpit view done, and `promote` checks them; envelope size open (O11) |
 | Hard capability limits, audit trail, emergency stop | §6, §8, §10, §15, §18 | done |
-| Prompt-injection defence | §6 (the gateway decides every call, never the model), §16a (egress fence) | the boundaries are done; detection and evaluation of injection attempts open (O14) |
+| Prompt-injection defence | §6 (the gateway decides every call, never the model), §16a (egress fence) | the boundaries are done; the evaluation suite of injection attempts done, on every VM run with a model that obeys them and in the air-gapped gate with the tested model; a call to a tool not given recorded (`not offered`); showing a suspected injection with the approval item open (O14) |
 | Service identity; privilege only through existing surfaces; MCP | §2, §6, §17 | done |
 | Fleet control plane: audit aggregation, policy distribution, approvals; mandatory above `N` hosts | §12 | parked (O13) |
 | Integration with SLES identity, RBAC, audit, configuration management | §2, §10 | identity, RBAC, audit done per host; configuration management parked with the fleet (O13) |
@@ -1505,9 +1510,21 @@ inherited, not specified again.
   radius across hosts. Parked by the requirement's owner; version 1 stays
   single-system (§12). O7 goes with it.
 - **O14 — prompt injection.** The boundaries hold whatever the model is
-  told: the gateway decides each call, the sandbox fences egress. Open
-  are an evaluation suite of injection attempts against the tested
-  models, and showing a suspected injection with the approval item (the
+  told: the gateway decides each call, the sandbox fences egress. Done:
+  the evaluation suite. The functional tests' test server serves notes
+  an attacker wrote (`read_note`; the cases in `test/vm/testsrv`): a
+  direct override, a forged system message, a claimed approval, a tool
+  the agent is not given (`wipe`), a request to leak the instructions,
+  an instruction buried in log output and one in data. Section "Prompt
+  injection" runs them on every VM run with the scripted model, which
+  obeys each one, and the air-gapped gate runs them again with the
+  tested model as an agent with an ordinary instruction. Checked each
+  time: an injected change waits for an approval and, declined, does not
+  run; `wipe` never reaches the gateway; the gateway allowed neither.
+  How often the tested model followed is reported (`injection-<model>.json`
+  with the results, and the gate's summary), not a gate. A call to a
+  tool not given is recorded (`tool.denied.local`, `not offered`, §11).
+  Open: showing a suspected injection with the approval item (the
   call's rationale and the tool output that preceded it).
 - **O15 — on-premises reference and air-gapped gate.** Done: the
   release gate (CI job `airgap`, on release branches): the packages,

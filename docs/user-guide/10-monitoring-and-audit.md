@@ -71,6 +71,24 @@ Arguments never appear in the agents' records. The gateway shows them
 with a pending approval to those who may decide, and logs them as its
 policy says.
 
+### Calls to tools the agent was not given {#not-offered}
+
+The gateway offers an agent only the tools it may use. A model that asks
+for another one anyway has usually followed an instruction in something
+it read (a prompt injection, [chapter 1](01-overview.md#prompt-injection)),
+or made the tool up. The launcher refuses the call, tells the model so,
+and records `tool.denied.local` with `AGENT_REASON=not offered`, the
+tool and the model's stated reason. The call never reaches the gateway.
+
+```bash
+journalctl -o json AGENT_CONTRACT=1 AGENT_EVENT=tool.denied.local AGENT_REASON="not offered" |
+  jq -r '[.__REALTIME_TIMESTAMP, .AGENT_NAME, .AGENT_TOOL, .AGENT_RATIONALE] | @tsv'
+```
+
+Look at what the agent read just before: the calls before it in the
+same activity (`AGENT_INVOCATION`), in the journal or in the activity in
+Cockpit's agent view.
+
 ## Promotion records {#promotion-records}
 
 `agent-admin promote` and `demote`, the demotion evaluator and the
