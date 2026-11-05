@@ -90,7 +90,7 @@ func TestMeasures(t *testing.T) {
 	l.proposal(t0.Add(28*time.Hour), "zypp__list_updates", "x", true, false)
 
 	now := t0.Add(20 * 24 * time.Hour)
-	m := Measure("patch-errata", perms, l.recs, l.decisions, Defaults, now)
+	m := Measure("patch-errata", perms, l.recs, Audit{Decisions: l.decisions}, Defaults, now)
 	want := Measures{Proposals: 15, Approved: 14, Declined: 1, Cancelled: 1, Overrides: 2, Incidents: 3, Tools: 1, Calls: 3}
 	if m.Proposals != want.Proposals || m.Approved != want.Approved || m.Declined != want.Declined || m.Cancelled != want.Cancelled ||
 		m.Overrides != want.Overrides || m.Incidents != want.Incidents || m.Tools != want.Tools || m.Calls != want.Calls {
@@ -115,7 +115,7 @@ func TestMeasures(t *testing.T) {
 		t.Errorf("20 days observed reported unmet: %q", got)
 	}
 	// The other category's own measures.
-	c := Measure("config-lifecycle", perms, l.recs, l.decisions, Defaults, now)
+	c := Measure("config-lifecycle", perms, l.recs, Audit{Decisions: l.decisions}, Defaults, now)
 	if c.Proposals != 1 || c.Declined != 1 || c.OverrideRate != 1 {
 		t.Errorf("config-lifecycle %+v", c)
 	}
@@ -128,19 +128,19 @@ func TestReady(t *testing.T) {
 		inv, _ := l.proposal(at, "zypp__patch", "a", true, true)
 		l.result(at.Add(time.Minute+time.Second), inv, "ok")
 	}
-	m := Measure("patch-errata", perms, l.recs, l.decisions, Defaults, t0.Add(16*24*time.Hour))
+	m := Measure("patch-errata", perms, l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(16*24*time.Hour))
 	if !m.Ready || len(m.Unmet) != 0 || m.Proposals != 60 || m.OverrideRate != 0 || m.IncidentRate != 0 {
 		t.Errorf("%+v", m)
 	}
 	// Too recent for the observation period.
-	m = Measure("patch-errata", perms, l.recs, l.decisions, Thresholds{ObservationDays: 30, Proposals: 50, OverrideRate: 0.05, IncidentRate: 0.02}, t0.Add(16*24*time.Hour))
+	m = Measure("patch-errata", perms, l.recs, Audit{Decisions: l.decisions}, Thresholds{ObservationDays: 30, Proposals: 50, OverrideRate: 0.05, IncidentRate: 0.02}, t0.Add(16*24*time.Hour))
 	if m.Ready || !strings.Contains(strings.Join(m.Unmet, ";"), "observed 16.0 days of 30") {
 		t.Errorf("%+v", m)
 	}
 }
 
 func TestEmpty(t *testing.T) {
-	m := Measure("patch-errata", perms, nil, nil, Defaults, t0)
+	m := Measure("patch-errata", perms, nil, Audit{Decisions: nil}, Defaults, t0)
 	if m.Ready || m.Proposals != 0 || m.OverrideRate != 0 || m.FirstProposal != "" {
 		t.Errorf("%+v", m)
 	}
@@ -218,7 +218,7 @@ func TestReviewsCountAsOverrides(t *testing.T) {
 	l.review(t0.Add(12*time.Hour), "patch-errata", "e-a", VerdictOK)
 	l.review(t0.Add(13*time.Hour), "patch-errata", "e-b", VerdictIncident)
 	l.review(t0.Add(13*time.Hour), "config-lifecycle", "e-b", VerdictIncident) // another category's
-	m := Measure("patch-errata", perms, l.recs, l.decisions, Defaults, t0.Add(20*24*time.Hour))
+	m := Measure("patch-errata", perms, l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(20*24*time.Hour))
 	if m.Proposals != 8 || m.Reviewed != 2 || m.ReviewOverrides != 1 || m.Overrides != 1 || fmt.Sprintf("%.3f", m.OverrideRate) != "0.100" {
 		t.Errorf("%+v", m)
 	}
@@ -268,7 +268,7 @@ func TestForgedReviewsIgnored(t *testing.T) {
 		inv, _ := l.proposal(t0.Add(time.Duration(i)*time.Hour), "zypp__patch", "a", true, false) // all declined
 		l.result(t0.Add(time.Duration(i)*time.Hour+2*time.Minute), inv, "error")
 	}
-	before := Measure("patch-errata", perms, l.recs, l.decisions, Defaults, t0.Add(20*24*time.Hour))
+	before := Measure("patch-errata", perms, l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(20*24*time.Hour))
 	for i := 0; i < 50; i++ {
 		inv := fmt.Sprintf("x-%d", i)
 		l.auto(t0.Add(10*time.Hour), inv, "zypp__patch", "ok")
@@ -276,7 +276,7 @@ func TestForgedReviewsIgnored(t *testing.T) {
 		l.recs[len(l.recs)-1]["_UID"] = "981"
 		l.recs[len(l.recs)-1]["SYSLOG_IDENTIFIER"] = "custos-promotion"
 	}
-	after := Measure("patch-errata", perms, l.recs, l.decisions, Defaults, t0.Add(20*24*time.Hour))
+	after := Measure("patch-errata", perms, l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(20*24*time.Hour))
 	if after.Reviewed != 0 || after.OverrideRate != before.OverrideRate || before.OverrideRate != 1 {
 		t.Errorf("before %+v\nafter %+v", before, after)
 	}
@@ -360,7 +360,7 @@ func TestIncidentsFromTheGateway(t *testing.T) {
 		}
 		l.decisions[id] = d
 	}
-	m := Measure("patch-errata", perms, l.recs, l.decisions, Defaults, t0.Add(20*24*time.Hour))
+	m := Measure("patch-errata", perms, l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(20*24*time.Hour))
 	if m.Approved != 4 || m.Cancelled != 1 || m.Incidents != 2 {
 		t.Errorf("%+v", m)
 	}
@@ -392,5 +392,35 @@ func TestParseResults(t *testing.T) {
 		if Failed(o) != want {
 			t.Errorf("Failed(%q)", o)
 		}
+	}
+}
+
+// The gateway's approvers' reviews (mcp-review, R4): a later verdict on
+// the same item replaces an earlier one; they count for the category of
+// their tool, as root's do.
+func TestGatewayReviews(t *testing.T) {
+	msg := func(at time.Time, m map[string]any) string {
+		m["audit"], m["msg"], m["event"] = true, "mcp", "mcp-review"
+		b, _ := json.Marshal(m)
+		o, _ := json.Marshal(map[string]string{"MESSAGE": string(b), "__REALTIME_TIMESTAMP": strconv.FormatInt(at.UnixMicro(), 10)})
+		return string(o)
+	}
+	gw := strings.Join([]string{
+		msg(t0, map[string]any{"id": "r-1", "sub": "agent-pp", "server": "zypp", "name": "patch", "verdict": "ok", "by": "alice"}),
+		msg(t0.Add(time.Hour), map[string]any{"id": "r-1", "sub": "agent-pp", "server": "zypp", "name": "patch", "verdict": "incident", "reason": "wrong host", "by": "bob"}),
+		msg(t0, map[string]any{"id": "r-2", "sub": "agent-pp", "server": "zypp", "name": "patch", "verdict": "ok", "by": "alice"}),
+		msg(t0, map[string]any{"id": "r-3", "sub": "agent-pp", "server": "systemd", "name": "restart_unit", "verdict": "incident", "reason": "x", "by": "alice"}),
+		msg(t0, map[string]any{"id": "r-4", "sub": "agent-other", "server": "zypp", "name": "patch", "verdict": "incident", "reason": "x", "by": "alice"}),
+	}, "\n")
+	rv := ParseReviews([]byte(gw), "agent-pp")
+	if len(rv) != 3 || rv[2].Item != "r-1" || rv[2].Verdict != "incident" || rv[2].By != "bob" || rv[2].Tool != "zypp__patch" || rv[2].Reason != "wrong host" {
+		t.Fatalf("%+v", rv)
+	}
+	if a := ParseAudit([]byte(gw), "agent-pp"); len(a.Reviews) != 3 {
+		t.Errorf("audit %+v", a)
+	}
+	m := Measure("patch-errata", perms, nil, Audit{Reviews: rv}, Defaults, t0.Add(24*time.Hour))
+	if m.Reviewed != 2 || m.ReviewOverrides != 1 || m.Overrides != 1 || m.OverrideRate != 0.5 {
+		t.Errorf("%+v", m)
 	}
 }

@@ -42,7 +42,7 @@ func (a *Admin) reviewData(name string) (*GatewayData, []readiness.Record, time.
 		return nil, nil, time.Time{}, err
 	}
 	now := a.Now()
-	recs, _, _, err := a.journalRecords(name, now.Add(-ReviewWindow))
+	recs, _, err := a.journalRecords(name, now.Add(-ReviewWindow))
 	return d, recs, now, err
 }
 
@@ -132,9 +132,9 @@ func (a *Admin) Review(name, cat, activity, call, verdict, by, reason string) er
 
 // reviewIncident is a review since the promotion that found an action
 // should not have run, for the evaluator; "" if none.
-func reviewIncident(cat string, st *CategoryState, recs []readiness.Record) string {
+func reviewIncident(cat string, st *CategoryState, perms []map[string]any, recs []readiness.Record, gateway []readiness.Review) string {
 	var found []readiness.Review
-	for _, rv := range readiness.Reviews(cat, recs) {
+	for _, rv := range readiness.AllReviews(cat, perms, recs, gateway) {
 		if rv.Verdict == readiness.VerdictIncident && !rv.At.Before(promotedAt(st)) {
 			found = append(found, rv)
 		}
@@ -144,5 +144,8 @@ func reviewIncident(cat string, st *CategoryState, recs []readiness.Record) stri
 	}
 	sort.Slice(found, func(i, j int) bool { return found[i].At.Before(found[j].At) })
 	rv := found[0]
+	if rv.Item != "" {
+		return fmt.Sprintf("review by %s on the gateway: %s (review %s) should not have run: %s", rv.By, rv.Tool, rv.Item, rv.Reason)
+	}
 	return fmt.Sprintf("review by %s: the action in activity %s should not have run: %s", rv.By, rv.Activity, rv.Reason)
 }

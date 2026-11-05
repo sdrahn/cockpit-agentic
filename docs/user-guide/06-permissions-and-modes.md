@@ -326,6 +326,18 @@ Listing the actions to review needs root or the group
 `systemd-journal`; a verdict needs root (or Cockpit's administrative
 access).
 
+**On the gateway.** The people who approve the agent's calls review them
+too, without root: mcp-gateway makes each call a promoted category makes
+without an approval a *review item* once it ran, for whoever may decide
+the agent's calls on its server (the servers' approvers and the agent's
+[owners](07-approvals.md)). They review on the gateway's approval page,
+with `mcp-gateway-admin reviews`, or in Cockpit's *Approvals* tab under
+*To review*, as themselves, with **Fine** or **Should not have run**
+and a reason. Their verdicts are the gateway's audit records
+(`mcp-review`) and count as root's do: in the readiness, and an
+incident demotes the category at the evaluator's next run (within five
+minutes). An item nobody reviewed expires after a week.
+
 ## Automatic demotion {#auto-demote}
 
 The demotion evaluator, `custos-demote.timer`, checks every bounded

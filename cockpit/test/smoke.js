@@ -683,6 +683,27 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.click("#owners button:text-is('Save owners')");
     await page.waitForFunction(() => document.querySelector("#error") && !document.querySelector("#error").hidden);
     check((await page.textContent("#error")).includes("an agent never approves"), "an agent as owner is refused, with agent-admin's reason");
+    // The gateway's reviews (R4): the calls that ran without an approval,
+    // reviewed as the person; "should not have run" needs a reason.
+    await page.goto(url + "?reviews#/approvals");
+    await page.waitForSelector("#gw-review-r-5");
+    check((await page.textContent("#gw-review-r-5")).includes("zypp__patch") && (await page.textContent("#gw-review-r-5")).includes("SUSE-SLE-16-2026-4712"),
+          "the gateway's review item: the call and its arguments");
+    await page.click("#gw-review-r-5 button:text-is('Should not have run')");
+    await page.waitForFunction(() => document.querySelector("#gw-review-r-5 .error-text"));
+    check(!(await calls()).some(c => c[0] === "POST" && c[2] === "/v1/reviews/r-5"), "\"should not have run\" without a reason is not sent");
+    await page.fill("#gw-review-r-5 .review-reason", "patched the database host");
+    await page.click("#gw-review-r-5 button:text-is('Should not have run')");
+    await page.waitForFunction(() => !document.querySelector("#gw-review-r-5"));
+    const rpost = (await calls()).find(c => c[0] === "POST" && c[2] === "/v1/reviews/r-5");
+    check(rpost && JSON.parse(rpost[3]).verdict === "incident" && JSON.parse(rpost[3]).reason === "patched the database host" &&
+          JSON.parse(rpost[3]).via === "cockpit" && rpost[1] === "/run/mcp-gateway/control.sock" && rpost[4] === "",
+          "the verdict goes to the gateway as the person, with its reason");
+    check(await page.isHidden("#reviews"), "nothing left to review: the section is hidden");
+    await page.goto(url + "?reload#/approvals");
+    await page.waitForSelector("#approval-a-42");
+    check(await page.isHidden("#reviews"), "a gateway without reviews: no section");
+
     // A suspected prompt injection (§7, O14): the approval item marks it,
     // with the signs and the output the model read before the call.
     await page.goto(url + "?injected#/approvals/a-42");
