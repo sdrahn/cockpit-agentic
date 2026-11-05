@@ -39,6 +39,7 @@ journalctl -u mcp-gateway.service --since -30min                 # the gateway: 
 | `model.endpoint: only for provider openai` | remove it for `gemini` and `vertex` |
 | `model.name: missing` | name the model, `model.name: qwen3-32b` |
 | `model.credential: "…": want a credential name such as model-key` | `credential` is the name of a stored secret, not the key: `set-credential NAME model-key` and `model.credential: model-key` |
+| `model.credential looks like a key, not a name: …` | the key was given where its name goes. Store the key, `set-credential NAME model-key`, and set `model.credential: model-key` (in the model defaults too, if they hold it) |
 | `model.credential: provider gemini needs an API key credential` | `set-credential NAME model-key` and `model.credential: model-key` |
 | `instruction and instruction_file: set one of them` | keep one |
 | `gateway.servers: name at least one gateway server` | list the servers the model uses |
@@ -87,10 +88,17 @@ journalctl -u mcp-gateway.service --since -30min                 # the gateway: 
   `semodule -i /root/custos-credentials.cil`,
   `systemctl restart agent@NAME.service`. Remove it once 0.2.0 is
   installed: `semodule -r custos-credentials`.
-- **`model.credential "…": no credentials directory`** or
-  **`model.credential: open …`**: the credential is not set or has another
-  name. `agent-admin set-credential NAME <cred> < secret`, then
-  `systemctl restart agent@NAME.service`.
+- **`model.credential CRED is not stored for agent NAME: …`** (before
+  0.2.1: **`model.credential "…": no credentials directory`** or
+  **`model.credential: open …: no such file or directory`**): the
+  credential is not set, has another name, or went with an earlier agent
+  of the same name (`delete` removes its credentials).
+  `agent-admin set-credential NAME CRED < secret`, then
+  `systemctl restart agent@NAME.service`. If `CRED` is the key itself,
+  see `looks like a key` [above](#configuration-errors).
+- **`model.credential looks like a key, not a name`**: the agent's
+  `model.credential` holds the key. Store it under a name and set that
+  name ([chapter 5](05-configuration.md#model-credentials)).
 - **`connect: permission denied` from a member of `agent-clients`**:
   the session predates the group membership. Log in again.
 - **The agent answers `409` to a new activity**: it is paused
@@ -269,7 +277,7 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | `sandbox.kind: agent … runs with …, not …; delete and create it to change the backend` | the backend is fixed at `create` |
 | `CUSTOS_OPENSHELL_USER: …` | the variable names no user ([chapter 11](11-openshell.md#install-openshell)) |
 | `importing the provider profile`, `creating the provider`, `minting the first token`, `creating the sandbox` | [OpenShell agents and tokens](#openshell) |
-| `model.credential "…": no credentials directory` | [An agent does not start](#agent-start) |
+| `model.credential … is not stored for agent …`, `model.credential "…": no credentials directory` | [An agent does not start](#agent-start) |
 | `401 invalid token`, `403 insufficient scope` | [OpenShell agents and tokens](#openshell) |
 | `agent-openshell-start: sandbox … is not Ready after 120s` | [OpenShell agents and tokens](#openshell) |
 | Cockpit: `no access to its socket`, `This needs administrative access`, `Reading the journal needs access`, `You may not decide approval` | [Cockpit problems](#cockpit) |

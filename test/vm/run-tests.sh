@@ -592,10 +592,15 @@ section "Model credentials"
 if systemd-analyze has-tpm2 -q 2>/dev/null; then tpm="sealed to the TPM"; else tpm="no TPM: the host key only"; fi
 agent-admin delete t3 >/dev/null 2>&1
 f=$(config t3 custos-test)
+sed 's|^model: .*|model: {provider: openai, name: fake, endpoint: "http://127.0.0.1:8008/v1", credential: sk-litellm-local}|' "$f" > "$f.key"
+check "agent-admin refuses a key given as the credential name, without repeating it" bash -c \
+	"out=\$(agent-admin create t3 --from '$f.key' 2>&1); [ \$? -ne 0 ] && grep -q 'looks like a key' <<<\"\$out\" && ! grep -q litellm <<<\"\$out\" && ! test -e /etc/custos/agents/t3"
+rm -f "$f.key"
 sed -i 's|^model: .*|model: {provider: openai, name: fake, endpoint: "http://127.0.0.1:8008/v1", credential: model-key}|' "$f"
-check "agent-admin create t3 (its model needs credential model-key)" agent-admin create t3 --from "$f"
-check "without the credential, t3 says which is missing" eventually 30 bash -c \
-	"systemctl start agent@t3.service >/dev/null 2>&1; journalctl -u agent@t3.service --since '@$t0' -o cat --no-pager | grep -Eq 'model.credential.*(agent-t3.model-key|no credentials directory)'"
+check "agent-admin create t3 says its credential is not stored yet" bash -c \
+	"agent-admin create t3 --from '$f' | grep -q 'agent-admin set-credential t3 model-key'"
+check "without the credential, t3 says how to store it" eventually 30 bash -c \
+	"systemctl start agent@t3.service >/dev/null 2>&1; journalctl -u agent@t3.service --since '@$t0' -o cat --no-pager | grep -q 'model.credential model-key is not stored for agent t3: agent-admin set-credential t3 model-key'"
 check "agent-admin set-credential t3 model-key ($tpm)" bash -c "printf 'test-key' | agent-admin set-credential t3 model-key"
 echo "  credential: $(stat -c '%U:%G %a %C' /etc/credstore.encrypted/agent-t3.model-key 2>&1)"
 check "the credential is stored encrypted, root's and not readable by others" bash -c \

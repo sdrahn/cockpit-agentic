@@ -129,6 +129,17 @@ your choice (lower-case letters, digits, `-` and `_`, starting with a
 letter or digit), but `gateway-token` and `gateway-client-secret` are
 reserved for OpenShell agents.
 
+`model.credential` is the *name*, never the key. A key typed there, such
+as `sk-…`, would not reach the model: the agent looks for a stored
+credential of that name and does not start. `agent-admin check`,
+`create`, `edit` and `defaults` refuse a value that looks like a key
+(a key's usual prefix such as `sk-` or `hf_`, or a long string of
+letters and digits), without repeating it. After `create` and `edit`,
+agent-admin says when the named credential is not stored yet, with the
+`set-credential` command that stores it. Deleting an agent removes its
+credentials: an agent created again under the same name needs them
+again. A model server that needs no key needs no `credential:`.
+
 ### Vertex AI {#vertex}
 
 The `vertex` provider reads `GOOGLE_CLOUD_PROJECT` and

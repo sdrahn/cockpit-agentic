@@ -747,7 +747,15 @@ sessions: {retention_days: 30}
 sandbox: {kind: systemd}             # or {kind: openshell, openshell_gateway: openshell} (§3a, §16a)
 ```
 
-Unknown keys are errors. `servers` and `tools` only decide what the
+Unknown keys are errors. `model.credential` is the name a secret is
+stored under (§17 `set-credential`), never the secret: `agent-admin`
+(`check`, `create`, `edit`, `defaults`) refuses one that looks like a key
+(a key's prefix such as `sk-`, or 32 characters or more with eight
+digits) unless a credential of that name is stored, and no message
+repeats it. After `create` and `edit` it says when the named credential
+is not stored yet. An agent whose credential is not stored does not
+start; the launcher's error names the `set-credential` command.
+`servers` and `tools` only decide what the
 model is *shown*; what the agent *may* do is §6. With `provider: openai`
 and a local model server, an agent needs nothing outside the host, so
 it works air-gapped.
