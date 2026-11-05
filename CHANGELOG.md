@@ -56,6 +56,10 @@ removed.
   error, and Cockpit reported an unexpected error instead. The page
   threw in a handler of Cockpit's own promise, which does not reject the
   promise it returns. The test stub now behaves like Cockpit's promises.
+- The Cockpit page cleared an action's error at its next refresh, a
+  moment later, so a refused **Release all agents** (or delete, mode,
+  …) seemed to do nothing. An action's error now stays until the next
+  action or **Dismiss**.
 
 ## v0.1.1 — 2026-11-04
 

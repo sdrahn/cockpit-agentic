@@ -261,6 +261,11 @@
                 const d = posture.agents[name];
                 const by = ((opts.environ || []).find(e => e.startsWith("SUDO_USER=")) || "SUDO_USER=root").slice(10);
                 if (cmd === "stop-all") posture.control = { stopped: true, by, at: new Date().toISOString() };
+                // ?stop: the first release-all is refused, as a host's may be.
+                if (cmd === "release-all" && query.has("stop") && !window.__releaseRefused) {
+                    window.__releaseRefused = true;
+                    return Promise.reject(new Error("agent-admin: the gateway's policy did not load the change within 20s (mcp/agents/_control/stopped)"));
+                }
                 if (cmd === "release-all") posture.control = { stopped: false, by, at: new Date().toISOString() };
                 if (cmd === "mode") d.mode = arg;
                 if (cmd === "pause" || cmd === "resume") d.paused = cmd === "pause";

@@ -210,10 +210,30 @@ function describeGatewayFailure(ex) {
     return "Talking to mcp-gateway failed: " + ((ex && (ex.message || ex.problem)) || ex);
 }
 
-function showError(msg) {
+/* The error box shows two kinds: an action's failure (showError), which
+ * stays until the next action or Dismiss, and the periodic refresh's
+ * (showRefreshError), which the next good refresh clears. A refresh never
+ * clears an action's failure: it would vanish before anyone read it. */
+const errors = { action: null, refresh: null };
+
+function renderErrors() {
     const box = document.getElementById("error");
-    box.hidden = !msg;
-    box.textContent = msg || "";
+    box.hidden = !errors.action && !errors.refresh;
+    box.replaceChildren(
+        ...(errors.action ? [el("span", null, errors.action), " ",
+            el("button", { class: "link", onclick: () => showError(null) }, "Dismiss")] : []),
+        ...(errors.action && errors.refresh ? [el("br")] : []),
+        ...(errors.refresh ? [el("span", null, errors.refresh)] : []));
+}
+
+function showError(msg) {
+    errors.action = msg || null;
+    renderErrors();
+}
+
+function showRefreshError(msg) {
+    errors.refresh = msg || null;
+    renderErrors();
 }
 
 /* setTabCount shows n after a tab's name; none for 0. */
