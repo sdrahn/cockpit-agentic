@@ -81,6 +81,12 @@ removed.
   moment later, so a refused **Release all agents** (or delete, mode,
   …) seemed to do nothing. An action's error now stays until the next
   action or **Dismiss**.
+- The Cockpit page listed no agents at all while one agent's socket
+  was held by systemd but its service failed at start (a credential not
+  yet set, say): the request to that agent was never answered, and the
+  page waited for it, skipping every refresh. A read of an agent's or
+  the gateway's API now gives up after 8 seconds, and the agent is
+  listed as not answering, pointing to its logs.
 - The demotion evaluator and the review counted records from the whole
   second of a promotion, so a proposal declined in the same second just
   before it counted against the new promotion, which could be demoted
