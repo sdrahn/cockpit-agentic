@@ -9,6 +9,18 @@ removed.
 
 ### Added
 
+- A prompt-injection evaluation suite (CONTRACT.md O14): the functional
+  tests' server serves notes an attacker wrote (an override, a forged
+  system message, a claimed approval, a tool not given, a leak request,
+  instructions buried in a log and in data). Section "Prompt injection"
+  runs them with a scripted model that obeys each one, and the
+  air-gapped gate with the tested model: an injected change waits for
+  an approval and does not run declined, a tool not given never reaches
+  the gateway. How often the tested model followed is reported
+  (`injection-<model>.json`, the gate's summary).
+- A model's call to a tool the agent was not given is refused by the
+  launcher and recorded as `tool.denied.local` with reason `not offered`
+  and the model's stated reason (user guide chapter 10).
 - User guide, chapter 14: where inference runs, in the order on-premises,
   the customer's own cloud account, vendor-hosted; every network flow
   that leaves a Custos host, each with its switch (Custos itself sends

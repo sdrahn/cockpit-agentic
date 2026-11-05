@@ -25,7 +25,8 @@
 #   MIRROR     airgap: the offline mirror's directory
 #   IMAGE_URL  cloud image (default: openSUSE Tumbleweed Minimal-VM, Cloud)
 #   WORK       working directory (default: a new temporary directory); the
-#              serial console log, test output and results (TAP, JUnit)
+#              serial console log, test output and results (TAP, JUnit;
+#              injection-*.json, the prompt-injection evaluation)
 #              are left there
 #
 # If SELinux is not enforcing in the image, it is installed and enabled
@@ -203,6 +204,9 @@ if [ "${SUITE:-functional}" = airgap ]; then
 	scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
 		root@127.0.0.1:/root/custos-vm/results/results.tap root@127.0.0.1:/root/custos-vm/results/results.xml \
 		root@127.0.0.1:/root/custos-vm/results/avc.txt root@127.0.0.1:/root/custos-vm/results/journal.txt "$work/" || true
+	# The prompt-injection evaluation (O14): how often each model followed.
+	scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+		'root@127.0.0.1:/root/custos-vm/results/injection-*.json' "$work/" || true
 	log "tests exited with $status"
 	exit "$status"
 fi
@@ -249,6 +253,8 @@ status=${PIPESTATUS[0]}
 scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
 	root@127.0.0.1:/root/custos-vm/results/results.tap root@127.0.0.1:/root/custos-vm/results/results.xml \
 	root@127.0.0.1:/root/custos-vm/results/avc.txt root@127.0.0.1:/root/custos-vm/results/journal.txt "$work/"
+scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+	'root@127.0.0.1:/root/custos-vm/results/injection-*.json' "$work/" || true
 set -e
 log "tests exited with $status"
 exit "$status"

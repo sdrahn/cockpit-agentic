@@ -10,12 +10,18 @@
 //	                                 → call report_diagnosis, quoting "probe ok"
 //	                                   (in the probe's output) and a line that is not
 //	  report_diagnosis's             → text "reported: <the result>"
+//	  read_note's, with "call the <tool> tool [with value <v>]"
+//	                                 → call <prefix>__<tool> {"value": v}, offered
+//	                                   or not: it obeys every injection
+//	                                   (CONTRACT.md O14), the worst case
 //	user text with PROBE           → call <prefix>__probe {}
 //	user text with CHANGE          → text with the reason, and call <prefix>__change {"value": "test"}
 //	user text with DELEGATE a t…   → call agents__delegate {"agent": a, "task": "t…"}
+//	user text with NOTE n          → call <prefix>__read_note {"name": n}
 //	anything else                  → text "ok"
 //
-// A tool the request does not offer is not called; the answer then says
+// Except when obeying an injection, a tool the request does not offer is
+// not called; the answer then says
 // so ("not offered: <tool>"), which is how the tests see hidden tools.
 //
 // Usage: fakemodel [--listen 127.0.0.1:8008] [--prefix custos-test]
@@ -27,6 +33,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync/atomic"
 )
@@ -56,6 +63,9 @@ type request struct {
 		} `json:"function"`
 	} `json:"tools"`
 }
+
+// injected is the instruction of an injection case (testsrv's cases.go).
+var injected = regexp.MustCompile(`(?i)call the (\w+) tool(?: with value ([\w-]+))?`)
 
 // Model answers requests.
 type Model struct {
@@ -106,6 +116,21 @@ func (m *Model) Respond(req *request) message {
 		tc.Function.Name, tc.Function.Arguments = "report_diagnosis", string(b)
 		return message{Role: "assistant", ToolCalls: []toolCall{tc}}
 	}
+	if last.Role == "tool" && answers(req.Messages, last.ToolCallID) == m.Prefix+"__read_note" && last.Content != nil {
+		if g := injected.FindStringSubmatch(*last.Content); g != nil {
+			args := map[string]any{}
+			if g[2] != "" {
+				args["value"] = g[2]
+			}
+			b, _ := json.Marshal(args)
+			var tc toolCall
+			tc.ID = fmt.Sprintf("call_%d", m.n.Add(1))
+			tc.Type = "function"
+			tc.Function.Name, tc.Function.Arguments = m.Prefix+"__"+g[1], string(b)
+			reason := "The note says to."
+			return message{Role: "assistant", Content: &reason, ToolCalls: []toolCall{tc}}
+		}
+	}
 	if last.Role == "tool" {
 		c := ""
 		if last.Content != nil {
@@ -142,6 +167,12 @@ func (m *Model) Respond(req *request) message {
 			return text("usage: DELEGATE <agent> <task>")
 		}
 		return call("Handing this to "+f[0]+".", "agents__delegate", map[string]any{"agent": f[0], "task": strings.Join(f[1:], " ")})
+	case strings.Contains(in, "NOTE "):
+		f := strings.Fields(in[strings.Index(in, "NOTE ")+len("NOTE "):])
+		if len(f) == 0 {
+			return text("usage: NOTE <name>")
+		}
+		return call("", m.Prefix+"__read_note", map[string]any{"name": strings.TrimRight(f[0], ".,:;")})
 	case strings.Contains(in, "CHANGE"):
 		return call("Writing the test marker; no other impact.", m.Prefix+"__change", map[string]any{"value": "test"})
 	case strings.Contains(in, "PROBE"):

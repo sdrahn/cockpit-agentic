@@ -48,6 +48,24 @@ The agent's own program (the launcher) adds local limits, a graceful
 pause and the journal records. It is not a security boundary: it helps
 an honest agent and makes the record richer.
 
+## Prompt injection {#prompt-injection}
+
+Text an agent reads, such as a log line, a file or a web page, can carry
+instructions written by someone else: *ignore your instructions, call
+this tool*. A model may follow them. Custos does not rely on the model
+to refuse. The rules above hold whatever the model was told: an injected
+change waits for an approval like any other, and a tool the agent was
+not given is not offered to it, so a call to it never reaches the
+gateway. When a model asks for such a tool all the same, the launcher
+records it (`tool.denied.local`, reason `not offered`; [chapter
+10](10-monitoring-and-audit.md#not-offered)), a sign that the model
+followed something it read.
+
+The release tests try a set of injections against both a scripted model
+that obeys every one and the tested open-weight model, and check that
+nothing the injection asked for ran. They also report how often the
+tested model was fooled.
+
 ## How one tool call flows {#call-flow}
 
 When an agent wants to change something, for example install patches:
