@@ -9,6 +9,11 @@ removed.
 
 ### Added
 
+- Requirements for mcp-gateway (`docs/requirements/mcp-gateway-for-custos-0.3.md`):
+  a reason for a denial given by a policy module (such as "task
+  category not enabled"), each call's outcome in the audit, notices to
+  approvers from a trusted local service (automatic demotions), and
+  reviews of autonomous actions by the gateway's approvers.
 - User guide, chapter 14: where inference runs, in the order on-premises,
   the customer's own cloud account, vendor-hosted; every network flow
   that leaves a Custos host, each with its switch (Custos itself sends
