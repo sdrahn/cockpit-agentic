@@ -430,7 +430,9 @@
                              }
                              if (cmd === "readiness") {
                                  return Promise.resolve(JSON.stringify({ agent: name,
-                                     thresholds: { observation_days: 14, proposals: 50, override_rate: 0.05, incident_rate: 0.02, window_days: 30 },
+                                     thresholds: { observation_days: 14, proposals: 50, override_rate: 0.05, incident_rate: 0.02, window_days: 30,
+                                         diagnostics_feedback: 10, diagnostics_confirmed_rate: 0.7 },
+                                     diagnostics_apply: true,
                                      categories: readiness,
                                      // The diagnostics history (§6b): 12 reports, feedback on 8.
                                      diagnostics: { reports: 12, hypotheses: 19, quotes: 31, verified_quotes: 28, with_feedback: 8,

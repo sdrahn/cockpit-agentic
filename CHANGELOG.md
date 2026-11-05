@@ -98,6 +98,13 @@ removed.
   stores its key from a file and installs the playbooks' exec commands;
   idempotent, one line per step.
 
+- On a host that started diagnostics-only, the agent's diagnostics
+  history counts in readiness (CONTRACT.md §6a, §6b): a category is
+  ready only with at least 10 diagnosis reports with feedback and 70 %
+  of the decided hypotheses confirmed (`diagnostics_feedback`,
+  `diagnostics_confirmed_rate` in `/etc/custos/promotion.yaml`), so
+  `promote` follows them; Cockpit says so.
+
 ### Fixed
 
 - Security: an agent could write a review verdict into its own journal
