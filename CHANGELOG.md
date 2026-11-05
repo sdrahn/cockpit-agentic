@@ -9,6 +9,14 @@ removed.
 
 ### Added
 
+- The gateway's approvers review a promoted category's autonomous
+  actions (mcp-gateway's review items, its requirement R4): the agents
+  module marks each call a bounded category makes without an approval
+  for review; the servers' approvers and the agent's owners review it on
+  the gateway's approval page, with `mcp-gateway-admin reviews`, or in
+  Cockpit's Approvals tab (*To review*), as themselves. Their verdicts
+  (`mcp-review`) count in the readiness as root's do, and an incident
+  demotes the category.
 - The gateway's denials of an agent's call say why (with mcp-gateway's
   `deny_reasons` and `unmatched_reasons`, its requirement R1): "task
   category patch-errata is not enabled on this host (diagnostics-only):

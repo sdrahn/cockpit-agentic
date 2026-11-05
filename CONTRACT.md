@@ -504,7 +504,19 @@ up to 20 reviews in the week. A verdict is `ok`, or `incident`: the
 action should not have run, which needs a reason. It is recorded as
 `category.review` (§10); a later verdict on the same action replaces
 an earlier one. Only verdicts root recorded count (§10, trusted
-records): an agent cannot review its own actions. In the measures, each reviewed action counts as a
+records): an agent cannot review its own actions.
+
+The gateway's approvers review them too (mcp-gateway's review items,
+its requirement R4). The agents module marks every call a bounded
+category makes without an approval for review (`review_wanted`): once it
+ran, the gateway offers it to whoever may decide the agent's calls on
+its server (the servers' approvers, the agent's owners) on its approval
+page, with `mcp-gateway-admin reviews`, on its control API (`GET` and
+`POST /v1/reviews`) and in Cockpit's Approvals tab, as the person; an
+item unreviewed for a week expires. Their verdicts, `ok` or `incident`
+with a reason, are the gateway's audit records (`mcp-review`), counted
+for the category of the call's tool as root's are; a later verdict on
+the same item replaces an earlier one. In the measures, each reviewed action counts as a
 decision, and each `incident` as an override:
 
 | Measure | Definition |
@@ -549,7 +561,8 @@ holds for a bounded category:
 - *not yet:* the gateway's rate cap is reached repeatedly (three times in
   a day; needs `rate`, O12);
 - an approver marks an autonomous action as an `incident` (`review`
-  demotes at once; the evaluator also does, should that have failed).
+  demotes at once; the evaluator also does, should that have failed;
+  a verdict on the gateway is the evaluator's to act on).
 
 `agent-admin promote` enables `custos-demote.timer` (the package leaves
 it as the presets say). An automatic demotion takes effect as soon as
@@ -1511,15 +1524,13 @@ inherited, not specified again.
   category in the agent's view. The rollback condition `tool_error` and
   the incident rate take each call's outcome from the gateway's audit
   (`mcp-result`, its requirement R2), so the agent cannot hide a failure
-  by leaving out its own `tool.result`. Open, as requirements for
-  mcp-gateway: telling the approvers of an automatic demotion through
-  its notification channels (a notice API for Custos), and reviews of
-  autonomous actions by the gateway's approvers rather than by root, as
-  a gateway feature (it already authenticates approvers and decides who
-  may approve an agent's calls): requirements R3 and R4 in
-  `docs/requirements/mcp-gateway-for-custos-0.3.md`. Also open: the
-  autonomous actions offered for review still come from the agent's
-  records (R4 replaces them). Open in Custos: in the measures: the agent data in force at a call's time, emergency
+  by leaving out its own `tool.result`. The gateway's approvers review
+  autonomous actions on the gateway (its review items, R4), and their
+  verdicts count as root's do. Open, as a requirement for mcp-gateway:
+  telling the approvers of an automatic demotion through its
+  notification channels (a notice API for Custos), requirement R3 in
+  `docs/requirements/mcp-gateway-for-custos-0.3.md`. Still from the
+  agent's records: the actions `agent-admin review` offers to root. Open in Custos: in the measures: the agent data in force at a call's time, emergency
   stops as incidents, the envelope's size, and the proposals behind each
   number.
 - **O12 — envelope limits in the gateway.** A per-agent, per-category

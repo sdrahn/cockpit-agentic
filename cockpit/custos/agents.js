@@ -371,7 +371,8 @@ function categoriesSection(a, data) {
             const counts = Object.entries(q.categories || {}).map(([cat, cq]) => cat + ": " + cq.reviewed + " of " + cq.actions + " reviewed this week");
             reviews.replaceChildren(el("h3", null, "To review"),
                 el("p", { class: "muted" }, "What promoted categories did without an approval. \"Should not have run\" counts as an override " +
-                   "and demotes the category at once; it needs a reason. " + counts.join("; ")),
+                   "and demotes the category at once; it needs a reason. The agent's approvers can review them on the Approvals tab too " +
+                   "(mcp-gateway's review items). " + counts.join("; ")),
                 ...(items.length ? items : [el("p", { class: "muted" }, "Nothing to review.")]));
         }).catch(ex => reviews.replaceChildren(el("p", { class: "muted" }, "Review: " + ex.message)));
     }

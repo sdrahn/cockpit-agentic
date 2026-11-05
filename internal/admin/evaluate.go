@@ -66,13 +66,13 @@ func (a *Admin) Evaluate() ([]Demotion, error) {
 		}
 		sort.Strings(cats)
 		now := a.Now()
-		recs, decisions, results, err := a.journalRecords(name, now.Add(-OverrideWindow))
+		recs, gw, err := a.journalRecords(name, now.Add(-OverrideWindow))
 		if err != nil {
 			errs = append(errs, err.Error())
 			continue
 		}
 		for _, c := range cats {
-			reason := a.demotionReason(d, c, recs, decisions, results, th, now)
+			reason := a.demotionReason(d, c, recs, gw, th, now)
 			if reason == "" {
 				continue
 			}
@@ -90,7 +90,7 @@ func (a *Admin) Evaluate() ([]Demotion, error) {
 }
 
 // demotionReason is why category c of agent d is to be demoted, or "".
-func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record, decisions map[string]readiness.Decision, results []readiness.Result, th readiness.Thresholds, now time.Time) string {
+func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record, gw readiness.Audit, th readiness.Thresholds, now time.Time) string {
 	st := d.Categories[c]
 	since := promotedAt(st)
 	if from := now.Add(-OverrideWindow); since.Before(from) {
@@ -102,12 +102,20 @@ func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record
 			after = append(after, r)
 		}
 	}
-	if why := reviewIncident(c, st, after); why != "" {
+	// The gateway's records since then too.
+	var reviews []readiness.Review
+	for _, rv := range gw.Reviews {
+		if !rv.At.Before(since) {
+			reviews = append(reviews, rv)
+		}
+	}
+	gw.Reviews = reviews
+	if why := reviewIncident(c, st, d.Permissions, after, gw.Reviews); why != "" {
 		return why
 	}
 	// Outside its windows a bounded category is supervised, so it still
 	// has proposals to decline.
-	m := readiness.Measure(c, d.Permissions, after, decisions, th, now)
+	m := readiness.Measure(c, d.Permissions, after, gw, th, now)
 	if m.Proposals > 0 && m.OverrideRate > th.OverrideRate {
 		return fmt.Sprintf("override rate %.1f %% above %.1f %% since %s (%d of %d proposals)",
 			m.OverrideRate*100, th.OverrideRate*100, since.UTC().Format(time.RFC3339), m.Overrides, m.Proposals)
@@ -136,7 +144,7 @@ func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record
 	// What the gateway saw come back (R2): a call of the category it let
 	// through without an approval or a grant. The agent cannot hide its
 	// failure by leaving out its own record.
-	for _, res := range results {
+	for _, res := range gw.Results {
 		if res.At.Before(since) || res.ApprovalID != "" || res.Grant != "" || !readiness.InCategory(c, res.Tool, d.Permissions) {
 			continue
 		}

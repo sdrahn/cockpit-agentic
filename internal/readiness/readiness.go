@@ -116,7 +116,8 @@ type Measures struct {
 // Measure computes a category's readiness. perms are the agent's
 // permissions (the gateway data); a call belongs to the category when a
 // permission of the category that is not read-only matches its tool.
-func Measure(category string, perms []map[string]any, recs []Record, decisions map[string]Decision, th Thresholds, now time.Time) Measures {
+func Measure(category string, perms []map[string]any, recs []Record, gw Audit, th Thresholds, now time.Time) Measures {
+	decisions := gw.Decisions
 	type key struct{ inv, call string }
 	calls := map[key]Record{}
 	results := map[key]Record{}
@@ -188,7 +189,7 @@ func Measure(category string, perms []map[string]any, recs []Record, decisions m
 			m.Incidents++
 		}
 	}
-	for _, rv := range Reviews(category, recs) {
+	for _, rv := range AllReviews(category, perms, recs, gw.Reviews) {
 		m.Reviewed++
 		if rv.Verdict == VerdictIncident {
 			m.ReviewOverrides++
@@ -401,10 +402,78 @@ type Action struct {
 	Args     string    `json:"args_sha256,omitempty"`
 }
 
-// Review is an approver's verdict on an autonomous action.
+// Review is an approver's verdict on an autonomous action: root's
+// (agent-admin review, by activity and call) or one of the gateway's
+// approvers' (its review items, R4: by item, with the tool).
 type Review struct {
 	Activity, Call, Verdict, By, Reason string
 	At                                  time.Time
+	// Item and Tool: a review the gateway recorded (mcp-review).
+	Item, Tool string
+}
+
+// Audit is what the gateway's audit says about one agent: its approval
+// decisions, the outcomes of its calls (R2) and its approvers' reviews
+// of the calls that ran (R4).
+type Audit struct {
+	Decisions map[string]Decision
+	Results   []Result
+	Reviews   []Review
+}
+
+// ParseAudit reads the gateway's journal for one principal.
+func ParseAudit(b []byte, principal string) Audit {
+	return Audit{Decisions: ParseDecisions(b, principal), Results: ParseResults(b, principal), Reviews: ParseReviews(b, principal)}
+}
+
+// ParseReviews reads the gateway's mcp-review records of one principal's
+// calls: the verdicts of its approvers (R4), a later one on the same item
+// replacing an earlier one, oldest first.
+func ParseReviews(b []byte, principal string) []Review {
+	latest := map[string]Review{}
+	for _, r := range ParseRecords(b) {
+		var msg struct {
+			Audit   bool   `json:"audit"`
+			Event   string `json:"event"`
+			ID      string `json:"id"`
+			Sub     string `json:"sub"`
+			Server  string `json:"server"`
+			Name    string `json:"name"`
+			Verdict string `json:"verdict"`
+			Reason  string `json:"reason"`
+			By      string `json:"by"`
+		}
+		if json.Unmarshal([]byte(r["MESSAGE"]), &msg) != nil || !msg.Audit || msg.Event != "mcp-review" || msg.Sub != principal || msg.ID == "" {
+			continue
+		}
+		rv := Review{Item: msg.ID, Tool: msg.Server + "__" + msg.Name, Verdict: msg.Verdict, Reason: msg.Reason, By: msg.By, At: At(r)}
+		if prev, ok := latest[msg.ID]; ok && rv.At.Before(prev.At) {
+			continue
+		}
+		latest[msg.ID] = rv
+	}
+	out := make([]Review, 0, len(latest))
+	for _, rv := range latest {
+		out = append(out, rv)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
+	return out
+}
+
+// AllReviews are the category's reviews: root's (Reviews) and the
+// gateway's approvers' of calls of the category.
+func AllReviews(category string, perms []map[string]any, recs []Record, gateway []Review) []Review {
+	var out []Review
+	for _, rv := range Reviews(category, recs) {
+		out = append(out, rv)
+	}
+	for _, rv := range gateway {
+		if InCategory(category, rv.Tool, perms) {
+			out = append(out, rv)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
+	return out
 }
 
 // Autonomous are the category's calls since then that ran without an

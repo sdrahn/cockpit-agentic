@@ -479,6 +479,27 @@ check "review lists the change made without an approval" bash -c \
 act=$(agent-admin review t1 patch-errata | jq -r '.categories["patch-errata"].pending[-1] | "\(.activity) \(.call)"')
 # shellcheck disable=SC2086 # activity and call
 check "review: ok keeps the category bounded" bash -c "agent-admin review t1 patch-errata $act ok >/dev/null && agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"bounded\"' >/dev/null"
+# The same review by the gateway's approvers (its review items, R4), where
+# the gateway has them: agents.rego marks the autonomous call for review.
+if gw /v1/reviews | jq -e 'type == "array"' >/dev/null 2>&1; then
+	gw_review() { gw /v1/reviews | jq -r '[.[] | select(.principal.sub == "agent-t1" and .name == "change" and (.verdict | not))][0].id // empty'; }
+	check "the gateway made the autonomous change a review item" eventually 10 bash -c "$(declare -f gw gw_review); test -n \"\$(gw_review)\""
+	rid=$(gw_review)
+	verdict() { gw "/v1/reviews/$1" -X POST -d "$2" -o /dev/null -w '%{http_code}'; }
+	check "the gateway refuses \"should not have run\" without a reason" test "$(verdict "$rid" '{"verdict":"incident"}')" = 400
+	check "a verdict on the gateway: ok" bash -c "$(declare -f gw verdict); verdict $rid '{\"verdict\":\"ok\",\"via\":\"test\"}' | grep -q '^20'"
+	check "the gateway audited it (mcp-review), by root" eventually 10 gw_audit_has '.event == "mcp-review" and .sub == "agent-t1" and .verdict == "ok" and .by == "root"'
+	check "evaluate keeps the category bounded after ok" bash -c \
+		"agent-admin evaluate >/dev/null && agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"bounded\"' >/dev/null"
+	check "readiness counts the gateway's review" bash -c "agent-admin readiness t1 patch-errata | jq -e '.categories[\"patch-errata\"].reviewed >= 2' >/dev/null"
+	check "a later verdict on the gateway: should not have run" bash -c \
+		"$(declare -f gw verdict); verdict $rid '{\"verdict\":\"incident\",\"reason\":\"functional test (gateway)\"}' | grep -q '^20'"
+	check "evaluate demotes it on the gateway's incident" bash -c \
+		"agent-admin evaluate | grep -q 'category patch-errata demoted: review by root on the gateway: custos-test__change (review .*) should not have run: functional test (gateway)'"
+	check "promote again, for what follows" agent-admin promote t1 patch-errata --envelope "$work/now.yaml" --despite-readiness --reason "functional test"
+else
+	skip "reviews by the gateway's approvers (this mcp-gateway has no review items)"
+fi
 # shellcheck disable=SC2086
 check "review: incident (should not have run) demotes it" bash -c "agent-admin review t1 patch-errata $act incident --reason 'functional test' >/dev/null && agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"supervised\"' >/dev/null"
 check "journal: category.review, by root, with the verdict" eventually 10 journal_has t1 category.review '.AGENT_VERDICT == "incident" and .AGENT_TOOL == "custos-test__change" and .AGENT_REASON == "functional test"'
