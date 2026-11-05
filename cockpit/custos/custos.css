@@ -191,3 +191,14 @@ button.danger-text { color: var(--danger); }
 }
 .credentials-edit .also { margin: 0.5rem 0; }
 .credentials-edit .also label { margin-right: 1rem; white-space: nowrap; }
+.report .summary { font-size: 1.05rem; }
+.report h3 .badge { margin-left: 0.5rem; vertical-align: middle; }
+.report .hypothesis { border-top: 1px solid var(--border); padding: 0.5rem 0; }
+.report .hypothesis .head { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.report .evidence { margin: 0.4rem 0 0.4rem 1rem; }
+.report .evidence .head { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.report .evidence blockquote { margin: 0.25rem 0; padding: 0.25rem 0.5rem; border-left: 3px solid var(--ok); overflow-x: auto; white-space: pre-wrap; }
+.report .evidence.unverified blockquote { border-left-color: var(--danger); }
+.report .plan .command { display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
+.report .plan code { overflow-x: auto; }
+.report-feedback label { display: block; margin: 0.25rem 0; }

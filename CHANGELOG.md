@@ -77,6 +77,12 @@ removed.
   `agent-admin feedback` records an administrator's verdict on it
   (`diagnosis.feedback`).
 
+- Cockpit: an activity's diagnosis report, with each hypothesis's
+  confidence (the agent's) next to how many of its quotes Custos
+  verified, each quote marked verified or the agent's claim alone, the
+  plan's commands to copy, and **Was it right?** for the
+  administrator's feedback; and **Diagnostic playbooks** in an agent's
+  view, to run one as the person.
 - Readiness shows the diagnostics history (CONTRACT.md §6b):
   `agent-admin readiness` and Cockpit's Task categories card list the
   agent's diagnosis reports over the window, how many of their quotes

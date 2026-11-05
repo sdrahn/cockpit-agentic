@@ -622,6 +622,52 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(await page.evaluate(() => shortApproval("a-6c88df4c32d09c66eb46bc8941b53745") === "a-6c88df4c…" && shortApproval("a-42") === "a-42"),
           "long approval ids are shown short");
 
+    // A diagnosis report (§4a): the agent's confidence next to how much of
+    // its evidence Custos verified; feedback through the root bridge.
+    await page.goto(url + "?report#/activity/patch-pilot/e-33b0cafe");
+    await page.waitForSelector("#report");
+    const rep = await page.textContent("#report");
+    check(rep.includes("/var is 98 % full") && rep.includes("playbook disk-pressure"), "the report's summary and playbook");
+    check((await page.textContent("#hypothesis-h1")).includes("agent's confidence: high") &&
+          (await page.textContent("#hypothesis-h1")).includes("1 of 2 quotes verified") &&
+          (await page.textContent("#hypothesis-h2")).includes("1 of 1 quotes verified"),
+          "each hypothesis: the agent's confidence and how much of its evidence is verified");
+    check((await page.textContent("#hypothesis-h1 #evidence-e1")).includes("✓ verified") &&
+          (await page.textContent("#hypothesis-h1 #evidence-e2")).includes("the agent's claim alone"),
+          "each quote marked verified, or the agent's claim alone");
+    check((await page.textContent("#report .plan")).includes("journalctl --vacuum-size=2G") &&
+          await page.isVisible("#report .plan button:has-text('Copy')"), "the plan's commands, to copy");
+    if (shots) await (await page.$("#report")).screenshot({ path: path.join(shots, "report.png") });
+    await page.click("#report .report-feedback button[type=submit]");
+    check((await page.textContent("#report .report-feedback")).includes("Give a verdict"), "an empty feedback is not sent");
+    await page.selectOption("#report select[name=h-h1]", "confirmed");
+    await page.selectOption("#report select[name=h-h2]", "rejected");
+    await page.selectOption("#report select[name=plan]", "useful");
+    await page.check("#report input[name=executed]");
+    await page.fill("#report input[name=comment]", "journald.conf had no limit");
+    await page.waitForTimeout(3500); // a refresh of the tab keeps what was filled in
+    await page.click("#report .report-feedback button[type=submit]");
+    await page.waitForFunction(() => document.querySelector("#report .report-feedback").textContent.includes("Recorded"));
+    const fb = await spawned("agent-admin feedback patch-pilot e-33b0cafe --hypothesis h1=confirmed --hypothesis h2=rejected --plan useful --executed --comment journald.conf had no limit");
+    check(fb.length === 1 && fb[0][4] === "require", "feedback is recorded with agent-admin feedback through the root bridge, as filled in");
+
+    // Running a playbook from an agent's view (§14c), as the person.
+    await page.goto(url + "?playbooks#/agents/patch-pilot");
+    await page.waitForFunction(() => document.querySelector("#playbook-run option[value=disk-pressure]"));
+    const pbOpts = await page.$$eval("#playbook-run option", os => os.map(o => o.value));
+    check(pbOpts.includes("selinux-denials") && !pbOpts.includes("broken"), "the playbooks are offered, not a broken one");
+    await page.selectOption("#playbook-run select[name=playbook]", "selinux-denials");
+    await page.click("#playbook-run button[type=submit]");
+    await page.waitForFunction(() => document.querySelector("#playbook-run").textContent.includes("does not offer"));
+    check(true, "a playbook the gateway does not offer the tools of is refused, with the agent's reason");
+    await page.selectOption("#playbook-run select[name=playbook]", "disk-pressure");
+    await page.fill("#playbook-run input[name=request]", "/var");
+    await page.click("#playbook-run button[type=submit]");
+    await page.waitForFunction(() => location.hash.startsWith("#/activity/patch-pilot/e-new"));
+    const started = (await calls()).filter(c => c[0] === "POST" && c[2] === "/v1/activities" && c[3].includes("disk-pressure"));
+    check(started.length === 1 && JSON.parse(started[0][3]).prompt === "/var" && started[0][4] === "",
+          "the playbook runs as the person, with the request, and its activity opens");
+
     check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join("; ") : ""));
     await browser.close();
 })().catch(e => { console.error(e); process.exit(1); });

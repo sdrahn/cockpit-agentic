@@ -57,7 +57,20 @@
             { id: "e-33b0cafe", session: "t1", user: "alice", state: "finished", started: ago(3600), ended: ago(3500),
               origin: { kind: "chat", by: "alice" }, root: { agent: "patch-pilot", activity: "e-33b0cafe" },
               summary: "3 patches pending, none security-relevant. Nothing installed.",
-              calls: [{ call_id: "c1", tool: "zypp__list_updates", state: "ok" }] },
+              calls: [{ call_id: "c1", tool: "zypp__list_updates", state: "ok" }],
+              // A diagnosis report (§4a): h1 rests on a verified and an
+              // unverified quote, h2 on a verified one.
+              playbook: "disk-pressure",
+              report: { kind: "diagnosis", playbook: "disk-pressure", summary: "/var is 98 % full: the journal grew to 11 GiB.",
+                findings: [{ id: "f1", text: "/var is 98 % used.", evidence: ["e1"] }],
+                hypotheses: [
+                    { id: "h1", text: "The journal has no size limit.", confidence: "high", evidence: ["e1", "e2"] },
+                    { id: "h2", text: "Old snapshots keep deleted data.", confidence: "low", evidence: ["e3"] }],
+                evidence: [
+                    { id: "e1", call_id: "c1", tool: "exec__disk_usage", quote: "/dev/vda3  20G  19.6G  0.4G  98% /var", verified: true },
+                    { id: "e2", call_id: "c1", tool: "exec__disk_usage", quote: "journal 11G", verified: false },
+                    { id: "e3", call_id: "c2", tool: "snapper__list_snapshots", quote: "42 snapshots", verified: true }],
+                plan: [{ step: 1, text: "Limit the journal to 2 GiB.", command: "journalctl --vacuum-size=2G", risk: "Older entries go." }] } },
         ],
     };
     const status = name => ({ contract: 1, implementation: "custos/adk-go", name, version: "test", model: "qwen3-32b (local)",
@@ -175,7 +188,7 @@
     }
     const ok = v => Promise.resolve(typeof v === "string" ? v : JSON.stringify(v));
 
-    function agentRoute(name, method, path, superuser) {
+    function agentRoute(name, method, path, superuser, body) {
         // ?hang: an agent whose socket systemd holds while its service
         // fails to start: the connection is never answered.
         if (name === "hung") return Object.assign(new Promise(() => {}), { close() { log.push(["close", "hung", path, "", ""]); } });
@@ -184,6 +197,19 @@
         if (name === "old-agent" || name === "sandboxed" || name === "gone-agent") return fail(0, "not-found");
         if (method === "GET" && path === "/v1/status") return ok(status(name));
         if (method === "GET" && path === "/v1/activities") return ok({ activities: activities[name] });
+        // A playbook (§14c): refused (422) when the gateway does not offer
+        // a step's tool, as for "selinux-denials" here.
+        if (method === "POST" && path === "/v1/activities") {
+            const req = JSON.parse(body || "{}");
+            if (req.playbook === "selinux-denials") {
+                return fail(422, null, "playbook selinux-denials needs tools the gateway does not offer agent " + name + ": exec__selinux_status\n");
+            }
+            const id = "e-new" + (activities[name] || []).length;
+            activities[name] = [{ id, session: "s-9", user: "carol", state: "running", started: new Date().toISOString(),
+                origin: { kind: "api", by: "carol" }, root: { agent: name, activity: id }, playbook: req.playbook, calls: [] }]
+                .concat(activities[name] || []);
+            return ok({ id, session: "s-9" });
+        }
         const cancel = path.match(/^\/v1\/activities\/([^/]+)\/cancel$/);
         if (method === "POST" && cancel) {
             // Not the person's activity: only root may (§5).
@@ -216,7 +242,7 @@
             const route = (method, path, body) => {
                 log.push([method, sock, path, body || "", opts.superuser || ""]);
                 const m = sock.match(/^\/run\/agents\/([^/]+)\/api\.sock$/);
-                if (m) return agentRoute(m[1], method, path, opts.superuser);
+                if (m) return agentRoute(m[1], method, path, opts.superuser, body);
                 if (sock === "/run/mcp-gateway/control.sock") return gatewayRoute(method, path, body);
                 return fail(0, "not-found");
             };
@@ -298,6 +324,10 @@
                     return Promise.resolve(JSON.stringify(out));
                 }
                 if (cmd === "templates") return Promise.resolve(JSON.stringify(TEMPLATES));
+                if (cmd === "playbooks") return Promise.resolve(JSON.stringify({
+                    "disk-pressure": { title: "Disk and inode pressure", steps: [{ tool: "exec__disk_usage", why: "x" }], file: "/usr/share/custos/playbooks/disk-pressure.yaml" },
+                    "selinux-denials": { title: "SELinux state and denials", steps: [{ tool: "exec__selinux_status", why: "x" }], file: "/usr/share/custos/playbooks/selinux-denials.yaml" },
+                    "broken": { title: "", error: "steps: at least one", file: "/etc/custos/playbooks/broken.yaml" } }));
                 // Model defaults (§14b) and drafts with them; read as the person.
                 const model = () => defaults.model ? "model:  # the host's defaults (/etc/custos/defaults.yaml)\n  provider: " + defaults.model.provider +
                     "\n  name: " + defaults.model.name + (defaults.model.credential ? "\n  credential: " + defaults.model.credential : "") + "\n" : null;
@@ -349,6 +379,10 @@
                                  defaults.model = { provider: v("provider"), name: v("name"), endpoint: v("endpoint"), credential: v("credential") };
                              }
                              if (cmd === "set-credential") credentials[name + "." + arg] = input;
+                             if (cmd === "feedback") {
+                                 if (args.includes("h9=confirmed")) return Promise.reject(new Error("agent-admin: the report of " + arg + " has no hypothesis \"h9\"")).then(ok, bad);
+                                 (window.__feedback = window.__feedback || []).push(args.slice(2));
+                             }
                              if (cmd === "remove-credential") {
                                  if (modelCredentials[name] === arg && !args.includes("--force"))
                                      return Promise.reject(new Error("agent-admin: agent " + name + "'s model uses " + arg + ": … or --force")).then(ok, bad);
