@@ -140,6 +140,11 @@
     // MESSAGE, "audit": true). a-17 was declined, a-9 approved and run,
     // a-42 waits.
     const query = new URLSearchParams(window.location.search);
+    // ?diag: a host that started diagnostics-only and has config-lifecycle
+    // enabled since (§6b).
+    if (query.has("diag")) posture.enablement = { state: "categories", enabled: ["config-lifecycle", "diagnostics"],
+        changed_by: "alice 2026-11-05T09:00:00Z", record: "n-1" };
+    if (query.has("tampered")) posture.enablement.tampered = "the state differs from its record n-1";
     const at = s => String((Date.now() - s * 1000) * 1000);
     const rec = (s, name, event, f) => Object.assign({ __REALTIME_TIMESTAMP: at(s), AGENT_CONTRACT: "1", AGENT_NAME: name,
         AGENT_EVENT: event, SYSLOG_IDENTIFIER: "agent-" + name, MESSAGE: event }, f);
@@ -324,6 +329,10 @@
                     return Promise.resolve(JSON.stringify(out));
                 }
                 if (cmd === "templates") return Promise.resolve(JSON.stringify(TEMPLATES));
+                if (cmd === "categories") return Promise.resolve(JSON.stringify({
+                    "compliance-audit": { title: "Compliance and audit" }, "config-lifecycle": { title: "Configuration and lifecycle" },
+                    diagnostics: { title: "Health checks and diagnostics" }, "patch-errata": { title: "Patch and errata management" },
+                    "security-response": { title: "Security response" } }));
                 if (cmd === "playbooks") return Promise.resolve(JSON.stringify({
                     "disk-pressure": { title: "Disk and inode pressure", steps: [{ tool: "exec__disk_usage", why: "x" }], file: "/usr/share/custos/playbooks/disk-pressure.yaml" },
                     "selinux-denials": { title: "SELinux state and denials", steps: [{ tool: "exec__selinux_status", why: "x" }], file: "/usr/share/custos/playbooks/selinux-denials.yaml" },
@@ -379,6 +388,12 @@
                                  defaults.model = { provider: v("provider"), name: v("name"), endpoint: v("endpoint"), credential: v("credential") };
                              }
                              if (cmd === "set-credential") credentials[name + "." + arg] = input;
+                             if (cmd === "enable") {
+                                 const all = ["compliance-audit", "config-lifecycle", "diagnostics", "patch-errata", "security-response"];
+                                 const cats = name === "--all" ? all : args.slice(2);
+                                 posture.enablement = Object.assign({}, posture.enablement, { state: "categories", record: "n-2", changed_by: by + " now",
+                                     enabled: [...new Set([...(posture.enablement.enabled || []), ...cats])].sort() });
+                             }
                              if (cmd === "feedback") {
                                  if (args.includes("h9=confirmed")) return Promise.reject(new Error("agent-admin: the report of " + arg + " has no hypothesis \"h9\"")).then(ok, bad);
                                  (window.__feedback = window.__feedback || []).push(args.slice(2));

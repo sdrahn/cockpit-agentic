@@ -105,6 +105,11 @@ removed.
   `diagnostics_confirmed_rate` in `/etc/custos/promotion.yaml`), so
   `promote` follows them; Cockpit says so.
 
+- Cockpit shows a diagnostics-only host's enablement state on the Agents
+  tab (enabled and disabled categories, who changed it, a state changed
+  outside agent-admin), with **Enable…**; a disabled category is marked
+  in an agent's task categories and offers no **Promote…**.
+
 ### Fixed
 
 - Security: an agent could write a review verdict into its own journal

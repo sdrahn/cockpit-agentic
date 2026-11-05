@@ -439,3 +439,14 @@ function chainView(chain) {
     });
     return box;
 }
+
+/* categoryUsable is the gateway's rule (agents.rego, CONTRACT.md §6b):
+ * whether permissions of a task category ("" for none) may be used on
+ * this host, by the enablement state in agent-admin show. */
+function categoryUsable(cat) {
+    const e = state.posture && state.posture.enablement;
+    if (!e) return true;
+    if (e.state === "diagnostics-only") return cat === "diagnostics";
+    if (e.state === "categories") return !cat || cat === "diagnostics" || (e.enabled || []).includes(cat);
+    return false;
+}
