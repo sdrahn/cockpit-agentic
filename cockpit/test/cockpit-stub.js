@@ -8,7 +8,12 @@
     // agent-admin templates (§14a) on a system with a writable root: one
     // template for it, one for transactional systems, one that cannot be used.
     const defaults = {}; // /etc/custos/defaults.yaml
-    const credentials = window.__credentials = {};
+    // The credential store (agent-admin set-credential): disk-watch has
+    // its model's, patch-pilot an old one but not its model's.
+    const credentials = window.__credentials = { "disk-watch.model-key": "sk-stored-value", "patch-pilot.old-key": "sk-old-value" };
+    // model.credential of the agents (their agent.yaml); triage is an
+    // OpenShell agent, whose gateway token OpenShell holds.
+    const modelCredentials = { "patch-pilot": "model-key", "disk-watch": "model-key", "old-agent": "model-key" };
     const TEMPLATES = { transactional: false, templates: {
         "service-doctor": { title: "Service doctor", description: "Finds failed or flapping services and restarts them.", system: "any",
             mode: "supervised", needs: ["systemd-mcp"], dir: "/usr/share/custos/templates/service-doctor", servers: ["systemd"],
@@ -274,6 +279,24 @@
             if (args[0] === "agent-admin") {
                 const [cmd, name, arg] = args.slice(1);
                 if (cmd === "show") return Promise.resolve(JSON.stringify(posture));
+                // Names only, never values; root's alone (§17).
+                if (cmd === "credentials") {
+                    if (!opts.superuser || query.has("nocreds")) return Promise.reject(new Error("agent-admin: reading the credential store: permission denied"));
+                    const out = {};
+                    for (const n of Object.keys(posture.agents)) {
+                        const list = Object.keys(credentials).filter(k => k.startsWith(n + ".")).map(k => k.slice(n.length + 1)).map(c => ({
+                            name: c, stored: true, stored_at: "2026-11-05T09:00:00Z", used_by: modelCredentials[n] === c ? ["model"] : [] }));
+                        const missing = [];
+                        if (modelCredentials[n] && !list.some(c => c.name === modelCredentials[n])) {
+                            list.push({ name: modelCredentials[n], stored: false, used_by: ["model"] });
+                            missing.push(modelCredentials[n]);
+                        }
+                        if (n === "triage") list.push({ name: "gateway-token", stored: true, used_by: ["gateway"], held_by: "openshell" });
+                        list.sort((x, y) => x.name.localeCompare(y.name));
+                        out[n] = { credentials: list, missing };
+                    }
+                    return Promise.resolve(JSON.stringify(out));
+                }
                 if (cmd === "templates") return Promise.resolve(JSON.stringify(TEMPLATES));
                 // Model defaults (§14b) and drafts with them; read as the person.
                 const model = () => defaults.model ? "model:  # the host's defaults (/etc/custos/defaults.yaml)\n  provider: " + defaults.model.provider +
@@ -326,6 +349,11 @@
                                  defaults.model = { provider: v("provider"), name: v("name"), endpoint: v("endpoint"), credential: v("credential") };
                              }
                              if (cmd === "set-credential") credentials[name + "." + arg] = input;
+                             if (cmd === "remove-credential") {
+                                 if (modelCredentials[name] === arg && !args.includes("--force"))
+                                     return Promise.reject(new Error("agent-admin: agent " + name + "'s model uses " + arg + ": … or --force")).then(ok, bad);
+                                 delete credentials[name + "." + arg];
+                             }
                              if (cmd === "delete") delete posture.agents[name];
                              if (cmd === "edit") {
                                  const why = invalid(input) || (!new RegExp("^name: " + name + "$", "m").test(input)

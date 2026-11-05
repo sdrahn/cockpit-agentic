@@ -27,6 +27,9 @@ const usage = `usage: agent-admin COMMAND …
   edit NAME --from FILE                  replace its configuration and apply it (restart; OpenShell: its sandbox; FILE -: stdin)
   delete NAME [--keep-state]             remove an agent (its user stays)
   set-credential NAME CRED               encrypt a secret read from stdin
+  credentials [NAME…]                    the agents' credentials: names, what uses them, missing ones; never
+                                         the values (JSON)
+  remove-credential NAME CRED [--force]  remove a stored credential (--force: one its model uses)
   mode NAME advisory|supervised|bounded  set the autonomy mode (enforced by mcp-gateway)
   permissions NAME                       replace its gateway permissions (YAML list on stdin)
   categories                             the task categories (CONTRACT.md §6a), as JSON
@@ -143,6 +146,19 @@ func run(a *admin.Admin, args []string) error {
 			return err
 		}
 		return a.SetCredential(args[0], args[1], os.Stdin)
+	case "credentials":
+		c, err := a.Credentials(args...)
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(c)
+	case "remove-credential":
+		if err := need(2); err != nil {
+			return err
+		}
+		return a.RemoveCredential(args[0], args[1], has("--force"))
 	case "mode":
 		if err := need(2); err != nil {
 			return err
