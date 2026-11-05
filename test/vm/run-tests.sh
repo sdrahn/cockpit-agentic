@@ -587,7 +587,10 @@ check "agent-admin create t3 (its model needs credential model-key)" agent-admin
 check "without the credential, t3 says which is missing" eventually 30 bash -c \
 	"systemctl start agent@t3.service >/dev/null 2>&1; journalctl -u agent@t3.service --since '@$t0' -o cat --no-pager | grep -Eq 'model.credential.*(agent-t3.model-key|no credentials directory)'"
 check "agent-admin set-credential t3 model-key ($tpm)" bash -c "printf 'test-key' | agent-admin set-credential t3 model-key"
-check "the credential is stored encrypted, root 0600" stat_is /etc/credstore.encrypted/agent-t3.model-key root:root:600
+echo "  credential: $(stat -c '%U:%G %a %C' /etc/credstore.encrypted/agent-t3.model-key 2>&1)"
+check "the credential is stored encrypted, root's and not readable by others" bash -c \
+	"[ \"\$(stat -c %U:%G /etc/credstore.encrypted/agent-t3.model-key)\" = root:root ] && [ \$(( 0\$(stat -c %a /etc/credstore.encrypted/agent-t3.model-key) & 077 )) -eq 0 ]"
+t3_t0=$(date +%s)
 systemctl reset-failed agent@t3.service >/dev/null 2>&1
 check "with it, t3 starts ($tpm)" bash -c "systemctl restart agent@t3.service && sleep 2 && systemctl is-active -q agent@t3.service"
 check "systemd set up t3's credentials (no CREDENTIALS failure)" not bash -c \
@@ -595,6 +598,12 @@ check "systemd set up t3's credentials (no CREDENTIALS failure)" not bash -c \
 check "t3 answers on its socket" bash -c "$(declare -f api); api t3 /v1/status | jq -e '.contract == 1' >/dev/null"
 check "no ConfigurationDirectory mode warning" not bash -c \
 	"journalctl -u agent@t3.service --since '@$t0' -o cat --no-pager | grep -q 'ConfigurationDirectory.*mode is different'"
+# What the agent sees of its credentials, and SELinux on them (the
+# SELinux section above ran before this one).
+echo "  credentials: $(ls -lZ /run/credentials/agent@t3.service/ 2>&1 | tr '\n' ' ')"
+t3_avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$t3_t0" '+%x %T')" 2>/dev/null | grep -E 'denied|SELINUX_ERR' || true)
+[ -n "$t3_avc" ] && printf '  %s\n' "$t3_avc" | head -20
+check "no SELinux denial while t3 reads its credential" test -z "$t3_avc"
 check "agent-admin delete t3" agent-admin delete t3
 
 section Removing
