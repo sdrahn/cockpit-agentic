@@ -30,6 +30,7 @@ first working agent.
 | [11. Agents in OpenShell sandboxes, the gateway's HTTPS listener and the identity provider](11-openshell.md) | agents in OpenShell, the HTTPS listener, Keycloak or another IdP, tokens |
 | [12. Troubleshooting](12-troubleshooting.md) | symptoms, causes and fixes; every error message |
 | [13. Reference](13-reference.md) | programs, files, units, users, variables, SELinux, ports |
+| [14. Network access and air-gapped operation](14-network.md) | where inference runs, every flow that leaves the host and its switch, installing offline, checking that nothing leaves |
 
 ## Common questions {#questions}
 
@@ -71,6 +72,9 @@ first working agent.
 | Which token issuers does the gateway trust for agents? | [11-openshell.md#issuers](11-openshell.md#issuers) |
 | How is the sandbox's gateway credential set? | [11-openshell.md#credential](11-openshell.md#credential) |
 | Where is a file, unit or SELinux type? | [13-reference.md](13-reference.md) |
+| Where should the model run: on-premises, our cloud, a vendor? | [14-network.md#inference](14-network.md#inference) |
+| What does a Custos host send over the network, and how do I turn it off? | [14-network.md#egress](14-network.md#egress) |
+| Can Custos run air-gapped? | [14-network.md#offline](14-network.md#offline) |
 
 ## Where errors are explained {#errors}
 
