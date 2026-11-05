@@ -220,6 +220,19 @@ command reads the agent's and the gateway's journal, so run it as root
 or as a member of `systemd-journal`. It counts a call in a category by
 the agent's current permissions.
 
+### The diagnostics history {#diagnostics-evidence}
+
+`agent-admin readiness` (and the Task categories card in Cockpit) also
+shows what the agent's diagnosis reports showed over the same window:
+how many reports, how many of their quotes Custos verified, how many you
+gave feedback on, how many hypotheses you confirmed, rejected or were
+unsure of, and what you said of the plans
+([chapter 9](09-administration.md#reports)). On a host that started
+diagnostics-only, this is the first evidence for a category you enable
+later. It is shown next to the readiness, not counted in it. Only
+feedback given as root (`agent-admin feedback`, or Cockpit with
+administrative access) counts.
+
 ## Promoting a category {#promote}
 
 A promoted category acts without approval, but only within its

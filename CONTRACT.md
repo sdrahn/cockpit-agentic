@@ -605,10 +605,16 @@ the state (for instance to the TPM) is open (O16).
 
 **Trust evidence.** What the diagnostics agent did before another
 category was enabled is that category's starting evidence: the readiness
-view (above) also shows, per agent, the reports of the window, the
-hypotheses with feedback and how many were confirmed, and the plans
-marked useful and executed. They are shown, not thresholds; whether some
-should become thresholds is open (O16).
+view (§6a) also shows, per agent, over its window: the activities with a
+diagnosis report (the last report of each), their hypotheses, their
+quotes and how many the host verified; the reports with feedback (the
+last feedback of each), the hypotheses confirmed, rejected and unsure and
+the share confirmed of those decided; and the plans marked useful, not
+useful and carried out. Feedback counts only from records journald gives
+the trusted `_UID` 0 (`agent-admin feedback` as root): an agent writes
+its own records to the journal, with any identifier it likes, never with
+another `_UID`. They are shown, not thresholds; whether some should
+become thresholds is open (O16).
 
 ## 7. Approvals
 
@@ -1169,7 +1175,7 @@ standard error:
 | `promote NAME CATEGORY --envelope FILE [--despite-readiness --reason TEXT]`, `demote NAME CATEGORY [--reason TEXT]` | a category's promotion with its envelope (`FILE` `-` is stdin), and its demotion (§6a). They write `categories.<category>` in the gateway data and a promotion record (§10), and return once the gateway has loaded the change, as `mode` does. `promote` refuses a category that is not ready, naming what is not met, unless it is given `--despite-readiness` with a reason; its record's `AGENT_READINESS` is the category's measures |
 | `evaluate` | the demotion evaluator (§6a), which `custos-demote.service` runs: demotes every bounded category whose override rate or rollback conditions say so, printing one line per demotion. An agent whose journal it cannot read is reported, and the others are still evaluated |
 | `review NAME [CATEGORY…]`, `review NAME CATEGORY ACTIVITY CALL ok\|incident [--reason TEXT]` | the review (§6a). Without a verdict: per category promoted since (bounded, or demoted after a promotion) the week's autonomous actions still to review, as JSON: `{"agent", "categories": {"<category>": {"mode", "actions", "reviewed", "pending": [{"activity", "call", "tool", "outcome", "at", "args_sha256"?}]}}}`. With one: records `category.review` (the person behind `sudo` as `AGENT_BY`) for an action that ran without an approval in the last week; `incident` needs a reason and demotes a bounded category. Reads the journal: root or `systemd-journal`; a verdict needs root |
-| `readiness NAME [CATEGORY…]` | the readiness of the agent's categories (those its permissions name), or of the given ones, as JSON: `{"agent", "thresholds": {"observation_days", "proposals", "override_rate", "incident_rate", "window_days"}, "categories": {"<category>": {"proposals", "approved", "declined", "cancelled", "reviewed", "review_overrides", "overrides", "override_rate", "incidents", "incident_rate", "tools", "distinct_calls", "observed_days", "first_proposal"?, "ready", "unmet"?}}}` (§6a). Reads the agent's journal and mcp-gateway's, so it needs root or the `systemd-journal` group |
+| `readiness NAME [CATEGORY…]` | the readiness of the agent's categories (those its permissions name), or of the given ones, as JSON: `{"agent", "thresholds": {"observation_days", "proposals", "override_rate", "incident_rate", "window_days"}, "categories": {"<category>": {"proposals", "approved", "declined", "cancelled", "reviewed", "review_overrides", "overrides", "override_rate", "incidents", "incident_rate", "tools", "distinct_calls", "observed_days", "first_proposal"?, "ready", "unmet"?}}, "diagnostics": {"reports", "hypotheses", "quotes", "verified_quotes", "with_feedback", "confirmed", "rejected", "unsure", "plans_useful", "plans_not_useful", "plans_executed", "confirmed_rate"}}` (§6a; `diagnostics` §6b). Reads the agent's journal and mcp-gateway's, so it needs root or the `systemd-journal` group |
 
 ## 17a. `custos-setup` (draft, O16)
 
@@ -1309,7 +1315,7 @@ inherited, not specified again.
 | Attempts to use a disabled category recorded | §6b, §10 | done: the gateway's audit (calls), `category.refused` (loading) |
 | Enabling more categories: one documented, authenticated, logged action; the result identical to a broader install with them | §6b, §17 | done: `agent-admin enable`, `categories.enabled`; the gate compares the gateway's decisions with a host without enablement state |
 | Enabled categories start supervised | §6a, §6b | done (§6a); nothing new needed |
-| The diagnostics history as trust evidence for promotion | §4a, §6b | design (O16): reports and feedback in the readiness view |
+| The diagnostics history as trust evidence for promotion | §4a, §6b | done: `agent-admin readiness` and the Cockpit readiness view show the reports, their verified quotes and root's feedback on them; shown, not thresholds |
 | The bundled health-check and diagnostics agent | §14a, §20b | the template `health-check`: every playbook's tools, read-only in `diagnostics`, supervised, with daily and weekly playbook schedules; created on a diagnostics-only host in the release gate. Its install by `custos-setup` open (O16) |
 | Diagnostics: read host state, logs and metrics; correlate and summarize; root-cause hypotheses; written remediation plans for the administrator | §4a, §6b | done: the `diagnostics` category (read-only), the playbooks, and the report with findings, hypotheses and a plan |
 | The published diagnostic playbook set | §14c | done: eleven playbooks and their read-only `exec` commands; an activity or a schedule runs one, refused when the gateway does not offer a step's tool |
@@ -1446,10 +1452,9 @@ inherited, not specified again.
   tests (section "Diagnostics-only (release gate)", so also in the
   air-gapped gate); the playbooks (§14c), run by an activity or a
   schedule, and their `exec` commands; the `health-check` template; the
-  report with host-verified evidence (§4a) and `agent-admin feedback`.
-  Next: the Cockpit report view
-  with confidence, provenance and feedback, and the diagnostics evidence
-  in readiness; `custos-setup` and the `custos-diagnostics` package. Open
+  report with host-verified evidence (§4a) and `agent-admin feedback`;
+  the diagnostics evidence in readiness (§6b). Next: the Cockpit report
+  view with confidence, provenance and feedback; `custos-setup` and the `custos-diagnostics` package. Open
   beyond that: sealing the enablement state against root (the TPM, say);
   going back to `diagnostics-only`; whether some diagnostics evidence
   should become a readiness threshold; and a reason in the gateway's

@@ -240,6 +240,14 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(catRow[3].startsWith("not ready") && catRow[3].includes("override rate 16.7 % above 5.0 %") &&
           catRow[4].startsWith("16.7 % (2) of max 5.0 %") && catRow[6].startsWith("12 in 3.2 days"),
           "a category's readiness: not ready, what is unmet, its override rate and proposals");
+    // The diagnostics history beside the readiness (§6b): evidence, not a
+    // threshold.
+    await page.waitForSelector("#diagnostics-evidence");
+    const dev = await page.textContent("#diagnostics-evidence");
+    check(dev.includes("12 reports, 19 hypotheses; 28 of 31 quotes verified by Custos") &&
+          dev.includes("8 of 12 reports with feedback: 9 hypotheses confirmed, 1 rejected, 2 unsure (90.0 % confirmed)") &&
+          dev.includes("plans: 6 useful, 1 not useful, 5 carried out") && dev.includes("not counted"),
+          "the diagnostics evidence: reports, verified quotes, feedback, plans; shown, not counted");
     check((await page.textContent("#category-config-lifecycle")).includes("ready") &&
           !(await page.textContent("#category-config-lifecycle")).includes("not ready"), "a ready category");
     const sec = await page.$eval("#category-security-response", r => [...r.cells].map(c => c.textContent));

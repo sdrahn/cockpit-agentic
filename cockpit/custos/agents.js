@@ -239,6 +239,29 @@ function windowsText(c) {
 
 function pctText(x) { return (x * 100).toFixed(1) + " %"; }
 
+/* diagnosticsEvidence shows the agent's diagnostics history over the
+ * readiness window (§6b): its reports, how much of their evidence was
+ * verified, and the feedback on them; evidence, not a threshold. */
+function diagnosticsEvidence(box, r) {
+    const d = r.diagnostics;
+    const old = box.querySelector("#diagnostics-evidence");
+    if (old) old.remove();
+    if (!d || !d.reports) return;
+    const days = (r.thresholds && r.thresholds.window_days) || 30;
+    const verdicts = d.confirmed + d.rejected;
+    box.append(el("div", { id: "diagnostics-evidence" },
+        el("h3", null, "Diagnostics evidence"),
+        el("p", { class: "muted" }, "What this agent's diagnosis reports showed in the last " + days + " days, and what people " +
+           "said of them (agent-admin feedback). It is the first evidence for a category enabled later; it is shown, not counted " +
+           "in the readiness above."),
+        el("ul", null,
+            el("li", null, d.reports + (d.reports === 1 ? " report, " : " reports, ") + d.hypotheses + " hypotheses; " +
+               d.verified_quotes + " of " + d.quotes + " quotes verified by Custos"),
+            el("li", null, d.with_feedback + " of " + d.reports + " reports with feedback: " + d.confirmed + " hypotheses confirmed, " +
+               d.rejected + " rejected, " + d.unsure + " unsure" + (verdicts ? " (" + pctText(d.confirmed_rate) + " confirmed)" : "")),
+            el("li", null, "plans: " + d.plans_useful + " useful, " + d.plans_not_useful + " not useful, " + d.plans_executed + " carried out"))));
+}
+
 function categoriesSection(a, data) {
     const box = el("section", { class: "card", id: "categories-card" }, el("h2", null, "Task categories"),
         el("p", { class: "muted" }, "A category is promoted on its own: within its windows a bounded category's changes run without an " +
@@ -349,6 +372,7 @@ function categoriesSection(a, data) {
             cells[n].inc.textContent = pctText(m.incident_rate) + " (" + m.incidents + ") of max " + pctText(th.incident_rate || 0);
             cells[n].props.textContent = m.proposals + " in " + m.observed_days.toFixed(1) + " days · " + m.tools + " tools, " + m.distinct_calls + " distinct calls";
         }
+        diagnosticsEvidence(box, r);
     }).catch(ex => {
         for (const n of names) cells[n].ready.textContent = "unknown";
         box.append(el("p", { id: "readiness-note", class: "muted" }, "Readiness: " + ex.message));

@@ -397,7 +397,11 @@
                              if (cmd === "readiness") {
                                  return Promise.resolve(JSON.stringify({ agent: name,
                                      thresholds: { observation_days: 14, proposals: 50, override_rate: 0.05, incident_rate: 0.02, window_days: 30 },
-                                     categories: readiness })).then(ok, bad);
+                                     categories: readiness,
+                                     // The diagnostics history (§6b): 12 reports, feedback on 8.
+                                     diagnostics: { reports: 12, hypotheses: 19, quotes: 31, verified_quotes: 28, with_feedback: 8,
+                                         confirmed: 9, rejected: 1, unsure: 2, plans_useful: 6, plans_not_useful: 1, plans_executed: 5,
+                                         confirmed_rate: 0.9 } })).then(ok, bad);
                              }
                              if (cmd === "promote") {
                                  const flags = args.slice(4);

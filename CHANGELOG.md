@@ -77,6 +77,13 @@ removed.
   `agent-admin feedback` records an administrator's verdict on it
   (`diagnosis.feedback`).
 
+- Readiness shows the diagnostics history (CONTRACT.md §6b):
+  `agent-admin readiness` and Cockpit's Task categories card list the
+  agent's diagnosis reports over the window, how many of their quotes
+  Custos verified, and the feedback on them (confirmed, rejected, plans
+  useful and carried out); evidence for a category enabled later, not a
+  threshold. Only root's feedback counts.
+
 ### Fixed
 
 - A deleted agent stayed on the Cockpit page, as stopped, until the
