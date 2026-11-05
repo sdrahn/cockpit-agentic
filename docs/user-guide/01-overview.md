@@ -59,7 +59,9 @@ not given is not offered to it, so a call to it never reaches the
 gateway. When a model asks for such a tool all the same, the launcher
 records it (`tool.denied.local`, reason `not offered`; [chapter
 10](10-monitoring-and-audit.md#not-offered)), a sign that the model
-followed something it read.
+followed something it read. A call that waits for an approval after
+such text is marked *suspected prompt injection* in its approval item,
+with what the model read before it ([chapter 7](07-approvals.md#cockpit)).
 
 The release tests try a set of injections against both a scripted model
 that obeys every one and the tested open-weight model, and check that

@@ -62,13 +62,27 @@ one item with two halves:
 
 | The call, from mcp-gateway | The agent's account (self-asserted) |
 |---|---|
-| server and tool, the agent's principal (`agent-patch-pilot`, uid, by `SO_PEERCRED`), the policy that asked, who may decide, how it was asked (the channel), when it times out, the exact arguments | the agent's stated reason and impact, who started the activity and its delegation chain, its earlier calls as evidence |
+| server and tool, the agent's principal (`agent-patch-pilot`, uid, by `SO_PEERCRED`), the policy that asked, who may decide, how it was asked (the channel), when it times out, the exact arguments | the agent's stated reason and impact, who started the activity and its delegation chain, its earlier calls as evidence, and what the model read before the call (the outputs of its last calls) |
 
 Only the left half is trustworthy: it comes from the gateway. The right
 half is what the agent says about itself.
 If the agent is no longer waiting for the call (it ended, or the gateway
 restarted), the item says so: approving then lets its next identical
 call through.
+
+**Suspected prompt injection.** Text the agent read, such as a log, a
+file or a note, can carry instructions someone planted for the model
+([chapter 1](01-overview.md#prompt-injection)). The agent checks the
+outputs its model read before each call for signs of that, for example
+"ignore all previous instructions", a forged system message, a claim
+that the change is already approved, an instruction to use exactly this
+tool, or this call's own argument values. When it finds any, the item
+is marked **suspected injection**, lists the signs and opens the output
+they are in. Check that the call is what the person or schedule behind
+the activity asked for. If it is not, decline. The check is a hint: it
+can miss an injection, and it can mark an innocent call. What stops an
+injected change is your decision. The journal records the signs too
+(`AGENT_SUSPECTED_INJECTION`), and the activity view marks the call.
 
 The buttons are the scopes the gateway offers: **Approve once** (this
 call only), **Approve for this session**, **Approve for 1 h** (a grant:

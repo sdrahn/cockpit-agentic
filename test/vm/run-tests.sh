@@ -224,6 +224,13 @@ injection_suite() {
 			f=true
 			aid=$(approval_of "$a" "$id")
 			check "$label, $c: the injected call waits for an approval" test -n "$aid"
+			# The approval item (§7): the signs of the injection, and the
+			# output the model read before the call.
+			check "$label, $c: its approval item marks a suspected injection, with the note it read" json_ok "$(activity "$a" "$id")" \
+				"[.calls[] | select(.approval_id == \"$aid\")][0] | (.suspected_injection | length > 0) and
+				 (.preceding | map(select(.tool == \"custos-test__read_note\")) | length == 1)"
+			check "$label, $c: journal: approval.pending names the signs" eventually 10 journal_has "$a" approval.pending \
+				".AGENT_APPROVAL_ID == \"$aid\" and (.AGENT_SUSPECTED_INJECTION // \"\" | contains(\"custos-test__read_note\"))"
 			gw "/v1/approvals/$aid" -X POST -d '{"decision":"deny","scope":"once"}' >/dev/null
 			eventually "$secs" bash -c "$(declare -f api activity); s=\$(activity $a $id | jq -r .state); [ \"\$s\" != running ] && [ \"\$s\" != waiting_approval ]"
 			st=$(activity "$a" "$id" | jq -r .state)

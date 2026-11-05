@@ -177,6 +177,10 @@ function renderDetail(acts) {
                el("span", { class: "mono muted" }, c.since ? when(c.since) : ""), el("span", { class: "mono" }, c.tool),
                stateBadge(c.state)),
             c.rationale ? el("div", null, el("span", { class: "muted" }, "Rationale (the agent's): "), "“" + c.rationale + "”") : null,
+            (c.suspected_injection || []).length
+                ? el("div", { class: "suspected-injection" }, el("span", { class: "badge badge-bad" }, "suspected prompt injection"), " ",
+                     el("span", { class: "muted" }, c.suspected_injection.map(s => s.tool + " " + s.sign).join("; ")))
+                : null,
             c.approval_id
                 ? el("div", null, c.approval === "pending"
                     ? el("button", { class: "link", onclick: () => cockpit.location.go(["approvals", c.approval_id]) },

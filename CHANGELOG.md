@@ -9,6 +9,15 @@ removed.
 
 ### Added
 
+- A suspected prompt injection is shown with the approval item
+  (CONTRACT.md §7, O14): the agent checks what its model read before each
+  call for signs of an injection (an instruction to ignore its
+  instructions, a forged role marker, a claimed approval, an instruction
+  to use the called tool, the call's own argument values). Cockpit marks
+  the approval item *suspected injection*, with the signs and the output
+  the model read before the call; the activity view marks the call; the
+  journal has `AGENT_SUSPECTED_INJECTION`. Advisory: the approval is what
+  holds.
 - A prompt-injection evaluation suite (CONTRACT.md O14): the functional
   tests' server serves notes an attacker wrote (an override, a forged
   system message, a claimed approval, a tool not given, a leak request,
