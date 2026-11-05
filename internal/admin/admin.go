@@ -640,7 +640,16 @@ func (a *Admin) SetCredential(name, cred string, secret io.Reader) error {
 	if err := os.MkdirAll(a.p(CredstoreDir), 0o700); err != nil {
 		return err
 	}
-	return a.Run(secret, "systemd-creds", "encrypt", "--name="+id, "-", a.p(filepath.Join(CredstoreDir, id)))
+	out := a.p(filepath.Join(CredstoreDir, id))
+	if err := a.Run(secret, "systemd-creds", "encrypt", "--name="+id, "-", out); err != nil {
+		return err
+	}
+	// systemd-creds creates it with the umask (0644): encrypted, but root's
+	// alone all the same.
+	if err := os.Chmod(out, 0o600); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // GatewayData is data.mcp.agents.<name> (§6).

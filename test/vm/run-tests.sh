@@ -599,7 +599,18 @@ check "t3 answers on its socket" bash -c "$(declare -f api); api t3 /v1/status |
 check "no ConfigurationDirectory mode warning" not bash -c \
 	"journalctl -u agent@t3.service --since '@$t0' -o cat --no-pager | grep -q 'ConfigurationDirectory.*mode is different'"
 # What the agent sees of its credentials, and SELinux on them (the
-# SELinux section above ran before this one).
+# SELinux section above ran before this one). Then the same import in a
+# transient unit as agent-t3, with the agent unit's settings added step
+# by step: which of them keeps the agent from reading its credential.
+t3_probe='id -u; ls -la "$CREDENTIALS_DIRECTORY"; getfacl -p "$CREDENTIALS_DIRECTORY" "$CREDENTIALS_DIRECTORY"/* 2>&1 | grep -v "^#" | tr "\n" " "; echo; wc -c <"$CREDENTIALS_DIRECTORY/agent-t3.model-key"'
+t3_props=(-p User=agent-t3 -p Group=agent-t3 -p "ImportCredential=agent-t3.*")
+for extra in "" "-p UMask=0077" "-p SupplementaryGroups=mcp-users" "-p PrivateDevices=yes" \
+	"-p ProtectSystem=strict -p ProtectHome=yes -p PrivateTmp=yes" "-p NoNewPrivileges=yes -p CapabilityBoundingSet=" \
+	"-p ProtectProc=invisible -p ProcSubset=pid" "-p ConfigurationDirectory=custos/agents/t3 -p ConfigurationDirectoryMode=0750"; do
+	# shellcheck disable=SC2206 # extra is a list of -p options
+	t3_props+=($extra)
+	echo "  probe [${extra:-base}]: $(systemd-run --wait --pipe --quiet "${t3_props[@]}" sh -c "$t3_probe" 2>&1 | tr '\n' ' ')"
+done
 echo "  credentials: $(ls -lZ /run/credentials/agent@t3.service/ 2>&1 | tr '\n' ' ')"
 t3_avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$t3_t0" '+%x %T')" 2>/dev/null | grep -E 'denied|SELINUX_ERR' || true)
 [ -n "$t3_avc" ] && printf '  %s\n' "$t3_avc" | head -20

@@ -90,6 +90,9 @@ removed.
   private. It also says `ConfigurationDirectoryMode=0750`, as
   `agent-admin create` makes the directory, so systemd no longer warns
   at every start.
+- `agent-admin set-credential` left the encrypted credential readable
+  by everyone (0644, from `systemd-creds encrypt`'s umask); it is root's
+  alone now (0600). Decrypting it needs root's host key or the TPM.
 
 ## v0.1.1 — 2026-11-04
 

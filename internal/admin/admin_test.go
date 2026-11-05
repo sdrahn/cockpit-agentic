@@ -206,6 +206,29 @@ func TestNames(t *testing.T) {
 	}
 }
 
+// set-credential leaves the encrypted file root's alone, whatever mode
+// systemd-creds gave it.
+func TestSetCredentialMode(t *testing.T) {
+	a, r := newAdmin(t)
+	run := a.Run
+	a.Run = func(stdin io.Reader, name string, args ...string) error {
+		if name == "systemd-creds" {
+			os.WriteFile(args[len(args)-1], []byte("encrypted"), 0o644)
+		}
+		return run(stdin, name, args...)
+	}
+	if err := a.SetCredential("patch-pilot", "model-key", strings.NewReader("s")); err != nil {
+		t.Fatal(err)
+	}
+	f := a.p("/etc/credstore.encrypted/agent-patch-pilot.model-key")
+	if st, err := os.Stat(f); err != nil || st.Mode().Perm() != 0o600 {
+		t.Errorf("%s: %v %v", f, st.Mode(), err)
+	}
+	if !testHas(strings.Join(r.cmds, "\n"), "systemd-creds encrypt --name=agent-patch-pilot.model-key - "+f) {
+		t.Errorf("commands %q", r.cmds)
+	}
+}
+
 func testHas(s string, subs ...string) bool {
 	for _, x := range subs {
 		if !strings.Contains(s, x) {
