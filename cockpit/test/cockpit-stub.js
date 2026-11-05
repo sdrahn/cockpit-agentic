@@ -140,6 +140,10 @@
     // MESSAGE, "audit": true). a-17 was declined, a-9 approved and run,
     // a-42 waits.
     const query = new URLSearchParams(window.location.search);
+    // ?demoted: security-response of disk-watch was demoted automatically.
+    if (query.has("demoted")) posture.agents["disk-watch"].categories["security-response"] = { mode: "supervised",
+        demoted_by: "custos-demote " + new Date(Date.now() - 7200e3).toISOString(), promotion: "p-3",
+        envelope: { windows: [{ days: ["sat"], from: "02:00", to: "04:00" }] } };
     const at = s => String((Date.now() - s * 1000) * 1000);
     const rec = (s, name, event, f) => Object.assign({ __REALTIME_TIMESTAMP: at(s), AGENT_CONTRACT: "1", AGENT_NAME: name,
         AGENT_EVENT: event, SYSLOG_IDENTIFIER: "agent-" + name, MESSAGE: event }, f);
@@ -491,6 +495,13 @@
                     return lines(gatewayJournal);
                 }
                 if (args.includes("AGENT_EVENT=approval.resolved")) return lines(agentJournal.filter(r => r.AGENT_EVENT === "approval.resolved"));
+                // The demotion evaluator's records (root's), and one an agent
+                // wrote itself, which the page must not show.
+                if (args.includes("AGENT_EVENT=category.demoted")) return lines([
+                    rec(7200, "disk-watch", "category.demoted", { _UID: "0", SYSLOG_IDENTIFIER: "custos-promotion", AGENT_CATEGORY: "security-response",
+                        AGENT_BY: "custos-demote", AGENT_REASON: "override rate 7.1 % above 5.0 % since 2026-11-01T02:00:00Z" }),
+                    rec(3600, "patch-pilot", "category.demoted", { _UID: "981", SYSLOG_IDENTIFIER: "custos-promotion", AGENT_CATEGORY: "patch-errata",
+                        AGENT_BY: "custos-demote", AGENT_REASON: "forged" })]);
                 return lines(agentJournal);
             }
             return Promise.reject(Object.assign(new Error("not stubbed"), { exit_status: 1 }));

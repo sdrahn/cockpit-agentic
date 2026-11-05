@@ -105,6 +105,12 @@ removed.
   `diagnostics_confirmed_rate` in `/etc/custos/promotion.yaml`), so
   `promote` follows them; Cockpit says so.
 
+- Cockpit tells approvers of automatic demotions (CONTRACT.md O11): the
+  Approvals tab lists the task categories the demotion evaluator set
+  back to supervised in the last week, with the agent and the trigger
+  (from root's records only), and the agent's view marks such a
+  category.
+
 ### Fixed
 
 - Security: an agent could write a review verdict into its own journal

@@ -308,7 +308,11 @@ function categoriesSection(a, data) {
         });
         cells[n] = { ready: el("td", { class: "muted" }, "…"), over: el("td", { class: "muted" }), inc: el("td", { class: "muted" }), props: el("td", { class: "muted" }) };
         tbody.append(el("tr", { id: "category-" + n }, el("td", { class: "mono" }, n),
-            el("td", null, el("span", { class: "badge " + (bounded ? "badge-ok" : "badge-waiting") }, bounded ? "bounded (promoted)" : c.mode)),
+            el("td", null, el("span", { class: "badge " + (bounded ? "badge-ok" : "badge-waiting") }, bounded ? "bounded (promoted)" : c.mode),
+                !bounded && /^custos-demote /.test(c.demoted_by || "")
+                    ? el("div", { class: "muted demoted-auto" }, "demoted automatically " + when(c.demoted_by.slice("custos-demote ".length)) +
+                         " (see the Approvals tab)")
+                    : null),
             el("td", { class: "muted" }, bounded ? (windowsText(c) || "always") : "–"),
             cells[n].ready, cells[n].over, cells[n].inc, cells[n].props,
             el("td", null, el("span", { class: "actions" }, promote, demote)),
