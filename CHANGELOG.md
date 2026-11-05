@@ -58,6 +58,13 @@ removed.
   them; `agent-admin create NAME --template TEMPLATE [--from FILE]`
   creates an agent with the template's permissions and mode. The
   Cockpit page's **Create agent** can start from a template.
+- Model defaults for new agents (CONTRACT.md §14b):
+  `/etc/custos/defaults.yaml`, set with `agent-admin defaults --from
+  FILE` or the Cockpit page's **Model defaults**. A new agent's
+  configuration, blank or from a template, starts with that model
+  (`agent-admin draft NAME [--template T]`); existing agents keep
+  theirs. When the model names a credential, the page asks for the new
+  agent's secret after creating it.
 
 ### Fixed
 

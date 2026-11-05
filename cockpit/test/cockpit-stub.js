@@ -7,6 +7,8 @@
 (function () {
     // agent-admin templates (§14a) on a system with a writable root: one
     // template for it, one for transactional systems, one that cannot be used.
+    const defaults = {}; // /etc/custos/defaults.yaml
+    const credentials = window.__credentials = {};
     const TEMPLATES = { transactional: false, templates: {
         "service-doctor": { title: "Service doctor", description: "Finds failed or flapping services and restarts them.", system: "any",
             mode: "supervised", needs: ["systemd-mcp"], dir: "/usr/share/custos/templates/service-doctor", servers: ["systemd"],
@@ -262,6 +264,17 @@
                 const [cmd, name, arg] = args.slice(1);
                 if (cmd === "show") return Promise.resolve(JSON.stringify(posture));
                 if (cmd === "templates") return Promise.resolve(JSON.stringify(TEMPLATES));
+                // Model defaults (§14b) and drafts with them; read as the person.
+                const model = () => defaults.model ? "model:  # the host's defaults (/etc/custos/defaults.yaml)\n  provider: " + defaults.model.provider +
+                    "\n  name: " + defaults.model.name + (defaults.model.credential ? "\n  credential: " + defaults.model.credential : "") + "\n" : null;
+                if (cmd === "draft") {
+                    const tmpl = args.includes("--template") && args[args.indexOf("--template") + 1];
+                    let text = tmpl ? TEMPLATE_CONFIG(tmpl) : "version: 1\nname: x\ndescription: blank\nmodel:\n  provider: openai\n  name: qwen3-32b\n  endpoint: http://127.0.0.1:8000/v1\ngateway:\n  servers: [zypp]\n";
+                    text = text.replace(/^name: .*$/m, "name: " + name);
+                    if (model()) text = text.replace(/^model:\n(?:  .*\n)*/m, model());
+                    return Promise.resolve(text);
+                }
+                if (cmd === "defaults" && args.length === 2) return Promise.resolve(JSON.stringify(defaults));
                 // A configuration is valid with a version, its name and a model;
                 // check needs no root, changes need the root bridge.
                 const invalid = text => !/^version: 1$/m.test(text) ? "agent-admin: version: want 1"
@@ -273,6 +286,7 @@
                 if (cmd === "release-all") posture.control = { stopped: false, by, at: new Date().toISOString() };
                 if (cmd === "mode") d.mode = arg;
                 if (cmd === "pause" || cmd === "resume") d.paused = cmd === "pause";
+                if (cmd === "defaults" && args[2] === "--clear") defaults.model = undefined;
                 let input = "";
                 return { input(text) { input = text; return this; },
                          then(ok, bad) {
@@ -287,6 +301,12 @@
                                      ? { mode: TEMPLATES.templates[tmpl].mode, paused: false, permissions: [{ server: "systemd", tool: "list_log", read_only: true }] }
                                      : { mode: "supervised", paused: false, permissions: [] };
                              }
+                             if (cmd === "defaults" && name === "--from") {
+                                 const v = k => { const m = input.match(new RegExp("^  " + k + ": (.*)$", "m")); return m ? JSON.parse(m[1]) : undefined };
+                                 if (!v("name")) return Promise.reject(new Error("agent-admin: defaults: model.name: missing")).then(ok, bad);
+                                 defaults.model = { provider: v("provider"), name: v("name"), endpoint: v("endpoint"), credential: v("credential") };
+                             }
+                             if (cmd === "set-credential") credentials[name + "." + arg] = input;
                              if (cmd === "delete") delete posture.agents[name];
                              if (cmd === "edit") {
                                  const why = invalid(input) || (!new RegExp("^name: " + name + "$", "m").test(input)

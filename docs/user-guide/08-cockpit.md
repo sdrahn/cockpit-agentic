@@ -87,7 +87,8 @@ shows its state, autonomy mode, host and model, schedules and current
 work. **Create agent** opens a form for a new agent's configuration
 ([chapter 9](09-administration.md#create)), blank or **Start from** one
 of the shipped templates, which also gives the agent the template's
-permissions and mode ([chapter 9](09-administration.md#templates)).
+permissions and mode ([chapter 9](09-administration.md#templates)). **Model defaults** sets the model new
+agents start with ([chapter 5](05-configuration.md#model-defaults)).
 
 Selecting an agent shows:
 

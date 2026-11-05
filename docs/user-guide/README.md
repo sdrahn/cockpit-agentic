@@ -45,6 +45,7 @@ first working agent.
 | How do I create an agent? | [04-first-agent.md](04-first-agent.md), [09-administration.md#create](09-administration.md#create) |
 | Is there a ready-made agent for patching, services, disk space or triage? | [09-administration.md#templates](09-administration.md#templates) |
 | How do I choose and configure the model? | [05-configuration.md#models](05-configuration.md#models), [05-configuration.md#vertex](05-configuration.md#vertex) |
+| Can new agents get our model server without editing each one? | [05-configuration.md#model-defaults](05-configuration.md#model-defaults) |
 | Where does the model's API key go? | [05-configuration.md#model-credentials](05-configuration.md#model-credentials), [09-administration.md#credentials](09-administration.md#credentials) |
 | SELinux blocks the model server's port | [05-configuration.md#selinux-and-the-models-port](05-configuration.md#selinux-and-the-models-port) |
 | How do I run an agent on a schedule? | [05-configuration.md#schedules](05-configuration.md#schedules), [09-administration.md#schedules](09-administration.md#schedules) |

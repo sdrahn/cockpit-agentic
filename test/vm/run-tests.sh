@@ -546,9 +546,20 @@ check "agent-admin templates says whether the system is transactional ($want)" b
 	"agent-admin templates | jq -e '.transactional == $want' >/dev/null"
 agent-admin delete tt1 >/dev/null 2>&1
 agent-admin delete tt2 >/dev/null 2>&1
+# Model defaults (§14b): the fake model, for new agents.
+cp -a /etc/custos/defaults.yaml "$work/defaults.yaml.saved" 2>/dev/null
+check "agent-admin defaults refuses a model without a name" not bash -c "printf 'model: {provider: openai}\n' | agent-admin defaults --from -"
+check "agent-admin defaults --from - sets the model for new agents" bash -c \
+	"printf 'model: {provider: openai, name: fake-default, endpoint: \"http://127.0.0.1:8008/v1\"}\n' | agent-admin defaults --from -"
+check "the defaults are root 0644" stat_is /etc/custos/defaults.yaml root:root:644
+check "agent-admin defaults, as nobody, shows them" bash -c \
+	"$(declare -f as_nobody); as_nobody /usr/sbin/agent-admin defaults | jq -e '.model.name == \"fake-default\"' >/dev/null"
+check "agent-admin draft, as nobody, has the template with the defaults' model" bash -c \
+	"$(declare -f as_nobody); as_nobody /usr/sbin/agent-admin draft x1 --template patch-pilot | grep -q 'name: fake-default' && agent-admin draft x1 --template patch-pilot | agent-admin check -"
 check "agent-admin create tt1 --template triage" agent-admin create tt1 --template triage
 check "tt1's configuration is the template's, named tt1" bash -c \
 	"grep -qx 'name: tt1' /etc/custos/agents/tt1/agent.yaml && grep -q '^# Agent template triage' /etc/custos/agents/tt1/agent.yaml"
+check "tt1's configuration has the defaults' model" grep -q 'name: fake-default' /etc/custos/agents/tt1/agent.yaml
 check "tt1 is advisory, as the template says" bash -c "agent-admin show tt1 | jq -e '.agents.tt1.mode == \"advisory\"' >/dev/null"
 check "tt1 has the template's permissions" bash -c \
 	"test \"\$(agent-admin show tt1 | jq '.agents.tt1.permissions | length')\" = \"\$(grep -c '^- ' $tdir/triage/permissions.yaml)\""
@@ -559,6 +570,9 @@ check "tt2 has the edited configuration" grep -q edited-model /etc/custos/agents
 check "tt2 is supervised and its categories are not promoted" bash -c \
 	"agent-admin show tt2 | jq -e '.agents.tt2.mode == \"supervised\" and ((.agents.tt2.categories // {}) | length) == 0 and ([.agents.tt2.permissions[] | select(.category == \"config-lifecycle\")] | length) == 1' >/dev/null"
 check "agent-admin refuses an unknown template" not agent-admin create tt3 --template no-such
+check "agent-admin defaults --clear" agent-admin defaults --clear
+check "tt1 keeps its model when the defaults go" grep -q 'name: fake-default' /etc/custos/agents/tt1/agent.yaml
+[ -e "$work/defaults.yaml.saved" ] && cp -a "$work/defaults.yaml.saved" /etc/custos/defaults.yaml
 check "agent-admin delete tt1 tt2" bash -c "agent-admin delete tt1 && agent-admin delete tt2"
 
 section Removing

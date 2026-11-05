@@ -21,6 +21,8 @@ person behind `sudo` (`SUDO_USER`), else `USER`.
 | `agent-admin create NAME --from FILE` | create an agent: supervised, no permissions |
 | `agent-admin create NAME --template TEMPLATE [--from FILE]` | create an agent from a template, with its permissions and mode ([below](#templates)) |
 | `agent-admin templates` | the agent templates, as JSON (no root needed) |
+| `agent-admin draft NAME [--template TEMPLATE]` | a new agent's starting configuration, with the model defaults (no root needed) |
+| `agent-admin defaults [--from FILE \| --clear]` | the model for new agents ([chapter 5](05-configuration.md#model-defaults)) |
 | `agent-admin edit NAME --from FILE` | replace its configuration and apply it |
 | `agent-admin delete NAME [--keep-state]` | remove an agent |
 | `agent-admin mode NAME MODE` | `advisory`, `supervised` or `bounded` |
@@ -106,9 +108,12 @@ agent-admin promote web-doctor config-lifecycle \
 Before you create one, check:
 
 - **the model.** The templates use a local OpenAI-compatible server at
-  `http://127.0.0.1:8000/v1` with `qwen3-32b`. Change `model:` to
-  yours: with `--from` and your own copy of `agent.yaml`, or in
-  Cockpit's editor ([chapter 5](05-configuration.md#models));
+  `http://127.0.0.1:8000/v1` with `qwen3-32b`. Set your host's model
+  once as the default for new agents
+  ([chapter 5](05-configuration.md#model-defaults)) and every agent
+  created from a template gets it; or change `model:` per agent, with
+  `--from` and your own copy of `agent.yaml` (`agent-admin draft NAME
+  --template T > agent.yaml`), or in Cockpit's editor;
 - **the gateway's servers.** `template.yaml`'s `needs` lists them. A
   server the gateway does not have is simply not offered to the agent;
   the template still works with the others. `patch-pilot` needs

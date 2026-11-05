@@ -20,6 +20,10 @@ const usage = `usage: agent-admin COMMAND …
                                          install a new agent from a template: its configuration (or FILE's),
                                          permissions and mode
   templates                              the agent templates (CONTRACT.md §14a), as JSON
+  draft NAME [--template TEMPLATE]       a new agent's starting configuration (blank or the template's),
+                                         with the host's model defaults
+  defaults [--from FILE | --clear]       the model defaults for new agents (CONTRACT.md §14b), as JSON;
+                                         --from sets them (FILE -: stdin), --clear removes them
   edit NAME --from FILE                  replace its configuration and apply it (restart; OpenShell: its sandbox; FILE -: stdin)
   delete NAME [--keep-state]             remove an agent (its user stays)
   set-credential NAME CRED               encrypt a secret read from stdin
@@ -157,6 +161,35 @@ func run(a *admin.Admin, args []string) error {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(c)
+	case "draft":
+		if err := need(1); err != nil {
+			return err
+		}
+		t, _ := flag("--template")
+		b, err := a.Draft(args[0], t)
+		if err != nil {
+			return err
+		}
+		_, err = os.Stdout.Write(b)
+		return err
+	case "defaults":
+		if f, ok := flag("--from"); ok {
+			b, err := a.ReadFrom(f)
+			if err != nil {
+				return err
+			}
+			return a.SetDefaults(b)
+		}
+		if has("--clear") {
+			return a.SetDefaults(nil)
+		}
+		d, err := a.GetDefaults()
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(d)
 	case "templates":
 		t, err := a.ListTemplates()
 		if err != nil {
