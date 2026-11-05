@@ -1501,7 +1501,11 @@ inherited, not specified again.
   notification channels (a notice API for Custos), and reviews of
   autonomous actions by the gateway's approvers rather than by root, as
   a gateway feature (it already authenticates approvers and decides who
-  may approve an agent's calls). Open in Custos: in the measures: the agent data in force at a call's time, emergency
+  may approve an agent's calls); and each call's outcome in the
+  gateway's audit, so that the rollback condition `tool_error` and the
+  incident rate need not rest on the agent's own `tool.result` records:
+  requirements R3, R4 and R2 in
+  `docs/requirements/mcp-gateway-for-custos-0.3.md`. Open in Custos: in the measures: the agent data in force at a call's time, emergency
   stops as incidents, the envelope's size, and the proposals behind each
   number.
 - **O12 — envelope limits in the gateway.** A per-agent, per-category
@@ -1561,5 +1565,6 @@ inherited, not specified again.
   (§17a), tested on a fresh host in the functional tests. Open: sealing the enablement state against root (the TPM, say);
   going back to `diagnostics-only` (one way is enough for now); and a
   reason in the gateway's audit for a denial ("category not enabled"),
-  which needs mcp-gateway: to be written up as requirements for it.
+  which needs mcp-gateway: requirement R1 in
+  `docs/requirements/mcp-gateway-for-custos-0.3.md`.
   Sealing the state is not needed for 0.3.0 (detection is enough).
