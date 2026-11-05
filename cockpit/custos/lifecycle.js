@@ -96,7 +96,7 @@ function withName(yaml, name) {
 async function checkConfig(yaml) {
     const proc = cockpit.spawn(["agent-admin", "check", "-"], { err: "message" });
     proc.input(yaml);
-    await proc.catch(ex => { throw new Error(((ex && ex.message) || String(ex)).replace(/^agent-admin: /, "").trim()) });
+    await native(proc).catch(ex => { throw new Error(((ex && ex.message) || String(ex)).replace(/^agent-admin: /, "").trim()) });
 }
 
 /* draft is a new agent's starting configuration from agent-admin draft

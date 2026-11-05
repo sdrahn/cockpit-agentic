@@ -71,6 +71,16 @@ removed.
 - The example `patch-pilot` named tools that no gateway server has
   (`install_patches`, `restart_unit`, …); it names mcp-server-zypp's
   and systemd-mcp's tools now.
+- The Cockpit page hung when `agent-admin` refused something: **Check**
+  and **Save and apply** in an agent's configuration editor, and every
+  other action that runs `agent-admin` or `systemctl`, never showed the
+  error, and Cockpit reported an unexpected error instead. The page
+  threw in a handler of Cockpit's own promise, which does not reject the
+  promise it returns. The test stub now behaves like Cockpit's promises.
+- The Cockpit page cleared an action's error at its next refresh, a
+  moment later, so a refused **Release all agents** (or delete, mode,
+  …) seemed to do nothing. An action's error now stays until the next
+  action or **Dismiss**.
 
 ## v0.1.1 — 2026-11-04
 

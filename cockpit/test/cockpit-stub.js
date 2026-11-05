@@ -245,7 +245,10 @@
         file(path, opts) {
             opts = opts || {};
             return {
-                read() {
+                read() { return cockpitPromise(readStub()); },
+            };
+            function readStub() {
+                {
                     log.push(["read", path, "", "", opts.superuser || ""]);
                     // The shipped templates' configurations need no root (§14a).
                     const tm = path.match(/^\/usr\/share\/custos\/templates\/([^/]+)\/agent\.yaml$/);
@@ -254,10 +257,14 @@
                     if (!m) return Promise.reject({ problem: "not-found" });
                     if (opts.superuser !== "require") return Promise.reject({ problem: "access-denied" });
                     return configs[m[1]] ? Promise.resolve(configs[m[1]]) : Promise.reject({ problem: "not-found" });
-                },
-            };
+                }
+            }
         },
-        spawn(args, opts) {
+        spawn(args, opts) { return cockpitPromise(spawnStub(args, opts)); },
+    };
+
+    function spawnStub(args, opts) {
+        {
             opts = opts || {};
             log.push(["spawn", args.join(" "), (opts.environ || []).join(" "), "", opts.superuser || ""]);
             if (args[0] === "agent-admin") {
@@ -283,6 +290,11 @@
                 const d = posture.agents[name];
                 const by = ((opts.environ || []).find(e => e.startsWith("SUDO_USER=")) || "SUDO_USER=root").slice(10);
                 if (cmd === "stop-all") posture.control = { stopped: true, by, at: new Date().toISOString() };
+                // ?stop: the first release-all is refused, as a host's may be.
+                if (cmd === "release-all" && query.has("stop") && !window.__releaseRefused) {
+                    window.__releaseRefused = true;
+                    return Promise.reject(new Error("agent-admin: the gateway's policy did not load the change within 20s (mcp/agents/_control/stopped)"));
+                }
                 if (cmd === "release-all") posture.control = { stopped: false, by, at: new Date().toISOString() };
                 if (cmd === "mode") d.mode = arg;
                 if (cmd === "pause" || cmd === "resume") d.paused = cmd === "pause";
@@ -407,6 +419,30 @@
                 return lines(agentJournal);
             }
             return Promise.reject(Object.assign(new Error("not stubbed"), { exit_status: 1 }));
-        },
-    };
+        }
+    }
+
+    // Cockpit's own promises (cockpit.spawn, cockpit.file): unlike native
+    // ones, a handler that throws does not reject the promise then returns.
+    // The exception escapes as uncaught and the chain never settles, so a
+    // page must not throw in their handlers.
+    function cockpitPromise(r) {
+        const wrap = h => h && (v => {
+            try {
+                return h(v);
+            } catch (e) {
+                setTimeout(() => { throw e; });
+                return new Promise(() => {});
+            }
+        });
+        const chain = q => ({
+            then(ok, bad) { return chain(q.then(wrap(ok), wrap(bad))); },
+            catch(bad) { return this.then(undefined, bad); },
+        });
+        // Run when first asked for its result: after input().
+        let p = null;
+        const c = chain({ then: (ok, bad) => (p || (p = Promise.resolve(r))).then(ok, bad) });
+        c.input = text => { if (r && r.input) r.input(text); return c; };
+        return c;
+    }
 })();
