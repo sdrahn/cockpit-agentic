@@ -2,7 +2,7 @@
 
 Status: draft 1 (contract version `1`); §6a is a draft 2 design, partly
 implemented (O11); §4a, §6b, §14c and §17a are a design for the bundled
-diagnostics install, of which §6b and §14c are implemented (O16). The project was named
+diagnostics install, of which §4a, §6b and §14c are implemented (O16). The project was named
 cockpit-agentic until before its first release; the names and paths
 below are Custos's (`custos`, `/etc/custos`, …) and are the ones contract
 version 1 keeps.
@@ -180,8 +180,8 @@ The journal (§10) is the full history.
 
 ## 4a. Diagnosis reports (draft, O16)
 
-*Draft, implemented (O16), but for the control plane's view.* An
-activity may end with a **diagnosis report**: what the agent found, why it thinks so, and what the
+*Draft, implemented (O16).* An activity may end with a **diagnosis
+report**: what the agent found, why it thinks so, and what the
 administrator could do about it. A host that writes reports adds the
 field `report` to the activity (§4) and the record `diagnosis.report`
 (§10):
@@ -1313,9 +1313,9 @@ inherited, not specified again.
 | The bundled health-check and diagnostics agent | §14a, §20b | the template `health-check`: every playbook's tools, read-only in `diagnostics`, supervised, with daily and weekly playbook schedules; created on a diagnostics-only host in the release gate. Its install by `custos-setup` open (O16) |
 | Diagnostics: read host state, logs and metrics; correlate and summarize; root-cause hypotheses; written remediation plans for the administrator | §4a, §6b | done: the `diagnostics` category (read-only), the playbooks, and the report with findings, hypotheses and a plan |
 | The published diagnostic playbook set | §14c | done: eleven playbooks and their read-only `exec` commands; an activity or a schedule runs one, refused when the gateway does not offer a step's tool |
-| Confidence indicator | §4a | the model's confidence per hypothesis, next to the host-verified evidence, in the report; the Cockpit view open (O16) |
-| Recommendation provenance ("because of log line X and metric Y") | §4a | done: each hypothesis cites evidence, whose quotes the host verifies against the output of the tool calls; the Cockpit view open (O16) |
-| Administrator feedback | §4a, §10 | `agent-admin feedback`, recorded outside the agent as `diagnosis.feedback`; Cockpit open (O16) |
+| Confidence indicator | §4a | done: in Cockpit, each hypothesis shows the agent's confidence, labelled as its own estimate, next to how many of its quotes the host verified |
+| Recommendation provenance ("because of log line X and metric Y") | §4a | done: each hypothesis cites evidence, whose quotes the host verifies against the output of the tool calls; Cockpit shows each quote as verified or as the agent's claim alone |
+| Administrator feedback | §4a, §10 | done: `agent-admin feedback`, and in Cockpit **Was it right?** under the report, recorded outside the agent as `diagnosis.feedback` |
 
 ## 21. Open items
 
@@ -1446,9 +1446,9 @@ inherited, not specified again.
   tests (section "Diagnostics-only (release gate)", so also in the
   air-gapped gate); the playbooks (§14c), run by an activity or a
   schedule, and their `exec` commands; the `health-check` template; the
-  report with host-verified evidence (§4a) and `agent-admin feedback`.
-  Next: the Cockpit report view
-  with confidence, provenance and feedback, and the diagnostics evidence
+  report with host-verified evidence (§4a) and `agent-admin feedback`;
+  the Cockpit report view with confidence, provenance and feedback, and
+  running a playbook from an agent's view. Next: the diagnostics evidence
   in readiness; `custos-setup` and the `custos-diagnostics` package. Open
   beyond that: sealing the enablement state against root (the TPM, say);
   going back to `diagnostics-only`; whether some diagnostics evidence

@@ -85,6 +85,18 @@ rationale. A call waiting for approval links to the Approvals tab.
 person first, which works for their own activities, and else through
 administrative access.
 
+An activity that ended with a **diagnosis report**
+([chapter 9](09-administration.md#reports)) shows it above its tool
+calls: the summary and the playbook; each hypothesis with the agent's
+confidence (its own estimate) next to how many of its quotes Custos
+verified; each quote marked **✓ verified** (found in what that tool
+returned in this activity) or **unverified** (the agent's claim alone);
+the findings; and the remediation plan, each command with **Copy**.
+**Was it right?** records your verdict per hypothesis, on the plan,
+whether you carried it out, and a comment (`agent-admin feedback`, with
+administrative access); it is the evidence for letting the agent do more
+later.
+
 ## Approvals tab {#approvals}
 
 The pending calls, each with the gateway's half and the agent's half,
@@ -140,6 +152,11 @@ Selecting an agent shows:
   access
   ([chapter 6](06-permissions-and-modes.md#readiness));
 - **Schedules**: each with its calendar, next run and **Enable**/**Disable**;
+- **Diagnostic playbooks**: pick one of the host's playbooks, add what
+  to look at if you like, and **Run**: the agent runs it as an activity
+  started by you, and the page opens it, where its report appears. A
+  playbook whose tools the gateway does not offer the agent is refused
+  with the tools it lacks ([chapter 9](09-administration.md#playbooks));
 - **Credentials** (with administrative access): the agent's credentials
   by name, what uses them, and when each was stored; never a value. A
   credential its model names but that is not stored is *missing: the
