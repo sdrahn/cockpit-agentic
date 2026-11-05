@@ -96,7 +96,8 @@
             <section class="card">
                 <div class="toolbar">
                     <h2>Agents on this host</h2>
-                    <span class="actions"><button id="create-open">Create agent</button></span>
+                    <span class="actions"><button id="defaults-open" class="secondary">Model defaults</button>
+                        <button id="create-open">Create agent</button></span>
                 </div>
                 <p class="muted">Found through <code>/run/agents/*/api.sock</code>: any host that implements
                 contract 1 shows up here. Changing an agent needs administrative access.</p>
@@ -106,11 +107,40 @@
                     <tbody></tbody>
                 </table>
             </section>
+            <form id="model-defaults" class="card" hidden>
+                <h2>Model defaults for new agents</h2>
+                <p class="muted">The model a new agent's configuration starts with, blank or from a template
+                (<code>/etc/custos/defaults.yaml</code>, CONTRACT.md §14b). Each agent keeps the model in its own
+                configuration: changing the defaults changes no existing agent. Secrets are not kept here: a credential
+                is a name, and each agent gets its own secret (you are asked for it when you create one). Saving needs
+                administrative access.</p>
+                <div class="fields">
+                    <label>Provider <select name="provider">
+                        <option value="openai">openai: an OpenAI-compatible server</option>
+                        <option value="gemini">gemini: Google's Gemini API</option>
+                        <option value="vertex">vertex: Google's Vertex AI</option></select></label>
+                    <label>Model <input name="model" class="mono" placeholder="qwen3-32b" autocomplete="off"></label>
+                    <label class="for-openai">Endpoint <input name="endpoint" class="mono" placeholder="http://127.0.0.1:8000/v1" autocomplete="off"></label>
+                    <label>Credential <input name="credential" class="mono" placeholder="model-key (optional for openai)" autocomplete="off"></label>
+                    <label>Temperature <input name="temperature" class="mono" inputmode="decimal" placeholder="the model's" autocomplete="off"></label>
+                </div>
+                <div class="actions">
+                    <button type="submit" name="save">Save</button>
+                    <button type="button" name="clear" class="secondary">Remove the defaults</button>
+                    <button type="button" name="cancel" class="link">Cancel</button>
+                    <span id="defaults-note" class="muted"></span>
+                </div>
+            </form>
             <form id="create-agent" class="card" hidden>
                 <h2>Create an agent</h2>
-                <p class="muted">Its configuration (agent.yaml, CONTRACT.md §14). agent-admin creates its user,
-                units and schedules. It starts supervised and with no permissions: it can do nothing until its
-                tool boundaries list what it may do. This needs administrative access.</p>
+                <p class="muted">Its configuration (agent.yaml, CONTRACT.md §14), blank or from one of the shipped
+                templates (§14a). agent-admin creates its user, units and schedules. A blank one starts supervised and
+                with no permissions: it can do nothing until its tool boundaries list what it may do. One from a
+                template gets the template's permissions and mode; its task categories stay supervised until you
+                promote them. This needs administrative access.</p>
+                <div class="inline" id="create-from-row" hidden><label for="create-from">Start from</label>
+                    <select id="create-from" name="from"><option value="">A blank configuration</option></select></div>
+                <div id="create-template" class="note" hidden></div>
                 <div class="inline"><label for="create-name">Name</label>
                     <input id="create-name" name="name" class="mono" placeholder="patch-pilot" autocomplete="off"></div>
                 <textarea name="config" rows="18" spellcheck="false" aria-label="Configuration (agent.yaml)"></textarea>

@@ -337,6 +337,8 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.goto(url + "?create#/agents");
     await page.waitForSelector("#agents tbody tr");
     await page.click("#create-open");
+    await page.waitForFunction(() => document.querySelector("#create-agent textarea").value.includes("version: 1"));
+    check((await spawned("agent-admin draft new-agent")).length === 1, "a blank configuration is agent-admin draft's");
     await page.fill("#create-name", "web-watch");
     check((await page.inputValue("#create-agent textarea")).includes("\nname: web-watch\n"), "the name goes into the configuration");
     await page.fill("#create-agent textarea", (await page.inputValue("#create-agent textarea")).replace(/^model:/m, "modle:"));
@@ -377,6 +379,84 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     const deleted = await spawned("agent-admin delete web-watch --keep-state");
     check(deleted.length === 1 && deleted[0][4] === "require", "delete runs agent-admin delete --keep-state through the root bridge");
     check(cockpit_path(await page.url()) === "agents", "after deleting, the list is shown");
+
+    // Creating an agent from a shipped template (§14a).
+    await page.goto(url + "?template#/agents");
+    await page.waitForSelector("#agents tbody tr");
+    await page.click("#create-open");
+    await page.waitForSelector("#create-from-row:not([hidden])");
+    const tl = await spawned("agent-admin templates");
+    check(tl.length === 1 && tl[0][4] === "", "the templates are listed as the person (agent-admin templates)");
+    const opts = await page.$$eval("#create-from option", os => os.map(o => [o.value, o.disabled, o.textContent]));
+    check(opts[0][0] === "" && opts[1][0] === "service-doctor" && !opts[1][1], "a blank configuration first, then this system's templates");
+    check(opts.some(o => o[0] === "patch-pilot-transactional" && o[1] && o[2].includes("for transactional")),
+          "a template for transactional systems is offered disabled on a classic one");
+    check(opts.some(o => o[0] === "cleaner" && o[1] && o[2].includes("cannot be used")), "a broken template says why");
+    await page.selectOption("#create-from", "service-doctor");
+    await page.waitForFunction(() => document.querySelector("#create-agent textarea").value.includes("# Agent template service-doctor"));
+    check(await page.inputValue("#create-name") === "service-doctor", "the template's name is the agent's until changed");
+    const desc = await page.textContent("#create-template");
+    check(desc.includes("flapping") && desc.includes("config-lifecycle") && desc.includes("systemd-mcp") &&
+          desc.includes("/usr/share/custos/templates/service-doctor/envelopes/"), "the template's description, categories and needs are shown");
+    const tread = await spawned("agent-admin draft service-doctor --template service-doctor");
+    check(tread.length === 1 && tread[0][4] === "", "the template's configuration is agent-admin draft's, as the person");
+    await page.fill("#create-name", "web-doctor");
+    check((await page.inputValue("#create-agent textarea")).includes("\nname: web-doctor\n"), "the name goes into the template's configuration");
+    if (shots) await page.screenshot({ path: path.join(shots, "create-template.png"), fullPage: true });
+    await page.click("#create-agent button[name=create]");
+    await page.waitForSelector("#agent-row-web-doctor");
+    const tc = await spawned("agent-admin create web-doctor --template service-doctor --from -");
+    check(tc.length === 1 && tc[0][4] === "require", "create from a template runs agent-admin create --template --from - through the root bridge");
+    check((await page.textContent("#agent-created")).includes("from the template Service doctor"), "the new agent says where it came from");
+    await page.click("#create-open");
+    await page.selectOption("#create-from", "");
+    check(!(await page.inputValue("#create-agent textarea")).includes("Agent template") && !(await page.isVisible("#create-template")),
+          "a blank configuration again");
+
+    // Model defaults for new agents (§14b), and the new agent's credential.
+    await page.click("#create-agent button[name=cancel]");
+    await page.click("#defaults-open");
+    await page.waitForFunction(() => document.querySelector("#defaults-note").textContent.includes("No defaults yet"));
+    check((await spawned("agent-admin defaults")).every(c => c[4] === ""), "the defaults are read as the person");
+    await page.selectOption("#model-defaults select[name=provider]", "gemini");
+    check(!(await page.isVisible("#model-defaults input[name=endpoint]")), "no endpoint for gemini");
+    await page.selectOption("#model-defaults select[name=provider]", "openai");
+    await page.fill("#model-defaults input[name=endpoint]", "http://ai.example.com:8000/v1");
+    await page.click("#model-defaults button[name=save]");
+    await page.waitForFunction(() => document.querySelector("#defaults-note").textContent.includes("model.name: missing"));
+    check(true, "agent-admin's refusal of incomplete defaults is shown");
+    await page.fill("#model-defaults input[name=model]", "granite-4");
+    await page.fill("#model-defaults input[name=credential]", "model-key");
+    await page.fill("#model-defaults input[name=temperature]", "warm");
+    await page.click("#model-defaults button[name=save]");
+    check((await page.textContent("#defaults-note")).includes("a number"), "a temperature that is no number is refused");
+    await page.fill("#model-defaults input[name=temperature]", "");
+    await page.click("#model-defaults button[name=save]");
+    await page.waitForFunction(() => document.querySelector("#defaults-note").textContent.includes("Saved"));
+    const saved = await spawned("agent-admin defaults --from -");
+    check(saved.length === 2 && saved.every(c => c[4] === "require"), "the defaults are saved with agent-admin defaults --from - through the root bridge");
+    if (shots) await page.screenshot({ path: path.join(shots, "model-defaults.png"), fullPage: true });
+    await page.click("#create-open");
+    await page.selectOption("#create-from", "service-doctor");
+    await page.fill("#create-name", "web-doc2");
+    await page.waitForFunction(() => document.querySelector("#create-agent textarea").value.includes("name: granite-4"));
+    const drafted = await page.inputValue("#create-agent textarea");
+    check(drafted.includes("\nname: web-doc2\n") && drafted.includes("the host's defaults") && !drafted.includes("qwen3"),
+          "a template's configuration starts with the host's model defaults");
+    await page.click("#create-agent button[name=create]");
+    await page.waitForSelector("#agent-created form input[type=password]");
+    check((await page.textContent("#agent-created")).includes("uses the credential model-key"), "the new agent's credential is asked for");
+    await page.fill("#agent-created input[type=password]", "s3cret");
+    await page.click("#agent-created form button");
+    await page.waitForFunction(() => document.querySelector("#agent-created").textContent.includes("is stored"));
+    const sc = await spawned("agent-admin set-credential web-doc2 model-key");
+    check(sc.length === 1 && sc[0][4] === "require" && (await page.evaluate(() => window.__credentials["web-doc2.model-key"])) === "s3cret",
+          "the secret goes to agent-admin set-credential on stdin, through the root bridge");
+    await page.click("#defaults-open");
+    await page.waitForFunction(() => document.querySelector("#model-defaults input[name=model]").value === "granite-4");
+    await page.click("#model-defaults button[name=clear]");
+    await page.waitForFunction(() => document.querySelector("#defaults-note").textContent.includes("Removed"));
+    check((await spawned("agent-admin defaults --clear")).length === 1, "the defaults are removed with agent-admin defaults --clear");
 
     // Editing an agent's configuration.
     await page.goto(url + "?edit#/agents/patch-pilot");

@@ -1,0 +1,7 @@
+title: Exposure watch
+description: Reports the firewall's zones, the services they allow and the running services, and what to change. Read-only.
+system: any
+mode: advisory
+needs:
+  - firewalld-mcp
+  - systemd-mcp

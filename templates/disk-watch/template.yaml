@@ -1,0 +1,8 @@
+title: Disk watch
+description: Reports file systems running full and proposes old snapper snapshots to delete; each deletion needs an approval. For systems with a writable root file system.
+system: classic
+mode: supervised
+needs:
+  - mcp-server-snapper with a definition that may delete snapshots
+  - systemd-mcp
+  - mcp-gateway-exec-server with exec.d-disk-usage.yaml in /etc/mcp-gateway/exec.d/ (disk_usage)

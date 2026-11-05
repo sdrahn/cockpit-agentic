@@ -208,6 +208,7 @@ done
 %dir %{_sysconfdir}/custos
 %dir %{_sysconfdir}/custos/agents
 %dir %{_sysconfdir}/custos/categories.d
+%dir %{_sysconfdir}/custos/templates
 %dir %{_datadir}/mcp-gateway
 %dir %{_datadir}/mcp-gateway/policy
 %{_datadir}/mcp-gateway/policy/custos
@@ -221,6 +222,7 @@ done
 %{_datadir}/custos/examples
 %{_datadir}/custos/gateway
 %{_datadir}/custos/openshell
+%{_datadir}/custos/templates
 
 %files docs
 %dir %{_datadir}/custos

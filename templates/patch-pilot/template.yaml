@@ -1,0 +1,8 @@
+title: Patch pilot
+description: Lists available updates, takes a snapper snapshot and installs them with zypp, one approval per package until patching is promoted for a maintenance window. For systems with a writable root file system.
+system: classic
+mode: supervised
+needs:
+  - mcp-server-zypp with its privileged definition (confirm_install runs as root)
+  - mcp-server-snapper with a definition that may create snapshots
+  - systemd-mcp

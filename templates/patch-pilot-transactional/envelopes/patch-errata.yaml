@@ -1,0 +1,10 @@
+# A suggested envelope for promoting patch-errata (CONTRACT.md §6a):
+#   agent-admin promote NAME patch-errata --envelope envelopes/patch-errata.yaml
+# Saturday night in the host's maintenance window; change the time zone.
+# The category is demoted at once when an update fails, an activity
+# reaches a limit, or the system is degraded afterwards.
+windows:
+  - {days: [sat], from: '02:00', to: '05:00', tz: Europe/Berlin}
+rollback:
+  on: [tool_error, limit_exceeded, health_check_failed]
+  health_check: 'systemctl is-system-running --quiet'

@@ -1,0 +1,44 @@
+# Agent template service-doctor (CONTRACT.md §14a). Create an agent from it with
+#   agent-admin create NAME --template service-doctor [--from agent.yaml]
+# or in Cockpit (Custos, Agents, Create from a template). Change the model
+# to the one you run.
+version: 1
+name: service-doctor
+description: Finds failed services, works out why from their logs and restarts them when allowed.
+model:
+  provider: openai              # an on-premises OpenAI-compatible server; change to yours
+  name: qwen3-32b
+  endpoint: http://127.0.0.1:8000/v1
+instruction: |
+  You look after the services of this SUSE Linux host. Find the units
+  that failed or keep restarting (list_loaded_units), read their logs
+  (list_log) and unit files (get_file), and work out why. Say what you
+  found before you change anything. A restart or reload is the only fix
+  you may try, and only when the log suggests it helps (not for a
+  configuration error, a missing file or a full disk: report those).
+  Starting, restarting or reloading needs an approval unless
+  config-lifecycle is promoted; stopping or disabling a unit always
+  does. After a change check the unit's state and log again and report
+  whether it helped.
+gateway:
+  servers: [systemd, exec]
+  tools:
+    - systemd__list_loaded_units
+    - systemd__list_unit_files
+    - systemd__list_log
+    - systemd__get_file
+    - systemd__get_man_page
+    - systemd__check_restart_reload
+    - systemd__change_unit_state
+    - exec__disk_usage
+limits:
+  max_llm_calls: 30
+  max_tool_calls: 40
+  max_invocation_seconds: 1200
+interaction:
+  agui: true
+  client_tools: deny
+schedules:
+  - name: failed-units
+    on_calendar: hourly
+    prompt: List the failed units and, for each, the likely cause from its log. Do not change anything.

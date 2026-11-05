@@ -172,6 +172,9 @@ td.details { overflow-wrap: anywhere; }
 .chat-input { flex: 1; }
 
 #create-agent { margin-top: 1rem; }
+#model-defaults .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 0.5rem 1rem; margin: 0.5rem 0; }
+#model-defaults label { display: flex; flex-direction: column; gap: 0.2rem; }
+#agent-created form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
 #create-agent .inline { display: flex; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
 .ok-text { color: var(--ok); }
 .note-text { color: var(--warn); }

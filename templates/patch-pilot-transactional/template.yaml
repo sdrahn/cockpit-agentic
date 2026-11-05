@@ -1,0 +1,6 @@
+title: Patch pilot (transactional)
+description: Updates an immutable system into a new snapshot with transactional-update (mcp-server-tukit); reboots, applies and rollbacks always need an approval.
+system: transactional
+mode: supervised
+needs:
+  - mcp-server-tukit (mcp-server-tukit-gateway, its definition linked into /etc/mcp-gateway/servers.d/; mcp-gateway 1.8 or later)

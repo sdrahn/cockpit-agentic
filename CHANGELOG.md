@@ -47,6 +47,30 @@ removed.
   reason. Both are recorded in the
   journal (`custos-promotion`, `category.promoted`,
   `category.demoted`), and `agent-admin show` lists the categories.
+- Agent templates (CONTRACT.md §14a) for managing one system, in
+  `/usr/share/custos/templates` (your own in `/etc/custos/templates`):
+  `triage` and `exposure-watch` (advisory, read-only),
+  `service-doctor`, `patch-pilot`, `disk-watch`, and for transactional
+  systems with mcp-server-tukit `patch-pilot-transactional` and
+  `disk-watch-transactional` (supervised). Each has the configuration,
+  the permissions with the gateway's real tool names, their task
+  categories and suggested envelopes. `agent-admin templates` lists
+  them; `agent-admin create NAME --template TEMPLATE [--from FILE]`
+  creates an agent with the template's permissions and mode. The
+  Cockpit page's **Create agent** can start from a template.
+- Model defaults for new agents (CONTRACT.md §14b):
+  `/etc/custos/defaults.yaml`, set with `agent-admin defaults --from
+  FILE` or the Cockpit page's **Model defaults**. A new agent's
+  configuration, blank or from a template, starts with that model
+  (`agent-admin draft NAME [--template T]`); existing agents keep
+  theirs. When the model names a credential, the page asks for the new
+  agent's secret after creating it.
+
+### Fixed
+
+- The example `patch-pilot` named tools that no gateway server has
+  (`install_patches`, `restart_unit`, …); it names mcp-server-zypp's
+  and systemd-mcp's tools now.
 
 ### Fixed
 

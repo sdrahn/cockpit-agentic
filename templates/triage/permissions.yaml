@@ -1,0 +1,25 @@
+# What triage may do at the gateway: look only. Every permission is
+# read-only, so the agent runs in advisory mode, where nothing else is
+# allowed even if it were listed (CONTRACT.md §6).
+- {server: systemd, tool: list_loaded_units, read_only: true}
+- {server: systemd, tool: list_unit_files, read_only: true}
+- {server: systemd, tool: list_log, read_only: true}
+- {server: systemd, tool: check_restart_reload, read_only: true}
+- {server: systemd, tool: get_man_page, read_only: true}
+- {server: systemd, tool: get_file, read_only: true}
+- {server: zypp, tool: check_updates, read_only: true}
+- {server: zypp, tool: search_packages, read_only: true}
+- {server: zypp, tool: find_providers, read_only: true}
+- {server: zypp, tool: find_dependents, read_only: true}
+- {server: snapper, tool: list_configs, read_only: true}
+- {server: snapper, tool: list_snapshots, read_only: true}
+- {server: firewalld, tool: get_default_zone, read_only: true}
+- {server: firewalld, tool: get_active_zones, read_only: true}
+- {server: firewalld, tool: get_services_for_zone, read_only: true}
+- {server: firewalld, tool: get_service_info, read_only: true}
+# mcp-gateway-exec-server with the command in exec.d-disk-usage.yaml:
+- {server: exec, tool: disk_usage, read_only: true}
+# On a transactional system, with mcp-server-tukit:
+- {server: tukit, tool: get_status, read_only: true}
+- {server: tukit, tool: list_snapshots, read_only: true}
+- {server: tukit, tool: list_updates, read_only: true}

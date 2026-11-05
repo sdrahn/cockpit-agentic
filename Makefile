@@ -93,6 +93,13 @@ install: build
 	install -d -m 0755 $(DESTDIR)$(SYSCONFDIR)/custos/agents
 	install -d -m 0755 $(DESTDIR)$(DATADIR)/custos/categories.d $(DESTDIR)$(SYSCONFDIR)/custos/categories.d
 	install -m 0644 packaging/categories/*.yaml $(DESTDIR)$(DATADIR)/custos/categories.d/
+	install -d -m 0755 $(DESTDIR)$(SYSCONFDIR)/custos/templates
+	install -D -m 0644 templates/exec.d-disk-usage.yaml $(DESTDIR)$(DATADIR)/custos/templates/exec.d-disk-usage.yaml
+	for t in templates/*/; do \
+		t=$${t%/}; \
+		install -D -m 0644 -t $(DESTDIR)$(DATADIR)/custos/$$t $$t/*.yaml || exit 1; \
+		if [ -d $$t/envelopes ]; then install -D -m 0644 -t $(DESTDIR)$(DATADIR)/custos/$$t/envelopes $$t/envelopes/*.yaml || exit 1; fi; \
+	done
 
 # The functional tests, for openQA (test/openqa/README.md).
 install-tests: build-tests

@@ -2,8 +2,11 @@
  * administrative access: agent-admin create NAME --from - (the
  * configuration on stdin) and agent-admin delete NAME [--keep-state].
  * A new agent is supervised and has no permissions: it can do nothing
- * until its tool boundaries list something (§6). Checking a
- * configuration needs no root (agent-admin check -).
+ * until its tool boundaries list something (§6). One can start from a
+ * shipped template instead (§14a: agent-admin templates, needing no
+ * root): its agent.yaml fills the editor, and agent-admin create NAME
+ * --template T --from - gives the agent the template's permissions and
+ * mode. Checking a configuration needs no root (agent-admin check -).
  */
 "use strict";
 
@@ -29,6 +32,56 @@ interaction:
 
 let justCreated = null; // the agent this page created last
 
+/* The templates (agent-admin templates), once read; null: none to offer
+ * (an agent-admin without templates, say). */
+let templates = null;
+
+const SYSTEM_TEXT = { classic: "systems with a writable root file system", transactional: "transactional (immutable) systems" };
+
+async function loadTemplates() {
+    if (templates) return templates;
+    try {
+        templates = JSON.parse(await cockpit.spawn(["agent-admin", "templates"], { err: "message" }));
+    } catch {
+        templates = null;
+    }
+    const select = document.getElementById("create-from");
+    const row = document.getElementById("create-from-row");
+    const list = templates ? Object.entries(templates.templates || {}) : [];
+    if (list.length === 0) {
+        row.hidden = true;
+        return null;
+    }
+    // This system's first, by title; the others and the broken ones
+    // after them, disabled.
+    const fits = t => !t.error && (t.system === "any" || t.system === (templates.transactional ? "transactional" : "classic"));
+    list.sort(([a, x], [b, y]) => (fits(y) - fits(x)) || x.title.localeCompare(y.title) || a.localeCompare(b));
+    select.replaceChildren(el("option", { value: "" }, "A blank configuration"),
+        ...list.map(([n, t]) => el("option", { value: n, disabled: !fits(t) },
+            t.title + (t.error ? " (cannot be used: " + t.error + ")"
+                : !fits(t) ? " (for " + SYSTEM_TEXT[t.system] + ")" : ""))));
+    row.hidden = false;
+    return templates;
+}
+
+/* describeTemplate shows what the chosen template does and needs. */
+function describeTemplate(name) {
+    const box = document.getElementById("create-template");
+    const t = name && templates && templates.templates[name];
+    box.hidden = !t;
+    if (!t) return;
+    const cats = t.categories || [];
+    box.replaceChildren(
+        el("p", null, t.description),
+        el("p", null, "It starts ", el("strong", null, t.mode), ": ", MODE_TEXT[t.mode] || "",
+           cats.length ? (cats.length === 1 ? " Its task category " + cats[0] + " needs"
+                                            : " Its task categories " + cats.join(", ") + " need") +
+               " an approval until you promote " + (cats.length === 1 ? "it" : "them") +
+               ((t.envelopes || []).length ? " (suggested envelopes: " + t.dir + "/envelopes/)." : ".") : ""),
+        (t.needs || []).length ? el("div", null, "It needs at the gateway:", el("ul", null, ...t.needs.map(n => el("li", null, n)))) : "",
+        el("p", { class: "muted" }, "Its tools: servers " + (t.servers || []).join(", ") + "; permissions in " + t.dir + "/permissions.yaml."));
+}
+
 function setCreateNote(text, cls) {
     const note = document.getElementById("create-note");
     note.className = cls || "muted";
@@ -46,15 +99,137 @@ async function checkConfig(yaml) {
     await native(proc).catch(ex => { throw new Error(((ex && ex.message) || String(ex)).replace(/^agent-admin: /, "").trim()) });
 }
 
+/* draft is a new agent's starting configuration from agent-admin draft
+ * (as the person): blank or a template's, with the host's model defaults
+ * (§14b). Without it (an older agent-admin) the page's own blank one, or
+ * the template's file. */
+async function draft(tmpl, n) {
+    const args = ["agent-admin", "draft", NAME_RE.test(n) ? n : (tmpl || "new-agent")];
+    if (tmpl) args.push("--template", tmpl);
+    try {
+        return await cockpit.spawn(args, { err: "message" });
+    } catch (ex) {
+        if (!tmpl) return TEMPLATE;
+        return cockpit.file(templates.templates[tmpl].dir + "/agent.yaml").read();
+    }
+}
+
+async function useTemplate(name, yaml, nameInput) {
+    describeTemplate(name);
+    if (name && !nameInput.value.trim()) nameInput.value = name;
+    try {
+        yaml.value = withName(await draft(name, nameInput.value.trim()), nameInput.value.trim());
+        setCreateNote("");
+    } catch (ex) {
+        setCreateNote("Reading the template: " + ((ex && ex.message) || ex.problem || String(ex)), "error-text");
+    }
+}
+
+/* modelCredential is the credential named in a configuration's model
+ * block, or "". */
+function modelCredential(yaml) {
+    const m = yaml.match(/^model:.*\n((?:[ \t]+.*(?:\n|$))*)/m);
+    const c = m && m[1].match(/^[ \t]+credential:[ \t]*["']?([a-z0-9][a-z0-9_-]*)/m);
+    return c ? c[1] : "";
+}
+
+/* credentialForm asks for a new agent's model credential and stores it
+ * (agent-admin set-credential NAME CRED, the secret on stdin). */
+function credentialForm(n, cred) {
+    const secret = el("input", { type: "password", autocomplete: "off", "aria-label": "Secret for " + cred });
+    const note = el("span", { class: "muted" });
+    const form = el("form", {
+        onsubmit: async ev => {
+            ev.preventDefault();
+            if (!secret.value) return;
+            note.className = "muted";
+            note.textContent = "Storing…";
+            try {
+                await admin(["set-credential", n, cred], secret.value);
+                secret.value = "";
+                form.replaceChildren(el("span", { class: "ok-text" }, "The credential " + cred + " is stored, encrypted."));
+            } catch (ex) {
+                note.className = "error-text";
+                note.textContent = ex.message;
+            }
+        },
+    }, "Its model uses the credential ", el("code", null, cred), ". Its secret: ", secret,
+       el("button", { type: "submit" }, "Store"), note);
+    return form;
+}
+
+/* The model defaults for new agents (agent-admin defaults, §14b): read as
+ * the person, saved through the root bridge. */
+function initDefaults() {
+    const form = document.getElementById("model-defaults");
+    const f = form.elements;
+    const note = text => { const n = document.getElementById("defaults-note"); n.className = (text && text.cls) || "muted"; n.textContent = (text && text.msg) || "" };
+    const provider = () => form.querySelector(".for-openai").hidden = f.provider.value !== "openai";
+    f.provider.addEventListener("change", provider);
+    document.getElementById("defaults-open").addEventListener("click", async () => {
+        form.hidden = false;
+        note({ msg: "Reading…" });
+        try {
+            const d = JSON.parse(await cockpit.spawn(["agent-admin", "defaults"], { err: "message" }));
+            const m = d.model || {};
+            f.provider.value = m.provider || "openai";
+            f.model.value = m.name || "";
+            f.endpoint.value = m.endpoint || "";
+            f.credential.value = m.credential || "";
+            f.temperature.value = m.temperature === undefined ? "" : String(m.temperature);
+            note({ msg: d.model ? "" : "No defaults yet: new agents get the template's model." });
+        } catch (ex) {
+            note({ msg: ((ex && ex.message) || String(ex)).replace(/^agent-admin: /, ""), cls: "error-text" });
+        }
+        provider();
+    });
+    f.cancel.addEventListener("click", () => { form.hidden = true; note(null) });
+    form.addEventListener("submit", async ev => {
+        ev.preventDefault();
+        const q = v => JSON.stringify(v.trim());
+        let y = "model:\n  provider: " + q(f.provider.value) + "\n  name: " + q(f.model.value) + "\n";
+        if (f.provider.value === "openai") y += "  endpoint: " + q(f.endpoint.value) + "\n";
+        if (f.credential.value.trim()) y += "  credential: " + q(f.credential.value) + "\n";
+        if (f.temperature.value.trim()) {
+            if (!/^[0-9]+(\.[0-9]+)?$/.test(f.temperature.value.trim())) {
+                note({ msg: "The temperature is a number such as 0.2.", cls: "error-text" });
+                return;
+            }
+            y += "  temperature: " + f.temperature.value.trim() + "\n";
+        }
+        note({ msg: "Saving…" });
+        try {
+            await admin(["defaults", "--from", "-"], y);
+            note({ msg: "Saved. New agents start with this model.", cls: "ok-text" });
+        } catch (ex) {
+            note({ msg: ex.message, cls: "error-text" });
+        }
+    });
+    f.clear.addEventListener("click", async () => {
+        try {
+            await admin(["defaults", "--clear"]);
+            for (const k of ["model", "endpoint", "credential", "temperature"]) f[k].value = "";
+            f.provider.value = "openai";
+            provider();
+            note({ msg: "Removed. New agents get the template's model.", cls: "ok-text" });
+        } catch (ex) {
+            note({ msg: ex.message, cls: "error-text" });
+        }
+    });
+}
+
 function initCreate() {
+    initDefaults();
     const form = document.getElementById("create-agent");
     const name = form.elements.name;
     const yaml = form.elements.config;
     document.getElementById("create-open").addEventListener("click", () => {
         form.hidden = false;
-        if (!yaml.value) yaml.value = TEMPLATE;
         name.focus();
+        loadTemplates();
+        if (!yaml.value) useTemplate(form.elements.from.value, yaml, name);
     });
+    form.elements.from.addEventListener("change", () => useTemplate(form.elements.from.value, yaml, name));
     name.addEventListener("input", () => { yaml.value = withName(yaml.value, name.value.trim()) });
     form.elements.cancel.addEventListener("click", () => { form.hidden = true; setCreateNote("") });
     form.elements.check.addEventListener("click", async () => {
@@ -75,17 +250,27 @@ function initCreate() {
         }
         const submit = form.elements.create;
         submit.disabled = true;
+        const tmpl = form.elements.from.value;
+        const t = tmpl && templates && templates.templates[tmpl];
         setCreateNote("Creating " + n + "…");
+        const cred = modelCredential(yaml.value);
         try {
-            await admin(["create", n, "--from", "-"], yaml.value);
+            await admin(t ? ["create", n, "--template", tmpl, "--from", "-"] : ["create", n, "--from", "-"], yaml.value);
             form.hidden = true;
             yaml.value = "";
             name.value = "";
+            form.elements.from.value = "";
+            describeTemplate("");
             setCreateNote("");
             showError(null);
             justCreated = n;
-            document.getElementById("agent-created").textContent = "Created " + n + ": supervised, with no permissions. " +
-                "It can do nothing until its tool boundaries list what it may do.";
+            document.getElementById("agent-created").replaceChildren(el("p", null, t
+                ? "Created " + n + " from the template " + t.title + ": " + t.mode + ", with the template's permissions" +
+                  ((t.categories || []).length ? "; its task categories need an approval until you promote them." : ".") +
+                  " Check that the gateway has what it needs: " + ((t.needs || []).join("; ") || "nothing more") + "."
+                : "Created " + n + ": supervised, with no permissions. " +
+                  "It can do nothing until its tool boundaries list what it may do."),
+                cred ? credentialForm(n, cred) : "");
             cockpit.location.go(["agents", n]);
         } catch (ex) {
             setCreateNote(ex.message, "error-text");

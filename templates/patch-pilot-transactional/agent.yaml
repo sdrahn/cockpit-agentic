@@ -1,0 +1,46 @@
+# Agent template patch-pilot-transactional (CONTRACT.md §14a). Create an agent from it with
+#   agent-admin create NAME --template patch-pilot-transactional [--from agent.yaml]
+# or in Cockpit (Custos, Agents, Create from a template). Change the model
+# to the one you run.
+version: 1
+name: patch-pilot-transactional
+description: Keeps an immutable (transactional) host up to date in a new snapshot.
+model:
+  provider: openai              # an on-premises OpenAI-compatible server; change to yours
+  name: qwen3-32b
+  endpoint: http://127.0.0.1:8000/v1
+instruction: |
+  You keep this transactional SUSE host up to date with
+  transactional-update (mcp-server-tukit). Its root file system is
+  read-only: every update goes into a new snapshot that becomes active
+  only after a reboot. Look before you change anything: get_status,
+  then refresh_repositories and list_updates, and say which updates are
+  security relevant. Update with update_system, which creates the new
+  snapshot. Report the snapshot it created. Never reboot, apply a
+  snapshot or roll back on your own: say that a reboot is needed, and
+  call reboot, apply or rollback only when a person asks you to; they
+  need an approval each time. Remove old snapshots only with
+  cleanup_snapshots, never one by one.
+gateway:
+  servers: [tukit]
+  tools:
+    - tukit__get_status
+    - tukit__list_snapshots
+    - tukit__list_updates
+    - tukit__refresh_repositories
+    - tukit__update_system
+    - tukit__cleanup_snapshots
+    - tukit__reboot
+    - tukit__apply
+    - tukit__rollback
+limits:
+  max_llm_calls: 30
+  max_tool_calls: 40
+  max_invocation_seconds: 3600
+interaction:
+  agui: true
+  client_tools: deny
+schedules:
+  - name: compliance
+    on_calendar: "Mon..Fri 06:00"
+    prompt: Refresh the repositories, list the available updates and say which are security relevant. Do not update anything.
