@@ -751,7 +751,7 @@ check "diagnostics: PROBE runs" eventually 30 runs_with dg PROBE 'probe ok'
 check "agent-admin refuses a permission of a disabled category" not dg_perms '- {server: custos-test, tool: change, category: patch-errata}'
 check "agent-admin refuses a permission without a category" not dg_perms '- {server: custos-test, tool: change}'
 check "journal: category.refused, with the person" eventually 10 promotion_record category.refused '.AGENT_NAME == "dg" and .AGENT_CATEGORY == "patch-errata" and .AGENT_BY == "root"'
-check "agent-admin refuses a template of a disabled category" bash -c "agent-admin create pp --template patch-pilot 2>&1 | grep -q 'not enabled'"
+check "agent-admin refuses a template of a disabled category" bash -c "agent-admin create pp --template patch-pilot 2>&1 | grep -q 'patch-errata.* not enabled'"
 check "no agent pp was created" not test -e /etc/custos/agents/pp
 # The gate: the gateway refuses the category even with its permission in
 # the agent's data, written past agent-admin as an administrator might.

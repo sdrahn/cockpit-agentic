@@ -224,29 +224,48 @@ func (a *Admin) Enable(by string, cats []string, all bool) error {
 }
 
 // checkEnabled refuses permissions of a disabled category, recording the
-// refusal (category.refused) for the person. what names the action.
+// refusal (category.refused) for the person, once per disabled category.
+// what names the action. The error names everything that is disabled.
 func (a *Admin) checkEnabled(name, what string, perms []map[string]any) error {
 	e, err := a.GetEnablement()
 	if err != nil || e == nil {
 		return err
 	}
-	for i, p := range perms {
+	var cats []string
+	seen := map[string]bool{}
+	for _, p := range perms {
 		c, _ := p["category"].(string)
-		if e.Usable(c) {
+		if e.Usable(c) || seen[c] {
 			continue
 		}
+		seen[c] = true
 		shown := c
 		if c == "" {
 			shown = "(none)"
+		} else {
+			cats = append(cats, c)
 		}
 		a.record(journal.CategoryRefused, name, fmt.Sprintf("%s: category %s is not enabled on this host (%s)", what, shown, e.State),
 			journal.Fields{"CATEGORY": shown, "REASON": what, "BY": a.By})
-		if c == "" {
-			return fmt.Errorf("permissions[%d]: this host is %s: every permission needs category: diagnostics (agent-admin enable)", i, e.State)
-		}
-		return fmt.Errorf("permissions[%d]: task category %s is not enabled on this host (%s): agent-admin enable %s", i, c, e.State, c)
 	}
-	return nil
+	if len(seen) == 0 {
+		return nil
+	}
+	sort.Strings(cats)
+	var parts []string
+	if len(cats) > 0 {
+		parts = append(parts, "task categories "+strings.Join(cats, ", "))
+	}
+	if seen[""] {
+		parts = append(parts, "permissions without a category")
+	}
+	msg := fmt.Sprintf("%s are not enabled on this host (%s)", strings.Join(parts, " and "), e.State)
+	if len(cats) > 0 {
+		msg += ": agent-admin enable " + strings.Join(cats, " ")
+	} else {
+		msg += ": every permission needs category: diagnostics, or agent-admin enable --all"
+	}
+	return errors.New(msg)
 }
 
 // checkCategoryEnabled refuses a disabled category for promote.

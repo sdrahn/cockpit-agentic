@@ -221,16 +221,23 @@ func TestTemplateOfDisabledCategoryRefused(t *testing.T) {
 	dir := a.p(filepath.Join(TemplatesSite, "patcher"))
 	writeFile(filepath.Join(dir, "template.yaml"), []byte("title: Patcher\ndescription: x\nsystem: any\nmode: supervised\n"), 0o644)
 	writeFile(filepath.Join(dir, "agent.yaml"), []byte(strings.Replace(yml, "patch-pilot", "patcher", 1)), 0o644)
-	writeFile(filepath.Join(dir, "permissions.yaml"), []byte("- {server: zypp, tool: patch, category: patch-errata}\n"), 0o644)
+	// As the shipped patch-pilot: read-only permissions without a category
+	// first, then two disabled categories.
+	writeFile(filepath.Join(dir, "permissions.yaml"), []byte("- {server: zypp, tool: check_updates, read_only: true}\n"+
+		"- {server: zypp, tool: patch, category: patch-errata}\n- {server: systemd, tool: restart_unit, category: config-lifecycle}\n"+
+		"- {server: zypp, tool: install, category: patch-errata}\n"), 0o644)
 	err := a.CreateFromTemplate("patcher", "patcher", "")
-	if err == nil || !strings.Contains(err.Error(), "not enabled") {
+	if err == nil || !strings.Contains(err.Error(), "task categories config-lifecycle, patch-errata and permissions without a category are not enabled") ||
+		!strings.Contains(err.Error(), "agent-admin enable config-lifecycle patch-errata") {
 		t.Fatalf("%v", err)
 	}
 	if _, err := os.Stat(a.agentDir("patcher")); !os.IsNotExist(err) {
 		t.Error("created all the same")
 	}
+	// One record per disabled category, the one without a category too.
 	rec := records(mem, journal.CategoryRefused)
-	if len(rec) != 1 || rec[0].Fields["REASON"] != "create --template patcher" {
+	if len(rec) != 3 || rec[0].Fields["REASON"] != "create --template patcher" || rec[0].Fields["CATEGORY"] != "(none)" ||
+		rec[1].Fields["CATEGORY"] != "patch-errata" || rec[2].Fields["CATEGORY"] != "config-lifecycle" {
 		t.Errorf("records %+v", rec)
 	}
 }
