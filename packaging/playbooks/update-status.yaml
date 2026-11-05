@@ -1,0 +1,17 @@
+# A diagnostic playbook (CONTRACT.md §14c), installed in
+# /usr/share/custos/playbooks/. A file of the same name in
+# /etc/custos/playbooks/ replaces it; an empty one hides it.
+update-status:
+  title: Update status
+  description: Which updates and patches are pending, and whether a restart is due. It reads only; it installs nothing.
+  needs:
+    - "zypp-mcp, or mcp-server-tukit on a transactional system"
+    - "systemd-mcp"
+  steps:
+    - {tool: zypp__check_updates, why: "Pending patches and updates.", optional: true}
+    - {tool: tukit__list_updates, why: "Pending updates of a transactional system.", optional: true}
+    - {tool: tukit__get_status, why: "A snapshot waiting for a reboot.", optional: true}
+    - {tool: systemd__check_restart_reload, why: "Services that wait for a restart after an update."}
+  look_for: >
+    Security patches pending, how long they have been, a reboot or a
+    service restart that an earlier update still waits for.

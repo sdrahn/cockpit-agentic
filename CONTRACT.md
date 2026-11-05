@@ -2,7 +2,7 @@
 
 Status: draft 1 (contract version `1`); §6a is a draft 2 design, partly
 implemented (O11); §4a, §6b, §14c and §17a are a design for the bundled
-diagnostics install, of which §6b is implemented (O16). The project was named
+diagnostics install, of which §6b and §14c are implemented (O16). The project was named
 cockpit-agentic until before its first release; the names and paths
 below are Custos's (`custos`, `/etc/custos`, …) and are the ones contract
 version 1 keeps.
@@ -169,6 +169,7 @@ started them.
 | `calls[].approval` | `pending`, `approved`, `declined` |
 | `calls[].rationale` | the model's text that came with the call: its stated reason and expected impact. **Self-asserted by the agent**; the control plane labels it so |
 | `summary` | the agent's last text, at most 500 characters |
+| `playbook` | the diagnostic playbook the activity runs (§14c), if any |
 
 Arguments never appear in activities or the journal (only
 `args_sha256`). The gateway shows the arguments of a pending approval
@@ -711,6 +712,7 @@ and without the `AGENT_` prefix):
 | `AGENT_NAME`, `AGENT_EVENT` | the agent; the event (table below) |
 | `AGENT_SESSION`, `AGENT_INVOCATION`, `AGENT_USER` | session, activity id, session user |
 | `AGENT_ORIGIN`, `AGENT_ORIGIN_BY`, `AGENT_SCHEDULE` | §4 (`invocation.start`) |
+| `AGENT_PLAYBOOK` | `invocation.start`: the playbook the activity runs (§14c), if any |
 | `AGENT_PARENT_AGENT`, `AGENT_PARENT_ACTIVITY`, `AGENT_ROOT_AGENT`, `AGENT_ROOT_ACTIVITY` | §9 (`invocation.start`, `invocation.end`) |
 | `AGENT_TOOL`, `AGENT_SERVER`, `AGENT_CALL_ID`, `AGENT_ARGS_SHA256` | tool events. SHA-256 of the arguments' JSON with sorted keys. Arguments are never logged |
 | `AGENT_RATIONALE` | `tool.call`: the model's stated reason (self-asserted) |
@@ -872,7 +874,7 @@ aggregation, policy distribution and approvals across hosts) is parked
 | `/usr/share/custos/gateway/servers.d/agents.yaml` | root 0644 | the `agents` server definition; copy to `/etc/mcp-gateway/servers.d/` to allow delegation |
 | `/usr/share/custos/categories.d/*.yaml` | root 0644 | the task categories' catalog (§6a) |
 | `/etc/custos/categories.d/*.yaml` | root 0644 | the administrator's categories: a file of a shipped name replaces it, an empty one disables it |
-| `/usr/share/custos/templates/<template>/` | root 0644 | the agent templates (§14a), and `exec.d-disk-usage.yaml`, the `exec` command some of them use, for `/etc/mcp-gateway/exec.d/` |
+| `/usr/share/custos/templates/<template>/` | root 0644 | the agent templates (§14a), and `exec.d-disk-usage.yaml` and `exec.d-diagnostics.yaml`, the `exec` commands templates and playbooks (§14c) use, for `/etc/mcp-gateway/exec.d/` |
 | `/etc/custos/templates/<template>/` | root 0644 | the administrator's templates: one of a shipped name replaces it, one without `template.yaml` hides it |
 | `/etc/custos/defaults.yaml` | root 0644 | the model for new agents (§14b); absent: none |
 | `/usr/share/custos/playbooks/*.yaml`, `/etc/custos/playbooks/*.yaml` | root 0644 | the diagnostic playbooks (§14c; O16): the package's, and the administrator's |
@@ -911,6 +913,7 @@ interaction:
   client_tools: deny                  # or {allow: [confirm_window]}
 schedules:
   - {name: compliance, on_calendar: "Mon..Fri 06:00", prompt: "List pending security patches; install nothing."}
+  - {name: health, on_calendar: daily, playbook: failed-units}   # a playbook (§14c); prompt optional
 sessions: {retention_days: 30}
 sandbox: {kind: systemd}             # or {kind: openshell, openshell_gateway: openshell} (§3a, §16a)
 ```
@@ -971,43 +974,62 @@ holds no secret.
 
 ## 14c. Diagnostic playbooks (draft, O16)
 
-*Draft, not implemented (O16).* A playbook is a published, defined
+*Draft, implemented (O16).* A playbook is a published, defined
 diagnostic procedure: which read-only tools to call, and what to look
 for. Playbooks are data, shipped in
 `/usr/share/custos/playbooks/*.yaml`; an administrator adds or replaces
-them in `/etc/custos/playbooks/` (the same name replaces, an empty file
-hides it):
+them in `/etc/custos/playbooks/` (a file of the same name replaces, an
+empty one hides it):
 
 ```yaml
 # /usr/share/custos/playbooks/disk-pressure.yaml
 disk-pressure:
   title: Disk and inode pressure
   description: Which file systems are full, and what fills them.
-  needs: [exec disk_usage (exec.d-disk-usage.yaml), systemd-mcp]
+  needs:                                   # text: what the gateway must offer
+    - "exec: disk_usage (exec.d-disk-usage.yaml)"
+    - "snapper-mcp, or mcp-server-tukit on a transactional system"
   steps:
-    - {tool: exec__disk_usage, why: Usage and inodes per file system.}
-    - {tool: systemd__journal_disk_usage, why: The journal's share.}
-    - {tool: snapper__list_snapshots, why: Snapshots that keep deleted data, optional: true}
+    - {tool: exec__disk_usage, why: "Space and inodes used per file system."}
+    - {tool: snapper__list_snapshots, why: "Snapshots that keep deleted data.", optional: true}
   look_for: >
-    A file system above 90 %; the journal, snapshots, caches and logs
-    in /var as the usual causes; growth since the last report.
+    A file system above 90 % of its space or inodes; the journal,
+    snapshots, package caches and logs under /var as the usual causes.
 ```
 
-Unknown keys are errors. Each step is a tool the agent calls through the
-gateway (§6), which decides it like any other call: a playbook grants
-nothing. A step's tool must be allowed by a `diagnostics` permission of
-the agent, or the playbook is refused for that agent (`optional` steps
-are skipped instead). `look_for` guides the model; the report (§4a)
-cites what it found.
+Unknown keys are errors. A playbook has a `title`, `look_for` and at
+least one step that is not `optional`; each step a `tool`
+(`<server>__<tool>`, as the gateway names it) and a `why`. A playbook
+name has the form of an agent name.
+
+Each step is a tool the agent calls through the gateway (§6), which
+decides it like any other call: a playbook grants nothing. A playbook is
+refused for an agent when the gateway does not offer it the tool of a
+step that is not `optional` (its permissions do not list it, or its
+category is disabled, §6b); `optional` steps the gateway does not offer
+are left out. `look_for` guides the model; the report (§4a) cites what
+it found.
 
 An activity runs a playbook when `POST /v1/activities` names it
-(`"playbook"`, §5) or a schedule's prompt does; the host gives the model
-the steps and `look_for`, and the activity ends with a report. The set
-GA ships (O16): `failed-units`, `service-health`, `disk-pressure`,
+(`"playbook"`, §5; the `prompt` is then optional and added to it) or a
+schedule names it (`playbook:` in `schedules`, §14; its `prompt` is then
+optional too). The host gives the model the steps, `look_for` and the
+request for a report, records the playbook in the activity (`playbook`,
+§4) and in `invocation.start` (`AGENT_PLAYBOOK`, §10), and answers `404`
+for an unknown playbook, `400` for one that does not parse, and `422`
+when a step's tool is not offered, naming the tools; nothing runs then.
+An OpenShell agent reads the playbooks of its sandbox's image.
+
+The set GA ships: `failed-units`, `service-health`, `disk-pressure`,
 `memory-pressure` (including OOM kills), `journal-errors`,
-`selinux-denials`, `time-sync`, `network-reachability`, `boot-health`,
-`package-consistency`, `update-status` (read only: what is pending, not
-installing it).
+`selinux-denials`, `time-sync`, `network-config` (the interfaces, routes,
+name servers and listening ports; the tools have no network, so it does
+not test reachability), `boot-health`, `package-consistency` (unsatisfied
+dependencies) and `update-status` (read only: what is pending, not
+installing it). Their read-only commands for mcp-gateway's `exec` server
+are `/usr/share/custos/templates/exec.d-diagnostics.yaml` (and
+`exec.d-disk-usage.yaml`), to copy to `/etc/mcp-gateway/exec.d/`: they run
+as the agent's user, without network, and take no arguments.
 
 ## 15. Units and sandbox
 
@@ -1122,7 +1144,7 @@ standard error:
 | `enable CATEGORY… \| --all` | enables task categories on a `diagnostics-only` or partly enabled host (§6b): writes `_enablement.yaml` and the record `categories.enabled`, and returns once the gateway's OPA has loaded it. The categories start supervised. Refuses a category not in the catalog |
 | `diagnostics-only` | makes a fresh host `diagnostics-only` (§6b): the bundled install's step, which `custos-setup` runs (§17a). Refuses a host with enablement data (there is no way back in version 1) and one with an agent that has a permission outside `diagnostics` |
 | `feedback NAME ACTIVITY [--hypothesis ID=confirmed\|rejected\|unsure…] [--plan useful\|not_useful] [--executed] [--comment TEXT]` | feedback on an activity's report (§4a), recorded as `diagnosis.feedback` with the person |
-| `playbooks` | the playbooks (§14c), as JSON: `{"<playbook>": {"title", "description", "needs", "steps", "dir", "error"?}}`. Needs no root |
+| `playbooks` | the playbooks (§14c), as JSON: `{"<playbook>": {"title", "description", "needs"?, "steps": [{"tool", "why", "optional"?}], "look_for", "file", "error"?}}`, where `error` says why a file cannot be used. Needs no root |
 | `stop-all`, `release-all` | the emergency stop (§8) and its end. `release-all` starts again the agents' sockets and schedule timers that are enabled: what an administrator disabled stays stopped. Both record who (`_control.by`: the person behind `sudo`, `SUDO_USER`, else `USER`) and when (`at`) |
 | `delete NAME [--keep-state]` | disables and stops units; removes configuration, gateway data, credentials, drop-ins, timers and, unless kept, state. The user stays, since uids are not reused while files may still belong to them |
 | `trigger NAME_SCHEDULE` | starts the schedule's activity (run by `agent-schedule@.service`) |
@@ -1270,7 +1292,7 @@ inherited, not specified again.
 | Enabled categories start supervised | §6a, §6b | done (§6a); nothing new needed |
 | The diagnostics history as trust evidence for promotion | §4a, §6b | design (O16): reports and feedback in the readiness view |
 | Diagnostics: read host state, logs and metrics; correlate and summarize; root-cause hypotheses; written remediation plans for the administrator | §4a, §6b | design (O16): the `diagnostics` category (read-only), the report |
-| The published diagnostic playbook set | §14c | design (O16) |
+| The published diagnostic playbook set | §14c | done: eleven playbooks and their read-only `exec` commands; an activity or a schedule runs one, refused when the gateway does not offer a step's tool |
 | Confidence indicator | §4a | design (O16): the model's confidence, labelled as such, next to the host-verified evidence; the Cockpit view open |
 | Recommendation provenance ("because of log line X and metric Y") | §4a | design (O16): evidence quotes verified against the tool results by the host |
 | Administrator feedback | §4a, §10 | design (O16): `agent-admin feedback`, `diagnosis.feedback`; Cockpit open |
@@ -1402,7 +1424,8 @@ inherited, not specified again.
   enforcement, `agent-admin enable` and `diagnostics-only`, the refusals
   and records, the tamper check, and the gate's checks in the functional
   tests (section "Diagnostics-only (release gate)", so also in the
-  air-gapped gate). Next: the playbooks and the `health-check`
+  air-gapped gate); the playbooks (§14c), run by an activity or a
+  schedule, and their `exec` commands. Next: the `health-check`
   template; the report with verified evidence; the Cockpit report view
   with confidence, provenance and feedback, and the diagnostics evidence
   in readiness; `custos-setup` and the `custos-diagnostics` package. Open

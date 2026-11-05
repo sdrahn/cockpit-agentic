@@ -1,0 +1,18 @@
+# A diagnostic playbook (CONTRACT.md §14c), installed in
+# /usr/share/custos/playbooks/. A file of the same name in
+# /etc/custos/playbooks/ replaces it; an empty one hides it.
+memory-pressure:
+  title: Memory pressure
+  description: Whether the host runs short of memory, and what was killed for it.
+  needs:
+    - "exec: memory_usage, pressure_stall, load_average (exec.d-diagnostics.yaml)"
+    - "systemd-mcp"
+  steps:
+    - {tool: exec__memory_usage, why: "Memory and swap in use."}
+    - {tool: exec__pressure_stall, why: "How long tasks waited for memory, CPU and I/O."}
+    - {tool: exec__load_average, why: "The load over 1, 5 and 15 minutes.", optional: true}
+    - {tool: systemd__list_log, why: "OOM kills (the kernel's and systemd-oomd's).", optional: true}
+  look_for: >
+    Little available memory with swap in use, memory pressure (some/full
+    avg10 or avg60 above a few percent), OOM kills and which processes
+    they hit, a load far above the number of CPUs.

@@ -219,7 +219,12 @@ calendar expression (`systemd.time(7)`):
 schedules:
   - {name: compliance, on_calendar: "Mon..Fri 06:00", prompt: "List the pending security patches. Install nothing."}
   - {name: weekly-cleanup, on_calendar: "Sun 03:00", prompt: "Clean the package cache."}
+  - {name: health, on_calendar: daily, playbook: failed-units}
 ```
+
+A schedule with `playbook:` runs a diagnostic playbook
+([chapter 9](09-administration.md#playbooks)); its `prompt` is then
+optional and added to the playbook's.
 
 `name` is unique per agent: lower-case letters, digits and `-`, starting
 with a letter, up to 31 characters. `agent-admin` turns each into the

@@ -39,6 +39,12 @@ type env struct {
 // (uid:name), as SO_PEERCRED would.
 func newEnv(t *testing.T, steps ...testutil.Step) *env {
 	t.Helper()
+	return newEnvPlaybooks(t, "", steps...)
+}
+
+// newEnvPlaybooks is newEnv with the playbooks under root.
+func newEnvPlaybooks(t *testing.T, root string, steps ...testutil.Step) *env {
+	t.Helper()
 	dir, err := os.MkdirTemp("", "agent")
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +65,7 @@ interaction: {agui: true, client_tools: {allow: [confirm_window]}}
 	}
 	log := &journal.Memory{}
 	m := &testutil.Model{Steps: steps}
-	l, err := New(context.Background(), Options{Config: cfg, Log: log, StateDir: dir, Model: m})
+	l, err := New(context.Background(), Options{Config: cfg, Log: log, StateDir: dir, Model: m, PlaybookRoot: root})
 	if err != nil {
 		t.Fatal(err)
 	}

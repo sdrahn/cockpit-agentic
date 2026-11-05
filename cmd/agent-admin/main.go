@@ -20,6 +20,7 @@ const usage = `usage: agent-admin COMMAND …
                                          install a new agent from a template: its configuration (or FILE's),
                                          permissions and mode
   templates                              the agent templates (CONTRACT.md §14a), as JSON
+  playbooks                              the diagnostic playbooks (CONTRACT.md §14c), as JSON
   draft NAME [--template TEMPLATE]       a new agent's starting configuration (blank or the template's),
                                          with the host's model defaults
   defaults [--from FILE | --clear]       the model defaults for new agents (CONTRACT.md §14b), as JSON;
@@ -220,6 +221,14 @@ func run(a *admin.Admin, args []string) error {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(d)
+	case "playbooks":
+		p, err := a.Playbooks()
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(p)
 	case "templates":
 		t, err := a.ListTemplates()
 		if err != nil {

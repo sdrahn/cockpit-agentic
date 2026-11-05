@@ -26,3 +26,19 @@ func TestLooksLikeSecret(t *testing.T) {
 		t.Errorf("upper-case key: %v", err)
 	}
 }
+
+// A schedule runs a prompt or a playbook (§14c).
+func TestSchedulePlaybook(t *testing.T) {
+	base := "version: 1\nname: dw\nmodel: {provider: openai, name: m, endpoint: \"http://ai/v1\"}\ngateway: {servers: [systemd]}\n"
+	if _, err := Parse([]byte(base + "schedules: [{name: daily, on_calendar: daily, playbook: failed-units}]\n")); err != nil {
+		t.Errorf("a playbook without a prompt: %v", err)
+	}
+	for _, bad := range []struct{ in, want string }{
+		{"schedules: [{name: daily, on_calendar: daily}]\n", "prompt: missing (or name a playbook)"},
+		{"schedules: [{name: daily, on_calendar: daily, playbook: ../x}]\n", "not a playbook name"},
+	} {
+		if _, err := Parse([]byte(base + bad.in)); err == nil || !strings.Contains(err.Error(), bad.want) {
+			t.Errorf("%q: %v", bad.in, err)
+		}
+	}
+}

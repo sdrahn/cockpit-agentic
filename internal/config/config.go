@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/sdrahn/custos/internal/playbook"
 )
 
 // ContractVersion is the contract version this code implements.
@@ -210,6 +212,9 @@ type Schedule struct {
 	Name       string `yaml:"name" json:"name"`
 	OnCalendar string `yaml:"on_calendar" json:"on_calendar"`
 	Prompt     string `yaml:"prompt" json:"prompt"`
+	// Playbook names a diagnostic playbook to run (CONTRACT.md §14c); the
+	// prompt is then optional and added to it.
+	Playbook string `yaml:"playbook,omitempty" json:"playbook,omitempty"`
 }
 
 var scheduleRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}$`)
@@ -411,8 +416,11 @@ func (c *Config) Check() error {
 		if strings.TrimSpace(s.OnCalendar) == "" || strings.ContainsAny(s.OnCalendar, "\n\r") {
 			bad("schedules[%d].on_calendar: want a systemd calendar expression (systemd.time(7))", i)
 		}
-		if strings.TrimSpace(s.Prompt) == "" {
-			bad("schedules[%d].prompt: missing", i)
+		if strings.TrimSpace(s.Prompt) == "" && s.Playbook == "" {
+			bad("schedules[%d].prompt: missing (or name a playbook)", i)
+		}
+		if s.Playbook != "" && !playbook.ValidName(s.Playbook) {
+			bad("schedules[%d].playbook: %q is not a playbook name", i, s.Playbook)
 		}
 	}
 	if c.Sessions.RetentionDays < 0 {

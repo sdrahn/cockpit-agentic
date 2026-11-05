@@ -1,0 +1,16 @@
+# A diagnostic playbook (CONTRACT.md §14c), installed in
+# /usr/share/custos/playbooks/. A file of the same name in
+# /etc/custos/playbooks/ replaces it; an empty one hides it.
+failed-units:
+  title: Failed units
+  description: Which systemd units have failed, and why.
+  needs:
+    - "systemd-mcp"
+  steps:
+    - {tool: systemd__list_loaded_units, why: "The units and their state; failed ones first."}
+    - {tool: systemd__list_log, why: "The journal of each failed unit around its failure."}
+    - {tool: systemd__get_file, why: "The unit file of a failed unit, for its dependencies and settings.", optional: true}
+  look_for: >
+    Units in state failed; the exit status or signal and the last error
+    lines of each; a dependency that failed first; a missing file, a
+    permission or SELinux denial, a port in use or a full disk as causes.

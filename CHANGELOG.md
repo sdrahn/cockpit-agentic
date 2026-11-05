@@ -51,6 +51,16 @@ removed.
   `agent-admin show` reporting a state changed by hand. The functional
   tests check it as a release gate.
 
+- Diagnostic playbooks (CONTRACT.md §14c): eleven published, read-only
+  diagnostic procedures in `/usr/share/custos/playbooks` (failed units,
+  service health, disk and memory pressure, journal errors, SELinux
+  denials, time sync, network configuration, boot health, package
+  consistency, update status), your own in `/etc/custos/playbooks`, and
+  their commands for mcp-gateway's exec server
+  (`exec.d-diagnostics.yaml`). `POST /v1/activities` and schedules run
+  one (`playbook`); it is refused when the gateway does not offer a
+  step's tool. `agent-admin playbooks` lists them.
+
 ### Fixed
 
 - A deleted agent stayed on the Cockpit page, as stopped, until the

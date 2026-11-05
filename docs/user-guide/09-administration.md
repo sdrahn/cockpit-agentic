@@ -21,6 +21,7 @@ person behind `sudo` (`SUDO_USER`), else `USER`.
 | `agent-admin create NAME --from FILE` | create an agent: supervised, no permissions |
 | `agent-admin create NAME --template TEMPLATE [--from FILE]` | create an agent from a template, with its permissions and mode ([below](#templates)) |
 | `agent-admin templates` | the agent templates, as JSON (no root needed) |
+| `agent-admin playbooks` | the diagnostic playbooks, as JSON (no root needed; [below](#playbooks)) |
 | `agent-admin draft NAME [--template TEMPLATE]` | a new agent's starting configuration, with the model defaults (no root needed) |
 | `agent-admin defaults [--from FILE \| --clear]` | the model for new agents ([chapter 5](05-configuration.md#model-defaults)) |
 | `agent-admin edit NAME --from FILE` | replace its configuration and apply it |
@@ -255,6 +256,71 @@ To change a schedule's calendar or prompt, edit the configuration
 the timers: it enables a new schedule's timer, and leaves one you
 disabled disabled. A disabled timer stays disabled until you enable it,
 `release-all` included.
+
+## Diagnostic playbooks {#playbooks}
+
+A playbook is a published diagnostic procedure: which read-only tools to
+call, in which order, and what to look for. Custos ships eleven, in
+`/usr/share/custos/playbooks/`:
+
+| Playbook | Looks at |
+|---|---|
+| `failed-units` | failed systemd units and why they failed |
+| `service-health` | one service (name it in the request): state, log, unit file, pending restart |
+| `disk-pressure` | full file systems and inodes, snapshots, "No space left on device" |
+| `memory-pressure` | memory and swap, pressure stalls, load, OOM kills |
+| `journal-errors` | errors since the last boot, by source |
+| `selinux-denials` | the SELinux mode and its denials |
+| `time-sync` | whether NTP has synchronized the clock |
+| `network-config` | interfaces, routes, name servers, listening ports (no reachability test: the tools have no network) |
+| `boot-health` | the last boot's duration and slow or failed units |
+| `package-consistency` | unsatisfied package dependencies |
+| `update-status` | pending updates and patches, and restarts they wait for (installs nothing) |
+
+```bash
+agent-admin playbooks | jq 'map_values(.title)'     # the playbooks
+curl --unix-socket /run/agents/NAME/api.sock http://agent/v1/activities \
+  -d '{"playbook": "failed-units", "wait": true}'   # run one now
+```
+
+Or from a schedule, with `playbook:` instead of (or with) `prompt:`
+([chapter 5](05-configuration.md#schedules)). The agent calls each step's
+tool through the gateway, which decides it as any other call: a playbook
+grants nothing. When the gateway does not offer the agent a step's tool,
+the playbook is refused before anything runs (`422`, naming the tools);
+steps marked `optional` are left out instead. The agent then reports
+what it found, its hypotheses and a remediation plan for you; it changes
+nothing.
+
+Most playbooks need read-only commands for mcp-gateway's `exec` server
+(`mcp-gateway-exec-server`):
+
+```bash
+cp /usr/share/custos/templates/exec.d-diagnostics.yaml /usr/share/custos/templates/exec.d-disk-usage.yaml /etc/mcp-gateway/exec.d/
+/usr/libexec/mcp-servers/mcp-server-exec --check
+```
+
+and the agent needs `read_only` permissions for the tools, with
+`category: diagnostics` on a diagnostics-only host
+([chapter 6](06-permissions-and-modes.md#diagnostics-only)), for example
+`- {server: exec, tool: memory_usage, read_only: true, category: diagnostics}`.
+Each playbook's `needs` says what it uses.
+
+Your own playbooks go in `/etc/custos/playbooks/`, one file per playbook,
+named after it; a file with a shipped name replaces that playbook, and an
+empty one hides it:
+
+```yaml
+# /etc/custos/playbooks/web-health.yaml
+web-health:
+  title: Web server health
+  steps:
+    - {tool: systemd__list_loaded_units, why: "The state of nginx and php-fpm."}
+    - {tool: systemd__list_log, why: "Their recent errors."}
+  look_for: Restarts, 5xx errors, a full upstream pool.
+```
+
+`agent-admin playbooks` lists a file that does not parse with its error.
 
 ## Cancelling an activity {#cancel}
 

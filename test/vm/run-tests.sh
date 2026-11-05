@@ -702,6 +702,50 @@ EOF
 	check "agent-admin delete tm" agent-admin delete tm
 fi
 
+section "Diagnostic playbooks"
+# CONTRACT.md §14c: published playbooks; an activity runs one through the
+# gateway, refused when the gateway does not offer a step's tool.
+check "agent-admin playbooks lists the shipped set, none broken" bash -c \
+	"agent-admin playbooks | jq -e '(keys | length) == 11 and .\"failed-units\".title and ([.[] | select(.error)] | length == 0)' >/dev/null"
+if [ -x /usr/libexec/mcp-servers/mcp-server-exec ]; then
+	check "the shipped diagnostic commands pass mcp-server-exec --check" \
+		/usr/libexec/mcp-servers/mcp-server-exec --check --commands /usr/share/custos/templates/exec.d-diagnostics.yaml
+else
+	skip "the shipped diagnostic commands pass mcp-server-exec --check (mcp-gateway-exec-server is not installed)"
+fi
+mkdir -p /etc/custos/playbooks
+cat >/etc/custos/playbooks/probe-check.yaml <<'EOF'
+probe-check:
+  title: PROBE check
+  description: The test server's probe.
+  steps:
+    - {tool: custos-test__probe, why: "The probe."}
+  look_for: probe ok.
+EOF
+cat >/etc/custos/playbooks/change-check.yaml <<'EOF'
+change-check:
+  title: Change check
+  steps:
+    - {tool: custos-test__change, why: "Not offered to pb."}
+  look_for: nothing.
+EOF
+agent-admin delete pb >/dev/null 2>&1
+check "agent-admin create pb, with a schedule that runs a playbook" agent-admin create pb --from \
+	"$(config pb custos-test 'schedules: [{name: probe, on_calendar: "*-*-* 03:30", playbook: probe-check}]')"
+printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' | agent-admin permissions pb
+pb_run() { api pb /v1/activities -X POST -d "$(jq -nc --arg p "$1" '{playbook: $p, wait: true}')"; }
+check "an activity runs the playbook: its probe is called" eventually 30 bash -c \
+	"$(declare -f api pb_run); pb_run probe-check | jq -e '.playbook == \"probe-check\" and .state == \"finished\" and (.calls | map(.tool) | index(\"custos-test__probe\"))' >/dev/null"
+check "journal: invocation.start names the playbook" eventually 10 journal_has pb invocation.start '.AGENT_PLAYBOOK == "probe-check"'
+check "a playbook whose tool the gateway does not offer is refused (422)" code_is 422 api pb /v1/activities -X POST -d '{"playbook":"change-check"}'
+check "an unknown playbook is refused (404)" code_is 404 api pb /v1/activities -X POST -d '{"playbook":"no-such"}'
+n0=$(journal pb invocation.start | jq -s 'map(select(.AGENT_ORIGIN == "schedule")) | length')
+check "the schedule runs its playbook" bash -c "agent-admin trigger pb_probe"
+check "journal: the scheduled activity ran the playbook" eventually 30 bash -c \
+	"[ \$(journalctl -o json --no-pager --since '@$t0' AGENT_NAME=pb AGENT_EVENT=invocation.start | jq -s 'map(select(.AGENT_ORIGIN == \"schedule\" and .AGENT_PLAYBOOK == \"probe-check\")) | length') -gt $n0 ]"
+check "agent-admin delete pb" agent-admin delete pb
+rm -f /etc/custos/playbooks/probe-check.yaml /etc/custos/playbooks/change-check.yaml
+
 section Removing
 check "agent-admin delete t2" agent-admin delete t2
 check "agent-admin delete t1" agent-admin delete t1

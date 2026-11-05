@@ -1,0 +1,17 @@
+# A diagnostic playbook (CONTRACT.md §14c), installed in
+# /usr/share/custos/playbooks/. A file of the same name in
+# /etc/custos/playbooks/ replaces it; an empty one hides it.
+service-health:
+  title: Health of a service
+  description: The state, recent log and configuration of one service, which the request names.
+  needs:
+    - "systemd-mcp"
+  steps:
+    - {tool: systemd__list_loaded_units, why: "The service's state, and of the units it depends on."}
+    - {tool: systemd__list_log, why: "The service's recent journal."}
+    - {tool: systemd__get_file, why: "Its unit file and drop-ins.", optional: true}
+    - {tool: systemd__check_restart_reload, why: "Whether it waits for a restart or reload after an update.", optional: true}
+  look_for: >
+    Restarts and failures, errors and warnings in its log, a pending
+    restart after an update, dependencies that are not active, and
+    changes in its configuration.

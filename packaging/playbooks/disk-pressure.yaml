@@ -1,0 +1,18 @@
+# A diagnostic playbook (CONTRACT.md §14c), installed in
+# /usr/share/custos/playbooks/. A file of the same name in
+# /etc/custos/playbooks/ replaces it; an empty one hides it.
+disk-pressure:
+  title: Disk and inode pressure
+  description: Which file systems are full, and what fills them.
+  needs:
+    - "exec: disk_usage (exec.d-disk-usage.yaml)"
+    - "snapper-mcp, or mcp-server-tukit on a transactional system"
+  steps:
+    - {tool: exec__disk_usage, why: "Space and inodes used per file system."}
+    - {tool: snapper__list_snapshots, why: "Snapshots that keep deleted data.", optional: true}
+    - {tool: tukit__list_snapshots, why: "Snapshots of a transactional system.", optional: true}
+    - {tool: systemd__list_log, why: "Errors about a full disk (No space left on device).", optional: true}
+  look_for: >
+    A file system above 90 % of its space or inodes; the journal,
+    snapshots, package caches and logs under /var as the usual causes;
+    services that failed for lack of space.

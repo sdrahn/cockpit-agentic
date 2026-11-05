@@ -1,0 +1,16 @@
+# A diagnostic playbook (CONTRACT.md §14c), installed in
+# /usr/share/custos/playbooks/. A file of the same name in
+# /etc/custos/playbooks/ replaces it; an empty one hides it.
+time-sync:
+  title: Time synchronization
+  description: Whether the clock is synchronized, and why not.
+  needs:
+    - "exec: time_status (exec.d-diagnostics.yaml)"
+    - "systemd-mcp"
+  steps:
+    - {tool: exec__time_status, why: "The clock, the time zone and NTPSynchronized."}
+    - {tool: systemd__list_loaded_units, why: "The state of chronyd or systemd-timesyncd."}
+    - {tool: systemd__list_log, why: "The time service's journal.", optional: true}
+  look_for: >
+    NTPSynchronized=no, a time service that is not active, servers it
+    cannot reach, and a large step of the clock.

@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/playbook"
 )
 
 // Agent templates (CONTRACT.md §14a): starting points for agents, each a
@@ -259,3 +260,8 @@ func (a *Admin) CreateFromTemplate(name, tmpl, from string) error {
 	fmt.Fprintf(a.Out, "agent %s created from template %s: %s, %d permissions\n", name, tmpl, t.Mode, len(perms))
 	return nil
 }
+
+// Playbooks are the diagnostic playbooks (§14c): the package's, replaced
+// or hidden by the administrator's; a file that does not parse is listed
+// with its error.
+func (a *Admin) Playbooks() (map[string]*playbook.Playbook, error) { return playbook.Load(a.Root) }
