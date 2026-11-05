@@ -8,7 +8,11 @@
 FROM registry.opensuse.org/opensuse/leap:16.0
 # OpenShell runs the workload as the image's user "sandbox" (the sandbox
 # policy's run_as_user), whose home is the working directory.
-RUN zypper -n in --no-recommends ca-certificates shadow && \
+# The image's codec repository (codecs.opensuse.org) is outside openSUSE's
+# mirrors and not needed: while it was unreachable, zypper exited 106
+# (repositories skipped) and the build failed.
+RUN (zypper -n mr -d repo-openh264 >/dev/null 2>&1 || true) && \
+    zypper -n in --no-recommends ca-certificates shadow && \
     useradd -r -U -m -d /sandbox -s /usr/sbin/nologin sandbox && \
     zypper -n rm -u shadow && zypper -n clean -a
 COPY bin/agent-launcher /usr/libexec/custos/agent-launcher
