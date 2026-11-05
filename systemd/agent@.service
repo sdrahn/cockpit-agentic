@@ -16,9 +16,16 @@ User=agent-%i
 Group=agent-%i
 SupplementaryGroups=mcp-users
 ConfigurationDirectory=custos/agents/%i
+# As agent-admin creates it (root:agent-%i 0750).
+ConfigurationDirectoryMode=0750
 StateDirectory=agents/%i
 StateDirectoryMode=0700
 ImportCredential=agent-%i.*
+# systemd decrypts the credentials before the agent starts, already under
+# the device policy of PrivateDevices= below. On a host with a TPM2,
+# systemd-creds encrypt (agent-admin set-credential) seals them to the TPM
+# too, so that decryption needs it. The agent's own /dev stays private.
+DeviceAllow=/dev/tpmrm0 rw
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=60s

@@ -57,6 +57,15 @@ journalctl -u mcp-gateway.service --since -30min                 # the gateway: 
   `systemctl status agent@NAME.service` and its journal name the error.
   `config.invalid` in the journal means the installed configuration is
   wrong: `agent-admin check NAME`.
+- **`Failed to set up credentials: Protocol error`** and
+  **`status=243/CREDENTIALS`** in the unit's journal, on a host with a
+  TPM2 (`systemd-analyze has-tpm2`): `set-credential` sealed the secret
+  to the TPM, and before 0.1.2 the agent's unit (`PrivateDevices=yes`)
+  kept systemd from reaching it. Allow it in a drop-in:
+  `mkdir -p /etc/systemd/system/agent@NAME.service.d`,
+  `printf '[Service]\nDeviceAllow=/dev/tpmrm0 rw\n' > /etc/systemd/system/agent@NAME.service.d/60-tpm.conf`,
+  `systemctl daemon-reload`, `systemctl restart agent@NAME.service`.
+  Later units allow it themselves; remove the drop-in then.
 - **`model.credential "…": no credentials directory`** or
   **`model.credential: open …`**: the credential is not set or has another
   name. `agent-admin set-credential NAME <cred> < secret`, then

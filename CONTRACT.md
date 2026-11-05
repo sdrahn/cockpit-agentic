@@ -795,8 +795,11 @@ holds no secret.
 runs `agent-launcher serve` with:
 
 - `User=agent-%i`, `SupplementaryGroups=mcp-users`;
-- `ConfigurationDirectory=custos/agents/%i`, `StateDirectory=agents/%i`;
-- `ImportCredential=agent-%i.*`;
+- `ConfigurationDirectory=custos/agents/%i` (`ConfigurationDirectoryMode=0750`,
+  as `agent-admin create` makes it), `StateDirectory=agents/%i`;
+- `ImportCredential=agent-%i.*`, with `DeviceAllow=/dev/tpmrm0 rw`: systemd
+  decrypts the credentials under the unit's device policy, and on a host
+  with a TPM2 `systemd-creds encrypt` seals them to it;
 - `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`,
   `PrivateDevices=yes`, `NoNewPrivileges=yes`, `CapabilityBoundingSet=`,
   `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`,

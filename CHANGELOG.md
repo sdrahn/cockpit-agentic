@@ -81,6 +81,15 @@ removed.
   moment later, so a refused **Release all agents** (or delete, mode,
   …) seemed to do nothing. An action's error now stays until the next
   action or **Dismiss**.
+- An agent whose model credential was stored on a host with a TPM2 did
+  not start (`Failed to set up credentials: Protocol error`,
+  `243/CREDENTIALS`): `systemd-creds encrypt` seals the secret to the
+  TPM there, and `agent@.service`'s `PrivateDevices=yes` kept systemd
+  from reaching the TPM while it decrypted it. The unit allows
+  `/dev/tpmrm0` for that (`DeviceAllow=`); the agent's own `/dev` stays
+  private. It also says `ConfigurationDirectoryMode=0750`, as
+  `agent-admin create` makes the directory, so systemd no longer warns
+  at every start.
 
 ## v0.1.1 — 2026-11-04
 
