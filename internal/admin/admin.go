@@ -606,7 +606,11 @@ func (a *Admin) Delete(name string, keepState bool) error {
 	}
 	a.Run(nil, "systemctl", append([]string{"disable", "--now"}, units...)...)
 	rm := []string{a.agentDir(name), a.gatewayFile(name), a.p(filepath.Join(UnitDir, "agent@"+name+".service.d")),
-		a.p(filepath.Join(UnitDir, "agent-openshell@"+name+".service.d"))}
+		a.p(filepath.Join(UnitDir, "agent-openshell@"+name+".service.d")),
+		// The socket's directory: systemd removes the socket at stop
+		// (RemoveOnStop=) but leaves the directory, by which the
+		// Cockpit page finds agents (§3).
+		a.p(filepath.Join(SocketDir, name))}
 	matches, _ := filepath.Glob(a.p(filepath.Join(CredstoreDir, "agent-"+name+".*")))
 	rm = append(rm, matches...)
 	timers, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "agent-schedule@"+name+"_*")))
