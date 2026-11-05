@@ -326,6 +326,9 @@ func run(a *admin.Admin, args []string) error {
 		d, err := a.Evaluate()
 		for _, x := range d {
 			fmt.Printf("agent %s: category %s demoted: %s\n", x.Agent, x.Category, x.Reason)
+			if x.Notice != "" {
+				fmt.Printf("agent %s: category %s: %s\n", x.Agent, x.Category, x.Notice)
+			}
 		}
 		return err
 	case "owners":

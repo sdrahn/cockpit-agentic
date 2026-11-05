@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"sort"
@@ -22,9 +23,30 @@ const OverrideWindow = 7 * 24 * time.Hour
 // HealthCheckTimeout bounds a rollback health check.
 const HealthCheckTimeout = 60 * time.Second
 
-// Demotion is one category the evaluator demoted, and why.
+// Demotion is one category the evaluator demoted, and why; Notice says
+// how its approvers were told (R3).
 type Demotion struct {
 	Agent, Category, Reason string
+	Notice                  string
+}
+
+// noticeOf tells the approvers of the agent's calls of an automatic
+// demotion through the gateway's notices (its requirement R3), and says
+// how that went. A gateway without notices is no error: Cockpit's
+// Approvals tab shows the demotion all the same; neither is a refused
+// notice an error of the demotion, which stands.
+func (a *Admin) noticeOf(name, c, reason string, d *GatewayData) string {
+	if a.Notify == nil {
+		return ""
+	}
+	id, err := a.Notify(demotionNotice(name, c, reason, d))
+	switch {
+	case errors.Is(err, errNoNotices):
+		return "no notice: this mcp-gateway takes none"
+	case err != nil:
+		return "no notice: " + err.Error()
+	}
+	return "approvers notified (notice " + id + ")"
 }
 
 // Evaluate is the demotion evaluator (agent-admin evaluate, run by
@@ -80,7 +102,7 @@ func (a *Admin) Evaluate() ([]Demotion, error) {
 				errs = append(errs, fmt.Sprintf("agent %s: demoting %s: %v", name, c, err))
 				continue
 			}
-			out = append(out, Demotion{name, c, reason})
+			out = append(out, Demotion{name, c, reason, a.noticeOf(name, c, reason, d)})
 		}
 	}
 	if len(errs) > 0 {

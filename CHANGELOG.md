@@ -9,6 +9,13 @@ removed.
 
 ### Added
 
+- The demotion evaluator tells the approvers of each automatic demotion
+  through mcp-gateway's notices (its requirement R3): about the agent,
+  for the servers of the category's permissions, by mail, desktop
+  notification and the gateway's approval page, to the servers'
+  approvers and the agent's owners. `agent-admin evaluate` says whether
+  they were notified; a gateway without notices leaves the demotion as
+  it is.
 - The gateway's denials of an agent's call say why (with mcp-gateway's
   `deny_reasons` and `unmatched_reasons`, its requirement R1): "task
   category patch-errata is not enabled on this host (diagnostics-only):
