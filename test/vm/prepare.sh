@@ -13,6 +13,10 @@ die() {
 	exit 1
 }
 
+# The image's repositories that the tests do not need: the codec
+# repository (codecs.opensuse.org) is outside openSUSE's mirrors, and its
+# outages failed the refresh. Absent in other images: nothing to do.
+zypper -n mr -d repo-openh264 >/dev/null 2>&1 || true
 zypper -n --gpg-auto-import-keys ref >/tmp/zypper.log 2>&1 ||
 	{ tail -n 30 /tmp/zypper.log; die "refreshing the repositories failed"; }
 # policycoreutils-python-utils: the %selinux_* macros of the -selinux packages.
