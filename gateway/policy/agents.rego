@@ -41,6 +41,11 @@
 # data.mcp.agents._enablement (agents/_enablement.yaml, agent-admin
 # enable) disables task categories (below). Agent names start with a
 # letter, so _control and _enablement are no agent's.
+#
+# Every denial has a reason (deny_reasons), and a call a permission names
+# that is no permission now is explained (unmatched_reasons): for the
+# agent's error and the gateway's audit, with an mcp-gateway that takes
+# them from modules (its R1); an older one ignores both sets.
 package mcp.authz
 
 import rego.v1
@@ -177,9 +182,17 @@ in_window(w, ns) if {
 
 minutes(hhmm) := (to_number(substring(hhmm, 0, 2)) * 60) + to_number(substring(hhmm, 3, 2))
 
+# Every denial of an agent's call, with its reason: mcp-gateway's
+# deny_reasons (from its R1, sdrahn/mcp-gateway#335) names them in the
+# decision, the agent's error and the audit; an older gateway reads
+# "denied by policy" and ignores the set.
+denied if count(agent_denials) > 0
+
+deny_reasons contains r if some r in agent_denials
+
 # The agent's only permissions are its agent data: a role bound to an
 # agent user would bypass its mode, so it denies everything instead.
-denied if {
+agent_denials contains "a role is bound to the agent's user: an agent's permissions are only its agent data" if {
 	agent_principal
 	some r in roles
 	r != ""
@@ -187,41 +200,87 @@ denied if {
 
 # An agent's subject from an issuer not trusted for agents: not an agent,
 # and nothing else either.
-denied if {
+agent_denials contains "an agent's subject from an issuer not trusted for agents" if {
 	input.principal.transport == "http"
 	startswith(input.principal.sub, "agent-")
 	not agent_issuer
 }
 
 # An agent without agent data gets nothing.
-denied if {
+agent_denials contains "the agent has no agent data (agent-admin create)" if {
 	agent_principal
 	not agent_data
 }
 
 # An unknown mode gets nothing.
-denied if {
+agent_denials contains sprintf("the agent's mode %v is unknown", [agent_mode]) if {
 	agent_principal
 	not agent_mode in {"advisory", "supervised", "bounded"}
 }
 
 # So does an unknown mode of a category.
-denied if {
+agent_denials contains sprintf("the mode %v of task category %s is unknown", [c.mode, name]) if {
 	agent_principal
-	some c in agent_categories
+	some name, c in agent_categories
 	not c.mode in {"supervised", "bounded"}
 }
 
 # Pause and emergency stop. Discovery keeps the tools listed, so the
 # agent's tool list survives a pause.
-denied if {
+agent_denials contains "the agent is paused (agent-admin resume)" if {
 	agent_principal
 	not input.discovery
 	agent_data.paused == true
 }
 
-denied if {
+agent_denials contains "the emergency stop is in effect (agent-admin resume-all)" if {
 	agent_principal
 	not input.discovery
 	data.mcp.agents._control.stopped == true
+}
+
+# A call that a permission of the agent data names, but that is no
+# permission now, explained (mcp-gateway's unmatched_reasons, R1): its
+# task category is not enabled on this host (§6b), it is a diagnostics
+# permission that changes the system, or the agent is advisory and the
+# permission changes the system.
+unmatched_reasons contains sprintf("task category %s is not enabled on this host (%s): agent-admin enable %s", [p.category, enablement_state, p.category]) if {
+	some p in unusable_naming
+	has_category(p)
+	not misdeclared_diagnostics(p)
+}
+
+unmatched_reasons contains sprintf("permissions without a task category are not enabled on this host (%s)", [enablement_state]) if {
+	some p in unusable_naming
+	not has_category(p)
+}
+
+unmatched_reasons contains "a diagnostics permission that is not read-only is no permission (diagnostics only reads)" if {
+	some p in unusable_naming
+	misdeclared_diagnostics(p)
+}
+
+unmatched_reasons contains "the agent is advisory: it only reads (agent-admin mode)" if {
+	agent_principal
+	agent_mode == "advisory"
+	some p in agent_data.permissions
+	permission_enabled(p)
+	not p.read_only == true
+	names_request(p)
+}
+
+# The agent's permissions that name the request but are not enabled.
+unusable_naming contains p if {
+	agent_principal
+	some p in agent_data.permissions
+	not permission_enabled(p)
+	names_request(p)
+}
+
+# A permission names the request: its server and target, as the gateway
+# matches them (its arguments aside).
+names_request(p) if {
+	field := target_field[input.action]
+	server_ok(p)
+	glob.match(expand_glob(p[field]), null, input.resource.name)
 }

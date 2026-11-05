@@ -9,6 +9,14 @@ removed.
 
 ### Added
 
+- The gateway's denials of an agent's call say why (with mcp-gateway's
+  `deny_reasons` and `unmatched_reasons`, its requirement R1): "task
+  category patch-errata is not enabled on this host (diagnostics-only):
+  agent-admin enable patch-errata", "the agent is paused", "the
+  emergency stop is in effect", "the agent is advisory" and the others,
+  in the agent's error and the gateway's audit, instead of "denied by
+  policy" or "no matching permission" (user guide chapter 12). An older
+  mcp-gateway decides the same and keeps its generic reasons.
 - A suspected prompt injection is shown with the approval item
   (CONTRACT.md §7, O14): the agent checks what its model read before each
   call for signs of an injection (an instruction to ignore its

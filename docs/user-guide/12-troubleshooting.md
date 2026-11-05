@@ -132,6 +132,25 @@ anyway. Check in this order:
    denies the agent everything. Check the role data
    (`mcp-gateway-admin policy show`).
 6. The gateway's audit says why: `journalctl -u mcp-gateway.service -o cat | grep '"sub":"agent-NAME"' | grep deny`.
+   Its `reason`, which the agent also receives as its error:
+
+| `reason` | Cause | Fix |
+|---|---|---|
+| `the agent is paused (agent-admin resume)` | paused | `agent-admin resume NAME` |
+| `the emergency stop is in effect (agent-admin resume-all)` | the emergency stop | `agent-admin resume-all` ([chapter 9](09-administration.md)) |
+| `task category C is not enabled on this host (diagnostics-only): agent-admin enable C` | a permission of a disabled category ([chapter 6](06-permissions-and-modes.md)) | `agent-admin enable C`, if the host should do this |
+| `permissions without a task category are not enabled on this host (…)` | on a host that started diagnostics-only, a permission has no category | give it a category, or `agent-admin enable --all` |
+| `a diagnostics permission that is not read-only is no permission (diagnostics only reads)` | `category: diagnostics` without `read_only: true` | mark it read-only, or move it to another category |
+| `the agent is advisory: it only reads (agent-admin mode)` | advisory mode | `agent-admin mode NAME supervised` |
+| `the agent has no agent data (agent-admin create)` | the agent's gateway data is missing | `agent-admin permissions NAME`, or create the agent again |
+| `the agent's mode M is unknown`, `the mode M of task category C is unknown` | the agent data was edited by hand | `agent-admin mode`, `agent-admin promote`/`demote` |
+| `a role is bound to the agent's user: …` | step 5 | remove the binding |
+| `an agent's subject from an issuer not trusted for agents` | an OpenShell agent's token from another issuer ([chapter 11](11-openshell.md#issuers)) | list the issuer in `agents/_http.yaml` |
+| `no matching permission` | no permission names the tool | add the permission (step 2) |
+
+These reasons need an mcp-gateway whose policy takes them from modules
+(`deny_reasons`, `unmatched_reasons`); an older one says `denied by
+policy` or `no matching permission` for all of them.
 
 ## The model is not reached {#model}
 
