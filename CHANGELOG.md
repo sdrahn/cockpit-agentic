@@ -31,6 +31,14 @@ removed.
   agents that run. The agents list marks an agent whose credential is
   missing.
 
+- CONTRACT.md: the design of the bundled health-check and diagnostics
+  install (§20b, O16): the `diagnostics` and `compliance-audit`
+  categories, the enablement state `diagnostics-only` enforced by the
+  gateway (§6b, `agent-admin enable`), diagnosis reports with
+  host-verified evidence and administrator feedback (§4a), diagnostic
+  playbooks (§14c) and `custos-setup` for the installer (§17a). Not
+  implemented yet; the journal's message IDs are reserved.
+
 ### Fixed
 
 - A deleted agent stayed on the Cockpit page, as stopped, until the
