@@ -213,6 +213,12 @@ func (a *Admin) Promote(name, cat, by string, p Promotion) error {
 	if err := a.checkCategory(cat); err != nil {
 		return err
 	}
+	if cat == Diagnostics {
+		return errors.New("category diagnostics only reads: its calls need no approval, so it is never promoted")
+	}
+	if err := a.checkCategoryEnabled(name, cat); err != nil {
+		return err
+	}
 	env, err := ParseEnvelope(p.Envelope)
 	if err != nil {
 		return err
