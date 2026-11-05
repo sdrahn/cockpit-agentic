@@ -168,11 +168,14 @@ started them.
 | `calls[].state` | `running`, `waiting_approval`, `ok`, `error` |
 | `calls[].approval` | `pending`, `approved`, `declined` |
 | `calls[].rationale` | the model's text that came with the call: its stated reason and expected impact. **Self-asserted by the agent**; the control plane labels it so |
+| `calls[].suspected_injection` | signs of a prompt injection (O14) in the outputs of the activity's last 3 calls before this one, which the model read: `[{"call_id", "tool", "sign", "quote"?}]`. Signs: an instruction to ignore its instructions, a chat template's role marker, a claimed approval, a new role or policy, a request for its instructions, an instruction to use this call's tool, one of this call's argument values. `quote` is the text found (at most 120 characters), never for an argument value. Found by the host in the agent's process: **self-asserted** and advisory; the approval and the gateway's offer are what hold |
+| `calls[].preceding` | for a call that waits for an approval: those outputs, `[{"call_id", "tool", "excerpt"}]`, each up to 1200 characters around the first sign in it. Outputs of the agent's own tools, shown to whoever may read the activity |
 | `summary` | the agent's last text, at most 500 characters |
 | `playbook` | the diagnostic playbook the activity runs (§14c), if any |
 
 Arguments never appear in activities or the journal (only
-`args_sha256`). The gateway shows the arguments of a pending approval
+`args_sha256`); tools' outputs only as `calls[].preceding`, never in the
+journal. The gateway shows the arguments of a pending approval
 to those who may decide it (§7), and logs them as its policy says.
 
 The host keeps running activities and at least the last 200 ended ones.
@@ -680,6 +683,7 @@ approval id:
 | the exact call: server, tool, arguments, principal, the scopes offered | the activity: origin, who started it, its delegation chain |
 | who may decide; the decision and the approver afterwards | the agent's stated rationale and expected impact (`calls[].rationale`, self-asserted) |
 | | the evidence: the activity's earlier calls and their results' state |
+| | what the model read before the call (`calls[].preceding`) and the signs of a prompt injection in it (`calls[].suspected_injection`): the item is marked *suspected prompt injection* when there are any |
 
 Only the gateway's half is trustworthy. The page shows the agent's half
 as the agent's claims.
@@ -758,6 +762,7 @@ and without the `AGENT_` prefix):
 | `AGENT_PARENT_AGENT`, `AGENT_PARENT_ACTIVITY`, `AGENT_ROOT_AGENT`, `AGENT_ROOT_ACTIVITY` | §9 (`invocation.start`, `invocation.end`) |
 | `AGENT_TOOL`, `AGENT_SERVER`, `AGENT_CALL_ID`, `AGENT_ARGS_SHA256` | tool events. SHA-256 of the arguments' JSON with sorted keys. Arguments are never logged |
 | `AGENT_RATIONALE` | `tool.call`: the model's stated reason (self-asserted) |
+| `AGENT_SUSPECTED_INJECTION` | `tool.call`, `approval.pending`: the signs of a prompt injection (§4 `calls[].suspected_injection`), as `<tool> (<call id>) <sign>; …`, without quotes; absent when there are none |
 | `AGENT_APPROVAL_ID` | approval events, and `tool.result` of an approved or declined call |
 | `AGENT_OUTCOME`, `AGENT_REASON` | `ok`, `error`, `denied`, `approved`, `declined`, `cancelled`, `limit`; why |
 | `AGENT_DURATION_MS`, `AGENT_LLM_CALLS`, `AGENT_TOOL_CALLS`, `AGENT_MODEL`, `AGENT_TOKENS_IN`, `AGENT_TOKENS_OUT` | end events, `model.call` |
@@ -1355,7 +1360,7 @@ the product and release process, tracked here so that nothing is lost.
 | Per-category, not whole-agent, promotion; audit per category | §6a, §10 | done: `promote`, `demote`, promotion records (O11) |
 | Promotion-readiness view (override rate, incident rate, diversity, envelope size) | §6a | measures, thresholds, `agent-admin readiness` and the Cockpit view done, and `promote` checks them; envelope size open (O11) |
 | Hard capability limits, audit trail, emergency stop | §6, §8, §10, §15, §18 | done |
-| Prompt-injection defence | §6 (the gateway decides every call, never the model), §16a (egress fence) | the boundaries are done; the evaluation suite of injection attempts done, on every VM run with a model that obeys them and in the air-gapped gate with the tested model; a call to a tool not given recorded (`not offered`); showing a suspected injection with the approval item open (O14) |
+| Prompt-injection defence | §6 (the gateway decides every call, never the model), §16a (egress fence) | the boundaries are done; the evaluation suite of injection attempts done, on every VM run with a model that obeys them and in the air-gapped gate with the tested model; a call to a tool not given recorded (`not offered`); a suspected injection shown with the approval item, with the output the model read before the call (O14) |
 | Service identity; privilege only through existing surfaces; MCP | §2, §6, §17 | done |
 | Fleet control plane: audit aggregation, policy distribution, approvals; mandatory above `N` hosts | §12 | parked (O13) |
 | Integration with SLES identity, RBAC, audit, configuration management | §2, §10 | identity, RBAC, audit done per host; configuration management parked with the fleet (O13) |
@@ -1524,8 +1529,14 @@ inherited, not specified again.
   How often the tested model followed is reported (`injection-<model>.json`
   with the results, and the gate's summary), not a gate. A call to a
   tool not given is recorded (`tool.denied.local`, `not offered`, §11).
-  Open: showing a suspected injection with the approval item (the
-  call's rationale and the tool output that preceded it).
+  A suspected injection is shown with the approval item (§7): the host
+  checks the outputs the model read before each call for signs of an
+  injection (§4 `calls[].suspected_injection`, journaled as
+  `AGENT_SUSPECTED_INJECTION`), and a call that waits for an approval
+  carries those outputs (`calls[].preceding`); Cockpit marks the item and
+  shows both beside the rationale. Advisory and self-asserted: the
+  approval is the boundary. Every injected call of the suite is checked
+  to carry the mark. Done.
 - **O15 — on-premises reference and air-gapped gate.** Done: the
   release gate (CI job `airgap`, on release branches): the packages,
   Ollama and a tested open-weight model (`test/airgap/versions`) from an

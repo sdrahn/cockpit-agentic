@@ -69,6 +69,12 @@ type Call struct {
 	// Rationale is the model's text that came with the call: the agent's
 	// stated reason and expected impact. Self-asserted (CONTRACT.md §7).
 	Rationale string `json:"rationale,omitempty"`
+	// SuspectedInjection are signs of a prompt injection in the outputs
+	// the model read before the call (injection.go, O14); Preceding are
+	// those outputs, for a call that waits for an approval. From the
+	// agent's process: self-asserted, like the rationale.
+	SuspectedInjection []Suspicion `json:"suspected_injection,omitempty"`
+	Preceding          []Preceding `json:"preceding,omitempty"`
 }
 
 // Origin says what started an activity (CONTRACT.md §4).
@@ -586,6 +592,11 @@ func (g *Governor) beforeTool(tctx agent.ToolContext, t tool.Tool, args map[stri
 	c := &Call{Session: tctx.SessionID(), Invocation: tctx.InvocationID(), CallID: tctx.FunctionCallID(), Tool: t.Name(), ArgsSHA256: f["ARGS_SHA256"], Since: g.now(), State: StateRunning, Rationale: g.reasons[tctx.FunctionCallID()]}
 	delete(g.reasons, tctx.FunctionCallID())
 	f["RATIONALE"] = c.Rationale
+	if in != nil {
+		if c.SuspectedInjection = suspect(t.Name(), argStrings(args), in.lastResults(c.CallID)); len(c.SuspectedInjection) > 0 {
+			f["SUSPECTED_INJECTION"] = suspicionText(c.SuspectedInjection)
+		}
+	}
 	g.inflight = append(g.inflight, c)
 	if in != nil {
 		in.calls = append(in.calls, c)
@@ -702,6 +713,10 @@ func (g *Governor) OnGatewayLog(_ context.Context, p *mcp.LoggingMessageParams) 
 		f["SESSION"], f["INVOCATION"], f["CALL_ID"] = call.Session, call.Invocation, call.CallID
 		if in := g.inv[call.Invocation]; in != nil {
 			f["USER"] = in.user
+			call.Preceding = preceding(in.lastResults(call.CallID), call.SuspectedInjection)
+		}
+		if len(call.SuspectedInjection) > 0 {
+			f["SUSPECTED_INJECTION"] = suspicionText(call.SuspectedInjection)
 		}
 		g.publish(Event{Kind: EvApprovalPending, Session: call.Session, Invocation: call.Invocation, CallID: call.CallID, Tool: call.Tool, ApprovalID: n.ApprovalID, ApprovalURL: g.ApprovalURL(n.ApprovalID)})
 	}

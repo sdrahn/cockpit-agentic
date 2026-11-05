@@ -68,6 +68,27 @@ function gatewayHalf(p) {
             : null);
 }
 
+/* suspicionView shows the signs of a prompt injection the agent found in
+ * what its model read before the call (CONTRACT.md §7, O14), and those
+ * outputs. Self-asserted like the rest of the agent's half: a hint for the
+ * person deciding, never a reason to approve. */
+function suspicionView(c) {
+    const sus = c.suspected_injection || [];
+    const pre = c.preceding || [];
+    if (!sus.length && !pre.length) return null;
+    return el("div", { class: "suspicion" + (sus.length ? " suspected" : "") },
+        sus.length
+            ? [el("p", null, el("span", { class: "badge badge-bad" }, "suspected prompt injection"), " ",
+                  "What the model read before this call looks like instructions to it. Check that the call is what was asked for."),
+               el("ul", null, sus.map(s => el("li", null, el("span", { class: "mono" }, s.tool), " ", s.sign,
+                   s.quote ? [": ", el("q", { class: "mono" }, s.quote)] : null)))]
+            : null,
+        pre.length ? el("p", { class: "muted" }, "What the model read before the call (the outputs of the activity's last calls):") : null,
+        pre.map(o => el("details", { class: "preceding", open: sus.some(s => s.call_id === o.call_id) },
+            el("summary", null, el("span", { class: "mono" }, o.tool), " ", el("span", { class: "muted" }, "(" + o.call_id + ")")),
+            el("pre", null, o.excerpt))));
+}
+
 function agentHalf(p, found) {
     const head = el("h3", null, "The agent's account", el("span", { class: "badge badge-waiting" }, "self-asserted"));
     if (!found) {
@@ -81,6 +102,7 @@ function agentHalf(p, found) {
     return el("div", { class: "half" }, head,
         el("p", null, el("span", { class: "muted" }, "Stated reason and impact: "),
            c.rationale || el("span", { class: "muted" }, "none given")),
+        suspicionView(c),
         el("div", { class: "muted" }, "Started by"),
         chainView(chainOf(a)),
         el("p", { class: "muted" }, "Evidence: the activity's earlier calls"),
@@ -121,6 +143,8 @@ function renderApprovals(pending) {
             el("div", { class: "head" },
                el("span", { class: "badge badge-waiting" }, since ? "Waiting " + relative(since).replace(/ ago$/, "") : "Waiting"),
                el("span", { class: "mono" }, p.server + "__" + p.name),
+               found && (found.call.suspected_injection || []).length
+                   ? el("span", { class: "badge badge-bad", title: "See the agent's account" }, "suspected injection") : null,
                el("span", { class: "muted", title: p.id }, agent + " · approval " + shortApproval(p.id) +
                   (p.expires ? " · times out at " + new Date(p.expires).toLocaleTimeString() : ""))),
             el("div", { class: "halves" }, gatewayHalf(p), agentHalf(p, found)),

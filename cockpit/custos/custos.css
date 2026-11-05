@@ -135,6 +135,11 @@ button.chip[aria-pressed=true] { background: var(--accent); color: var(--accent-
 .approval dt { color: var(--muted); }
 .approval dd { margin: 0; overflow-wrap: anywhere; }
 .approval pre { background: var(--page); border: 1px solid var(--border); border-radius: 4px; padding: 0.5rem 0.75rem; }
+.suspicion { margin: 0.5rem 0; }
+.suspicion.suspected { border-left: 3px solid var(--danger); padding-left: 0.6rem; }
+.suspicion ul { margin: 0.25rem 0 0.5rem; padding-left: 1.2rem; }
+.suspicion pre { max-height: 14rem; overflow: auto; }
+.preceding summary { cursor: pointer; }
 .approval > .actions { padding: 0.75rem 1.25rem; border-top: 1px solid var(--border); }
 
 table { border-collapse: collapse; width: 100%; }
