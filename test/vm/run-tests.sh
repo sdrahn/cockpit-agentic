@@ -522,6 +522,16 @@ check "an agent started by hand is still denied by the gateway" not runs_with t1
 check "agent-admin release-all" agent-admin release-all
 check "sockets are back" systemctl is-active -q agent@t1.socket agent@t2.socket
 check "and calls are allowed again" eventually 30 runs_with t1 PROBE 'probe ok'
+# What an administrator disabled stays so: release-all starts what is
+# enabled, and edit enables only new schedules.
+systemctl disable --now agent-schedule@t1_check.timer >/dev/null 2>&1
+check "agent-admin stop-all (again)" agent-admin stop-all
+check "agent-admin release-all (again)" agent-admin release-all
+check "release-all leaves a disabled schedule's timer stopped" not systemctl is-active -q agent-schedule@t1_check.timer
+check "and the enabled sockets are back" systemctl is-active -q agent@t1.socket agent@t2.socket
+check "agent-admin edit t1 leaves the disabled schedule disabled" bash -c \
+	"cp /etc/custos/agents/t1/agent.yaml '$work/t1-same.yaml' && agent-admin edit t1 --from '$work/t1-same.yaml' && ! systemctl is-enabled -q agent-schedule@t1_check.timer && ! systemctl is-active -q agent-schedule@t1_check.timer"
+systemctl enable --now agent-schedule@t1_check.timer >/dev/null 2>&1
 
 section SELinux
 if enforcing; then

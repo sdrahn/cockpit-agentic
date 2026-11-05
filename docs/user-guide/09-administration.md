@@ -226,8 +226,9 @@ systemctl start agent-schedule@NAME_SCHEDULE.service           # run it now
 
 To change a schedule's calendar or prompt, edit the configuration
 ([chapter 5](05-configuration.md#schedules)). `agent-admin edit` rewrites
-the timers. A disabled timer stays disabled until you enable it, except
-after `release-all`, which starts every schedule's timer again.
+the timers: it enables a new schedule's timer, and leaves one you
+disabled disabled. A disabled timer stays disabled until you enable it,
+`release-all` included.
 
 ## Cancelling an activity {#cancel}
 
@@ -252,7 +253,8 @@ it, it denies every agent everything, on every backend. Then it stops
 every agent's socket and service, every OpenShell sandbox and every
 schedule timer. An agent started by hand afterwards is still denied by
 the gateway. `release-all` sets `stopped: false`, recording who released
-it, and starts every agent's socket and schedule timers again. Paused
+it, and starts again every agent's socket and schedule timer that is
+enabled: an agent or a schedule you disabled stays stopped. Paused
 agents stay paused. In Cockpit: **Stop all agents** in the header, and
 **Release…** in the banner.
 
