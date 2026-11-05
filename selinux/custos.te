@@ -12,6 +12,7 @@ policy_module(custos, 1.0.0)
 gen_require(`
 	type unconfined_t;
 	type init_t;
+	type init_var_run_t;
 ')
 
 type agent_t;
@@ -72,6 +73,13 @@ dev_read_sysfs(agent_t)
 # Journal (native protocol) and credentials.
 logging_send_syslog_msg(agent_t)
 init_read_state(agent_t)
+# Secrets (model.credential): systemd mounts the unit's credentials at
+# $CREDENTIALS_DIRECTORY, /run/credentials/<unit>, labeled
+# init_var_run_t (as mcp-gateway's policy grants its servers); those of
+# other units are not in the agent's mount namespace. The base policy
+# does not audit the denial: the agent only saw "permission denied".
+search_dirs_pattern(agent_t, init_var_run_t, init_var_run_t)
+read_files_pattern(agent_t, init_var_run_t, init_var_run_t)
 
 # Model endpoints.
 corenet_tcp_connect_http_port(agent_t)

@@ -93,6 +93,10 @@ removed.
 - `agent-admin set-credential` left the encrypted credential readable
   by everyone (0644, from `systemd-creds encrypt`'s umask); it is root's
   alone now (0600). Decrypting it needs root's host key or the TPM.
+- An agent could not read its model credential under SELinux
+  (`model.credential: open /run/credentials/…: permission denied`): the
+  `custos` module did not let `agent_t` read the unit's credentials
+  (`init_var_run_t`), and the base policy does not log that denial.
 
 ## v0.1.1 — 2026-11-04
 

@@ -927,7 +927,9 @@ enforcing; they fail on any denial for the module's types.
 `agent_var_lib_t`, `agent_runtime_t` and `agent_sock_t`. `agent_t` gets
 `mcp_gateway_client` (the MCP socket) but not
 `mcp_gateway_control_client`. It may connect to HTTP ports for models
-(boolean `agent_connect_any` for others). It cannot connect to
+(boolean `agent_connect_any` for others). It reads its own credentials
+in `/run/credentials/<unit>` (`init_var_run_t`, as mcp-gateway's
+server domains do). It cannot connect to
 `agent_sock_t`. `mcpsrv_agents_t` (from the gateway's backend template)
 may connect to `agent_sock_t`, and so may Cockpit's bridge
 (`unconfined_t`).
