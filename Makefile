@@ -19,7 +19,7 @@ OPA        ?= opa
 GATEWAY_POLICY ?= $(DATADIR)/mcp-gateway/policy
 
 LDFLAGS := -X github.com/sdrahn/custos/internal/launcher.Version=$(VERSION)
-BINS := agent-launcher agent-admin agent-delegate agent-openshell-relay
+BINS := agent-launcher agent-admin agent-delegate agent-openshell-relay custos-setup
 # The functional tests' helpers (package custos-tests).
 TESTBINS := fakemodel testsrv testidp
 
@@ -75,6 +75,7 @@ install: build
 	install -m 0755 bin/agent-launcher bin/agent-delegate bin/agent-openshell-relay $(DESTDIR)$(LIBEXECDIR)/custos/
 	install -d $(DESTDIR)$(SBINDIR)
 	install -m 0755 bin/agent-admin $(DESTDIR)$(SBINDIR)/agent-admin
+	install -m 0755 bin/custos-setup $(DESTDIR)$(SBINDIR)/custos-setup
 	ln -sf ../../sbin/agent-admin $(DESTDIR)$(LIBEXECDIR)/custos/agent-admin
 	install -d $(DESTDIR)$(UNITDIR)
 	install -m 0644 systemd/agent@.service systemd/agent@.socket systemd/agent-schedule@.service systemd/agent-schedule@.timer \

@@ -90,6 +90,14 @@ removed.
   useful and carried out); evidence for a category enabled later, not a
   threshold. Only root's feedback counts.
 
+- `custos-setup` and the package `custos-diagnostics`, the bundled
+  health-check and diagnostics install the installer offers (CONTRACT.md
+  §17a): on a fresh host it makes the host diagnostics-only, sets the
+  model for one of the four backends in the documented order (on-host,
+  local network, the customer's cloud, vendor), creates `health-check`,
+  stores its key from a file and installs the playbooks' exec commands;
+  idempotent, one line per step.
+
 ### Fixed
 
 - A deleted agent stayed on the Cockpit page, as stopped, until the

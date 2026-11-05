@@ -1,0 +1,176 @@
+package admin
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/sdrahn/custos/internal/journal"
+)
+
+func setupHost(t *testing.T) (*Admin, *rec) {
+	t.Helper()
+	a, r := withTemplates(t)
+	mem := &journal.Memory{}
+	a.Journal = func(string) journal.Logger { return mem }
+	os.MkdirAll(a.p(ExecDir), 0o755)
+	return a, r
+}
+
+func results(steps []Step) string {
+	var out []string
+	for _, s := range steps {
+		out = append(out, s.Name+"="+s.Result)
+	}
+	return strings.Join(out, ", ")
+}
+
+// On a fresh host: diagnostics-only, the defaults, health-check, its
+// credential and the exec commands; run again, nothing changes.
+func TestSetupDiagnosticsOnly(t *testing.T) {
+	a, r := setupHost(t)
+	o := SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "qwen3-8b", Credential: []byte("sk-local\n")}
+	steps, err := a.Setup(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "diagnostics-only=done, model defaults=done, agent health-check=done, credential=done, " +
+		"exec commands exec.d-diagnostics.yaml=done, exec commands exec.d-disk-usage.yaml=done"
+	if got := results(steps); got != want {
+		t.Errorf("first run:\n got %s\nwant %s", got, want)
+	}
+	e, _ := a.GetEnablement()
+	if e == nil || e.State != DiagnosticsOnly || !strings.HasPrefix(e.ChangedBy, "custos-setup ") {
+		t.Errorf("enablement %+v", e)
+	}
+	d, _ := a.GetDefaults()
+	if d.Model == nil || d.Model.Provider != "openai" || d.Model.Endpoint != DefaultOnHostEndpoint || d.Model.Name != "qwen3-8b" ||
+		d.Model.Credential != SetupCredential {
+		t.Errorf("defaults %+v", d.Model)
+	}
+	g, err := a.readGateway(HealthCheck)
+	if err != nil || g.Mode != "supervised" || len(g.Permissions) == 0 {
+		t.Errorf("health-check %+v %v", g, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(a.agentDir(HealthCheck), "agent.yaml")); !strings.Contains(string(b), "name: qwen3-8b") ||
+		!strings.Contains(string(b), "credential: model-key") {
+		t.Errorf("agent.yaml has not the defaults' model:\n%s", b)
+	}
+	if !strings.Contains(strings.Join(r.cmds, "\n"), "systemd-creds encrypt --name=agent-health-check.model-key") {
+		t.Errorf("credential not stored: %v", r.cmds)
+	}
+	for _, f := range []string{"exec.d-diagnostics.yaml", "exec.d-disk-usage.yaml"} {
+		if _, err := os.Stat(a.p(filepath.Join(ExecDir, f))); err != nil {
+			t.Errorf("%s: %v", f, err)
+		}
+	}
+
+	// Again: nothing to do but the credential, which a new key replaces.
+	steps, err = a.Setup(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = "diagnostics-only=already, model defaults=already, agent health-check=already, credential=done, " +
+		"exec commands exec.d-diagnostics.yaml=already, exec commands exec.d-disk-usage.yaml=already"
+	if got := results(steps); got != want {
+		t.Errorf("second run:\n got %s\nwant %s", got, want)
+	}
+
+	// After the administrator enabled more, setup does not go back.
+	if err := a.Enable("alice", []string{"patch-errata"}, false); err != nil {
+		t.Fatal(err)
+	}
+	steps, _ = a.Setup(o)
+	if steps[0].Result != "skipped" || !strings.Contains(steps[0].Detail, "not going back") {
+		t.Errorf("after enable: %v", steps[0])
+	}
+	if e, _ := a.GetEnablement(); e.State != SomeCategories {
+		t.Errorf("went back: %+v", e)
+	}
+}
+
+// Without --diagnostics-only nothing is written: the broader install.
+func TestSetupBroaderInstall(t *testing.T) {
+	a, _ := setupHost(t)
+	steps, err := a.Setup(SetupOptions{Backend: "on-host", Model: "m"})
+	if err != nil || len(steps) != 1 || steps[0].Result != "skipped" {
+		t.Fatalf("%v %v", steps, err)
+	}
+	if e, _ := a.GetEnablement(); e != nil {
+		t.Error("enablement written")
+	}
+	if _, err := os.Stat(a.agentDir(HealthCheck)); !os.IsNotExist(err) {
+		t.Error("agent created")
+	}
+}
+
+// A host with an agent outside diagnostics is no fresh host: nothing is
+// written.
+func TestSetupNeedsAFreshHost(t *testing.T) {
+	a, _ := setupHost(t)
+	if err := a.CreateFromTemplate("pp", "patch-pilot", ""); err != nil {
+		t.Fatal(err)
+	}
+	_, err := a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "m"})
+	if err == nil || !strings.Contains(err.Error(), "outside diagnostics") {
+		t.Fatalf("%v", err)
+	}
+	if _, err := os.Stat(a.agentDir(HealthCheck)); !os.IsNotExist(err) {
+		t.Error("health-check created all the same")
+	}
+	if d, _ := a.GetDefaults(); d.Model != nil {
+		t.Error("defaults written all the same")
+	}
+}
+
+// The backends, in the documented order, and what each needs.
+func TestSetupBackends(t *testing.T) {
+	key := []byte("k")
+	for _, c := range []struct {
+		o    SetupOptions
+		want string // provider/endpoint, or the error
+	}{
+		{SetupOptions{Backend: "on-host", Model: "m"}, "openai " + DefaultOnHostEndpoint},
+		{SetupOptions{Backend: "on-host", Model: "m", Endpoint: "http://127.0.0.1:11434/v1"}, "openai http://127.0.0.1:11434/v1"},
+		{SetupOptions{Backend: "on-host", Model: "m", Provider: "gemini"}, "provider openai"},
+		{SetupOptions{Backend: "local-network", Model: "m"}, "needs --endpoint"},
+		{SetupOptions{Backend: "local-network", Model: "m", Endpoint: "http://ai.lan:8000/v1"}, "openai http://ai.lan:8000/v1"},
+		{SetupOptions{Backend: "customer-cloud", Model: "m"}, "needs --provider"},
+		{SetupOptions{Backend: "customer-cloud", Model: "gemini-2.5-pro", Provider: "vertex"}, "vertex "},
+		{SetupOptions{Backend: "vendor", Model: "gemini-2.5-flash"}, "needs --credential-file"},
+		{SetupOptions{Backend: "vendor", Model: "gemini-2.5-flash", Credential: key}, "gemini "},
+		{SetupOptions{Backend: "cloud", Model: "m"}, "want one of on-host, local-network, customer-cloud, vendor"},
+		{SetupOptions{Model: "m"}, "--backend: one of"},
+	} {
+		m, err := c.o.model()
+		got := ""
+		if err != nil {
+			got = err.Error()
+		} else {
+			got = m.Provider + " " + m.Endpoint
+		}
+		if !strings.Contains(got, c.want) {
+			t.Errorf("%+v: %s, want %s", c.o, got, c.want)
+		}
+	}
+	if strings.Join(Backends, " ") != "on-host local-network customer-cloud vendor" {
+		t.Errorf("the documented order: %v", Backends)
+	}
+}
+
+// An exec command file the administrator changed stays.
+func TestSetupKeepsChangedExecCommands(t *testing.T) {
+	a, _ := setupHost(t)
+	writeFile(a.p(filepath.Join(ExecDir, "exec.d-diagnostics.yaml")), []byte("version: 1\ncommands: {}\n"), 0o644)
+	steps, err := a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := results(steps); !strings.Contains(got, "exec commands exec.d-diagnostics.yaml=skipped") || strings.Contains(got, "credential") {
+		t.Errorf("%s", got)
+	}
+	if b, _ := os.ReadFile(a.p(filepath.Join(ExecDir, "exec.d-diagnostics.yaml"))); string(b) != "version: 1\ncommands: {}\n" {
+		t.Error("overwritten")
+	}
+}
