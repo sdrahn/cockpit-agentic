@@ -58,6 +58,10 @@
           scopes: ["once", "1h"], expires: new Date(Date.now() + 30000).toISOString(), waiting: true },
     ];
 
+    // The envelopes the page sends: JSON (an existing envelope), or the
+    // page's template.
+    const require_yaml = text => text.trim().startsWith("{") ? JSON.parse(text)
+        : { windows: [{ days: ["sat"], from: "02:00", to: "04:00", tz: "UTC" }] };
     const WEEK = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
     const today = () => WEEK[new Date().getUTCDay()];
     const otherDay = () => WEEK[(new Date().getUTCDay() + 3) % 7];
@@ -270,6 +274,38 @@
                                      return Promise.resolve("agent " + name + ": its gateway credential changed (gateway.oauth); it is stopped until: " +
                                                             "agent-admin set-credential " + name + " gateway-client-secret\n").then(ok, bad);
                                  }
+                             }
+                             // Task categories (§6a): config-lifecycle is ready, patch-errata
+                             // and security-response are not.
+                             const readiness = {
+                                 "config-lifecycle": { proposals: 64, approved: 63, declined: 1, cancelled: 0, overrides: 1, override_rate: 1 / 64,
+                                     incidents: 0, incident_rate: 0, tools: 2, distinct_calls: 9, observed_days: 21.5, ready: true },
+                                 "patch-errata": { proposals: 12, approved: 10, declined: 2, cancelled: 0, overrides: 2, override_rate: 2 / 12,
+                                     incidents: 1, incident_rate: 0.1, tools: 1, distinct_calls: 4, observed_days: 3.2, ready: false,
+                                     unmet: ["observed 3.2 days of 14", "12 proposals of 50", "override rate 16.7 % above 5.0 %", "incident rate 10.0 % above 2.0 %"] },
+                                 "security-response": { proposals: 0, approved: 0, declined: 0, cancelled: 0, overrides: 0, override_rate: 0,
+                                     incidents: 0, incident_rate: 0, tools: 0, distinct_calls: 0, observed_days: 0, ready: false,
+                                     unmet: ["observed 0.0 days of 14", "0 proposals of 50"] },
+                             };
+                             if (cmd === "readiness") {
+                                 return Promise.resolve(JSON.stringify({ agent: name,
+                                     thresholds: { observation_days: 14, proposals: 50, override_rate: 0.05, incident_rate: 0.02, window_days: 30 },
+                                     categories: readiness })).then(ok, bad);
+                             }
+                             if (cmd === "promote") {
+                                 const flags = args.slice(4);
+                                 if (!readiness[arg].ready && !flags.includes("--despite-readiness")) {
+                                     return Promise.reject(new Error("agent-admin: agent " + name + ": category " + arg + " is not ready (" +
+                                         readiness[arg].unmet.join("; ") + "); see agent-admin readiness " + name + " " + arg +
+                                         ", or promote with --despite-readiness --reason TEXT")).then(ok, bad);
+                                 }
+                                 d.categories = d.categories || {};
+                                 d.categories[arg] = { mode: "bounded", envelope: JSON.parse(JSON.stringify(require_yaml(input))),
+                                     promoted_by: by + " " + new Date().toISOString(), promotion: "p-test" };
+                             }
+                             if (cmd === "demote") {
+                                 d.categories[arg].mode = "supervised";
+                                 d.categories[arg].demoted_by = by + " " + new Date().toISOString();
                              }
                              if (cmd === "permissions") {
                                  if (!input.trim().startsWith("-")) return Promise.reject(new Error("agent-admin: permissions: want a YAML list")).then(ok, bad);

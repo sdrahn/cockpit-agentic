@@ -156,6 +156,14 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
         const b = await frame().locator("#boundaries").textContent();
         check(b.includes("custos-test__probe") && b.includes("needs approval"), "patch-pilot's tool boundaries, from agent-admin show", b);
         await shot("agents");
+        // Its task category's readiness, from the real journal and the
+        // gateway's decision on the change declined above.
+        await frame().locator("#category-patch-errata").waitFor({ timeout: 30000 });
+        const cat = frame().locator("#category-patch-errata");
+        await cat.getByText(/^(not ready|ready)$/).waitFor({ timeout: 60000 });
+        const cells = await cat.locator("td").allTextContents();
+        check(cells[1] === "supervised" && cells[3].startsWith("not ready") && /^[1-9][0-9]* in /.test(cells[6]),
+              "the Agents tab shows patch-errata's readiness from the real records: not ready, with the declined proposal counted", cells.join(" | "));
         await frame().locator("#agent-detail button:has-text('Pause')").click();
         check(await vmEventually(30, `grep -q 'paused_by: ${user} ' /etc/mcp-gateway/policy/agents/patch-pilot.yaml`),
               "Pause, with administrative access, records " + user + " in the gateway data");
