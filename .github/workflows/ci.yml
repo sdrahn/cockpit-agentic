@@ -402,10 +402,19 @@ jobs:
         with:
           version: latest
           static: true
+      # The release in test/openshell/openshell-version, not the newest:
+      # looking that up or downloading it failed now and then.
       - name: Install OpenShell
         run: |
-          curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+          v=$(head -n1 test/openshell/openshell-version)
+          curl -LsSf --retry 3 --retry-all-errors "https://raw.githubusercontent.com/NVIDIA/OpenShell/$v/install.sh" -o "$RUNNER_TEMP/openshell-install.sh"
+          for attempt in 1 2 3; do
+            OPENSHELL_VERSION=$v sh "$RUNNER_TEMP/openshell-install.sh" && break
+            [ "$attempt" = 3 ] && { echo "installing OpenShell $v failed"; exit 1; }
+            sleep 20
+          done
           echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+          PATH="$HOME/.local/bin:$PATH" openshell --version | tee /dev/stderr | grep -qF "${v#v}"
       - name: OpenShell for root
         # The tests run as root (agent-admin, units); the CLI and its
         # gateway registration are the runner user's.

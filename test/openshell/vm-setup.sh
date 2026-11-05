@@ -32,9 +32,18 @@ sleep 2
 d=/sys/fs/cgroup/user.slice/user-$uid.slice/user@$uid.service
 log "controllers for $user: $(cat "$d/cgroup.controllers" 2>&1); swap limit: $([ -e "$d/memory.swap.max" ] && echo yes || echo no)"
 
-log "OpenShell (its installer, for $user)"
-curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh -o /tmp/openshell-install.sh
-SUDO_USER=$user sh /tmp/openshell-install.sh
+# The OpenShell release the tests use (test/openshell/openshell-version),
+# not whichever is newest: an update is a change of its own, and a failed
+# lookup of the latest release no longer fails the tests.
+osh_version=$(head -n1 "$(dirname "$0")/openshell-version")
+log "OpenShell $osh_version (its installer, for $user)"
+curl -LsSf --retry 3 --retry-all-errors "https://raw.githubusercontent.com/NVIDIA/OpenShell/$osh_version/install.sh" -o /tmp/openshell-install.sh
+for attempt in 1 2 3; do
+	OPENSHELL_VERSION=$osh_version SUDO_USER=$user sh /tmp/openshell-install.sh && break
+	[ "$attempt" = 3 ] && { echo "installing OpenShell $osh_version failed" >&2; exit 1; }
+	sleep 20
+done
+openshell --version | grep -qF "${osh_version#v}" || { echo "OpenShell is not $osh_version: $(openshell --version)" >&2; exit 1; }
 openshell --version
 
 log "the gateway registration for root"

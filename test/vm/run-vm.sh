@@ -160,7 +160,8 @@ set +e
 if [ "${SUITE:-functional}" = openshell ]; then
 	vm 'mkdir -p /root/custos-vm/src/test/openshell'
 	scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
-		"$here/../openshell/run-spike.sh" "$here/../openshell/vm-setup.sh" root@127.0.0.1:/root/custos-vm/src/test/openshell/
+		"$here/../openshell/run-spike.sh" "$here/../openshell/vm-setup.sh" "$here/../openshell/openshell-version" \
+		root@127.0.0.1:/root/custos-vm/src/test/openshell/
 	vm 'bash /root/custos-vm/src/test/openshell/vm-setup.sh' 2>&1 | tee "$work/openshell-setup.log"
 	if [ "${PIPESTATUS[0]}" != 0 ]; then
 		log "setting up OpenShell failed"
