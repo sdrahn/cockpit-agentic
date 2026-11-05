@@ -1,0 +1,39 @@
+# Agent template disk-watch-transactional (CONTRACT.md §14a). Create an agent from it with
+#   agent-admin create NAME --template disk-watch-transactional [--from agent.yaml]
+# or in Cockpit (Custos, Agents, Create from a template). Change the model
+# to the one you run.
+version: 1
+name: disk-watch-transactional
+description: Watches free disk space on an immutable host and cleans up old snapshots.
+model:
+  provider: openai              # an on-premises OpenAI-compatible server; change to yours
+  name: qwen3-32b
+  endpoint: http://127.0.0.1:8000/v1
+instruction: |
+  You watch the disk space of this transactional SUSE host. Check the
+  free space (disk_usage); report every file system that is more than
+  85 % full. Old snapshots of transactional-update are often what fills
+  the root file system: list them (list_snapshots, get_status) and say
+  how many there are and which is active and which is the default. To
+  free space, propose cleanup_snapshots, which removes the ones the
+  snapper cleanup rules allow; it needs an approval unless patch-errata
+  is promoted. Never delete single snapshots.
+gateway:
+  servers: [exec, tukit, systemd]
+  tools:
+    - exec__disk_usage
+    - tukit__get_status
+    - tukit__list_snapshots
+    - tukit__cleanup_snapshots
+    - systemd__list_log
+limits:
+  max_llm_calls: 20
+  max_tool_calls: 30
+  max_invocation_seconds: 900
+interaction:
+  agui: true
+  client_tools: deny
+schedules:
+  - name: daily
+    on_calendar: "*-*-* 07:00"
+    prompt: Report the file systems more than 85 % full and how many transactional-update snapshots there are. Do not clean up anything.

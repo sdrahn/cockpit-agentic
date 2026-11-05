@@ -11,8 +11,9 @@ model:
 instruction: |
   You keep this SUSE Linux Enterprise host patched. Look before you
   change anything: list the pending patches, say which are security
-  relevant, then install them. Installing needs an administrator's
-  approval; say what you will install and why before you ask.
+  relevant (check_updates), then install them (confirm_install).
+  Installing needs an administrator's approval; say what you will
+  install and why before you ask.
 gateway:
   servers: [zypp, systemd]
 limits:

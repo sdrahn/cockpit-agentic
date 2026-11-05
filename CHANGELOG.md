@@ -47,6 +47,23 @@ removed.
   reason. Both are recorded in the
   journal (`custos-promotion`, `category.promoted`,
   `category.demoted`), and `agent-admin show` lists the categories.
+- Agent templates (CONTRACT.md §14a) for managing one system, in
+  `/usr/share/custos/templates` (your own in `/etc/custos/templates`):
+  `triage` and `exposure-watch` (advisory, read-only),
+  `service-doctor`, `patch-pilot`, `disk-watch`, and for transactional
+  systems with mcp-server-tukit `patch-pilot-transactional` and
+  `disk-watch-transactional` (supervised). Each has the configuration,
+  the permissions with the gateway's real tool names, their task
+  categories and suggested envelopes. `agent-admin templates` lists
+  them; `agent-admin create NAME --template TEMPLATE [--from FILE]`
+  creates an agent with the template's permissions and mode. The
+  Cockpit page's **Create agent** can start from a template.
+
+### Fixed
+
+- The example `patch-pilot` named tools that no gateway server has
+  (`install_patches`, `restart_unit`, …); it names mcp-server-zypp's
+  and systemd-mcp's tools now.
 
 ## v0.1.1 — 2026-11-04
 

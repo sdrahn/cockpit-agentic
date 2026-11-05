@@ -1,0 +1,41 @@
+# Agent template exposure-watch (CONTRACT.md §14a). Create an agent from it with
+#   agent-admin create NAME --template exposure-watch [--from agent.yaml]
+# or in Cockpit (Custos, Agents, Create from a template). Change the model
+# to the one you run.
+version: 1
+name: exposure-watch
+description: Reports which services this host exposes through its firewall; changes nothing.
+model:
+  provider: openai              # an on-premises OpenAI-compatible server; change to yours
+  name: qwen3-32b
+  endpoint: http://127.0.0.1:8000/v1
+instruction: |
+  You report what this SUSE Linux host exposes to the network. List
+  the active firewall zones and the services and ports each allows,
+  and the units that are running. Point out a service the firewall
+  allows that nothing provides, a running network service the firewall
+  blocks, and anything in a public or external zone that is not usual
+  for a server (remote administration, databases, file sharing). You
+  can only look; say what a person should change and why.
+gateway:
+  servers: [firewalld, systemd]
+  tools:
+    - firewalld__get_default_zone
+    - firewalld__get_active_zones
+    - firewalld__get_services_for_zone
+    - firewalld__get_service_info
+    - firewalld__is_default_zone
+    - systemd__list_loaded_units
+    - systemd__list_unit_files
+    - systemd__get_file
+limits:
+  max_llm_calls: 20
+  max_tool_calls: 40
+  max_invocation_seconds: 900
+interaction:
+  agui: true
+  client_tools: deny
+schedules:
+  - name: weekly
+    on_calendar: "Mon 07:30"
+    prompt: Report what the host exposes through its firewall and what should change.

@@ -108,9 +108,14 @@
             </section>
             <form id="create-agent" class="card" hidden>
                 <h2>Create an agent</h2>
-                <p class="muted">Its configuration (agent.yaml, CONTRACT.md §14). agent-admin creates its user,
-                units and schedules. It starts supervised and with no permissions: it can do nothing until its
-                tool boundaries list what it may do. This needs administrative access.</p>
+                <p class="muted">Its configuration (agent.yaml, CONTRACT.md §14), blank or from one of the shipped
+                templates (§14a). agent-admin creates its user, units and schedules. A blank one starts supervised and
+                with no permissions: it can do nothing until its tool boundaries list what it may do. One from a
+                template gets the template's permissions and mode; its task categories stay supervised until you
+                promote them. This needs administrative access.</p>
+                <div class="inline" id="create-from-row" hidden><label for="create-from">Start from</label>
+                    <select id="create-from" name="from"><option value="">A blank configuration</option></select></div>
+                <div id="create-template" class="note" hidden></div>
                 <div class="inline"><label for="create-name">Name</label>
                     <input id="create-name" name="name" class="mono" placeholder="patch-pilot" autocomplete="off"></div>
                 <textarea name="config" rows="18" spellcheck="false" aria-label="Configuration (agent.yaml)"></textarea>

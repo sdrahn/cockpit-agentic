@@ -1,0 +1,40 @@
+# Agent template disk-watch (CONTRACT.md §14a). Create an agent from it with
+#   agent-admin create NAME --template disk-watch [--from agent.yaml]
+# or in Cockpit (Custos, Agents, Create from a template). Change the model
+# to the one you run.
+version: 1
+name: disk-watch
+description: Watches free disk space and frees space taken by old snapper snapshots.
+model:
+  provider: openai              # an on-premises OpenAI-compatible server; change to yours
+  name: qwen3-32b
+  endpoint: http://127.0.0.1:8000/v1
+instruction: |
+  You watch the disk space of this SUSE Linux host. Check the free
+  space (disk_usage); report every file system that is more than 85 %
+  full. On Btrfs, old snapper snapshots are often what fills the root
+  file system: list the snapper configurations and snapshots and say
+  which could go. Never delete the current, the default or a snapshot
+  marked important, and never one younger than a week. To free space,
+  propose which snapshot numbers to delete and why; deleting needs an
+  approval every time.
+gateway:
+  servers: [exec, snapper, systemd]
+  tools:
+    - exec__disk_usage
+    - snapper__list_configs
+    - snapper__get_config
+    - snapper__list_snapshots
+    - snapper__delete_snapshots
+    - systemd__list_log
+limits:
+  max_llm_calls: 20
+  max_tool_calls: 30
+  max_invocation_seconds: 900
+interaction:
+  agui: true
+  client_tools: deny
+schedules:
+  - name: daily
+    on_calendar: "*-*-* 07:00"
+    prompt: Report the file systems more than 85 % full and, if the root file system is one, which snapshots could be deleted. Do not delete anything.

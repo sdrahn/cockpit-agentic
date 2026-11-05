@@ -1,0 +1,8 @@
+title: Disk watch (transactional)
+description: Reports file systems running full on an immutable system and proposes cleaning up old transactional-update snapshots (mcp-server-tukit).
+system: transactional
+mode: supervised
+needs:
+  - mcp-server-tukit (mcp-server-tukit-gateway, its definition linked into /etc/mcp-gateway/servers.d/; mcp-gateway 1.8 or later)
+  - systemd-mcp
+  - mcp-gateway-exec-server with exec.d-disk-usage.yaml in /etc/mcp-gateway/exec.d/ (disk_usage)

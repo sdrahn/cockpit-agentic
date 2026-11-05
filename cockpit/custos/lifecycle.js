@@ -2,8 +2,11 @@
  * administrative access: agent-admin create NAME --from - (the
  * configuration on stdin) and agent-admin delete NAME [--keep-state].
  * A new agent is supervised and has no permissions: it can do nothing
- * until its tool boundaries list something (§6). Checking a
- * configuration needs no root (agent-admin check -).
+ * until its tool boundaries list something (§6). One can start from a
+ * shipped template instead (§14a: agent-admin templates, needing no
+ * root): its agent.yaml fills the editor, and agent-admin create NAME
+ * --template T --from - gives the agent the template's permissions and
+ * mode. Checking a configuration needs no root (agent-admin check -).
  */
 "use strict";
 
@@ -28,6 +31,73 @@ interaction:
 `;
 
 let justCreated = null; // the agent this page created last
+
+/* The templates (agent-admin templates), once read; null: none to offer
+ * (an agent-admin without templates, say). */
+let templates = null;
+
+const SYSTEM_TEXT = { classic: "systems with a writable root file system", transactional: "transactional (immutable) systems" };
+
+async function loadTemplates() {
+    if (templates) return templates;
+    try {
+        templates = JSON.parse(await cockpit.spawn(["agent-admin", "templates"], { err: "message" }));
+    } catch {
+        templates = null;
+    }
+    const select = document.getElementById("create-from");
+    const row = document.getElementById("create-from-row");
+    const list = templates ? Object.entries(templates.templates || {}) : [];
+    if (list.length === 0) {
+        row.hidden = true;
+        return null;
+    }
+    // This system's first, by title; the others and the broken ones
+    // after them, disabled.
+    const fits = t => !t.error && (t.system === "any" || t.system === (templates.transactional ? "transactional" : "classic"));
+    list.sort(([a, x], [b, y]) => (fits(y) - fits(x)) || x.title.localeCompare(y.title) || a.localeCompare(b));
+    select.replaceChildren(el("option", { value: "" }, "A blank configuration"),
+        ...list.map(([n, t]) => el("option", { value: n, disabled: !fits(t) },
+            t.title + (t.error ? " (cannot be used: " + t.error + ")"
+                : !fits(t) ? " (for " + SYSTEM_TEXT[t.system] + ")" : ""))));
+    row.hidden = false;
+    return templates;
+}
+
+/* describeTemplate shows what the chosen template does and needs. */
+function describeTemplate(name) {
+    const box = document.getElementById("create-template");
+    const t = name && templates && templates.templates[name];
+    box.hidden = !t;
+    if (!t) return;
+    const cats = t.categories || [];
+    box.replaceChildren(
+        el("p", null, t.description),
+        el("p", null, "It starts ", el("strong", null, t.mode), ": ", MODE_TEXT[t.mode] || "",
+           cats.length ? (cats.length === 1 ? " Its task category " + cats[0] + " needs"
+                                            : " Its task categories " + cats.join(", ") + " need") +
+               " an approval until you promote " + (cats.length === 1 ? "it" : "them") +
+               ((t.envelopes || []).length ? " (suggested envelopes: " + t.dir + "/envelopes/)." : ".") : ""),
+        (t.needs || []).length ? el("div", null, "It needs at the gateway:", el("ul", null, ...t.needs.map(n => el("li", null, n)))) : "",
+        el("p", { class: "muted" }, "Its tools: servers " + (t.servers || []).join(", ") + "; permissions in " + t.dir + "/permissions.yaml."));
+}
+
+async function useTemplate(name, yaml, nameInput) {
+    describeTemplate(name);
+    if (!name) {
+        yaml.value = withName(TEMPLATE, nameInput.value.trim());
+        return;
+    }
+    const t = templates.templates[name];
+    try {
+        const text = await cockpit.file(t.dir + "/agent.yaml").read();
+        if (!nameInput.value.trim()) nameInput.value = name;
+        yaml.value = withName(text, nameInput.value.trim());
+        setCreateNote("");
+    } catch (ex) {
+        setCreateNote("Reading the template: " + ((ex && ex.message) || ex.problem || String(ex)), "error-text");
+    }
+}
 
 function setCreateNote(text, cls) {
     const note = document.getElementById("create-note");
@@ -54,7 +124,9 @@ function initCreate() {
         form.hidden = false;
         if (!yaml.value) yaml.value = TEMPLATE;
         name.focus();
+        loadTemplates();
     });
+    form.elements.from.addEventListener("change", () => useTemplate(form.elements.from.value, yaml, name));
     name.addEventListener("input", () => { yaml.value = withName(yaml.value, name.value.trim()) });
     form.elements.cancel.addEventListener("click", () => { form.hidden = true; setCreateNote("") });
     form.elements.check.addEventListener("click", async () => {
@@ -75,17 +147,25 @@ function initCreate() {
         }
         const submit = form.elements.create;
         submit.disabled = true;
+        const tmpl = form.elements.from.value;
+        const t = tmpl && templates && templates.templates[tmpl];
         setCreateNote("Creating " + n + "…");
         try {
-            await admin(["create", n, "--from", "-"], yaml.value);
+            await admin(t ? ["create", n, "--template", tmpl, "--from", "-"] : ["create", n, "--from", "-"], yaml.value);
             form.hidden = true;
             yaml.value = "";
             name.value = "";
+            form.elements.from.value = "";
+            describeTemplate("");
             setCreateNote("");
             showError(null);
             justCreated = n;
-            document.getElementById("agent-created").textContent = "Created " + n + ": supervised, with no permissions. " +
-                "It can do nothing until its tool boundaries list what it may do.";
+            document.getElementById("agent-created").textContent = t
+                ? "Created " + n + " from the template " + t.title + ": " + t.mode + ", with the template's permissions" +
+                  ((t.categories || []).length ? "; its task categories need an approval until you promote them." : ".") +
+                  " Check that the gateway has what it needs: " + ((t.needs || []).join("; ") || "nothing more") + "."
+                : "Created " + n + ": supervised, with no permissions. " +
+                  "It can do nothing until its tool boundaries list what it may do.";
             cockpit.location.go(["agents", n]);
         } catch (ex) {
             setCreateNote(ex.message, "error-text");

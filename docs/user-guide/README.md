@@ -43,6 +43,7 @@ first working agent.
 | Who may approve an agent's calls? | [03-gateway.md#approvers](03-gateway.md#approvers), [07-approvals.md#who-may-decide](07-approvals.md#who-may-decide) |
 | How do I let one agent ask another? | [03-gateway.md#delegation](03-gateway.md#delegation) |
 | How do I create an agent? | [04-first-agent.md](04-first-agent.md), [09-administration.md#create](09-administration.md#create) |
+| Is there a ready-made agent for patching, services, disk space or triage? | [09-administration.md#templates](09-administration.md#templates) |
 | How do I choose and configure the model? | [05-configuration.md#models](05-configuration.md#models), [05-configuration.md#vertex](05-configuration.md#vertex) |
 | Where does the model's API key go? | [05-configuration.md#model-credentials](05-configuration.md#model-credentials), [09-administration.md#credentials](09-administration.md#credentials) |
 | SELinux blocks the model server's port | [05-configuration.md#selinux-and-the-models-port](05-configuration.md#selinux-and-the-models-port) |

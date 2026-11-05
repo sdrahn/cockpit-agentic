@@ -1,0 +1,10 @@
+# What exposure-watch may do at the gateway: look only (advisory mode,
+# CONTRACT.md §6). firewalld-mcp has no tools that change the firewall.
+- {server: firewalld, tool: get_default_zone, read_only: true}
+- {server: firewalld, tool: get_active_zones, read_only: true}
+- {server: firewalld, tool: get_services_for_zone, read_only: true}
+- {server: firewalld, tool: get_service_info, read_only: true}
+- {server: firewalld, tool: is_default_zone, read_only: true}
+- {server: systemd, tool: list_loaded_units, read_only: true}
+- {server: systemd, tool: list_unit_files, read_only: true}
+- {server: systemd, tool: get_file, read_only: true}

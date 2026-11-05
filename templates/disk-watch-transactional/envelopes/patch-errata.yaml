@@ -1,0 +1,7 @@
+# A suggested envelope for promoting patch-errata (CONTRACT.md §6a):
+#   agent-admin promote NAME patch-errata --envelope envelopes/patch-errata.yaml
+# Cleaning up snapshots every morning; change the time zone.
+windows:
+  - {from: '07:00', to: '08:00', tz: Europe/Berlin}
+rollback:
+  on: [tool_error, limit_exceeded]
