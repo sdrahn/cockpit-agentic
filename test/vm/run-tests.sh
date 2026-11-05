@@ -1001,7 +1001,9 @@ printf '%s\n' 'dg:' '  mode: supervised' '  permissions:' '    - {server: custos
 check "the gateway's OPA denies the disabled category's call" eventually 30 effect_is dg change deny
 check "the gateway's OPA allows the diagnostics call" effect_is dg probe allow
 if gateway_reasons; then
-	check "the denial's reason: the category is not enabled" reason_is dg change \
+	# Waited for: before the edit, no permission named change, so the
+	# denial above may come from the data OPA had before it reloaded.
+	check "the denial's reason: the category is not enabled" eventually 30 reason_is dg change \
 		"task category patch-errata is not enabled on this host (diagnostics-only): agent-admin enable patch-errata"
 	check "a tool no permission names keeps \"no matching permission\"" reason_is dg wipe "no matching permission"
 	sed -i 's/^  mode: supervised$/  mode: supervised\n  paused: true/' "$dgdata"
