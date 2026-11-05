@@ -78,6 +78,11 @@ jobs:
     runs-on: ubuntu-24.04
     container: registry.opensuse.org/opensuse/leap:16.0
     steps:
+      # The image's codec repository (codecs.opensuse.org) is outside
+      # openSUSE's mirrors and nothing here needs it; when it was down,
+      # zypper exited 106 (repositories skipped) and failed the job.
+      - name: Disable the codec repository
+        run: zypper -n mr -d repo-openh264 >/dev/null 2>&1 || true
       - name: Install tools and rpm macro packages
         run: >
           zypper -n --gpg-auto-import-keys in --no-recommends
