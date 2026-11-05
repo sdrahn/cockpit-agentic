@@ -102,6 +102,9 @@ func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record
 			after = append(after, r)
 		}
 	}
+	if why := reviewIncident(c, st, after); why != "" {
+		return why
+	}
 	// Outside its windows a bounded category is supervised, so it still
 	// has proposals to decline.
 	m := readiness.Measure(c, d.Permissions, after, decisions, th, now)

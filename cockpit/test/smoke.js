@@ -201,6 +201,18 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(sec[1] === "supervised" && sec[7].includes("Promote…"),
           "a category named only by a permission is listed, supervised, with Promote…");
     check((await spawned("agent-admin readiness disk-watch")).some(c => c[4] === "require"), "readiness is read through the root bridge");
+    // The after-the-fact review of what config-lifecycle did without an approval.
+    await page.waitForSelector("#review-e-0d90-c1");
+    check((await page.textContent("#review-e-0d91-c1")).includes("failed") &&
+          (await page.textContent("#category-reviews")).includes("config-lifecycle: 1 of 3 reviewed this week"),
+          "the actions to review, with their outcome and the week's count");
+    await page.click("#review-e-0d90-c1 button:text-is('Should not have run')");
+    await page.waitForFunction(() => document.querySelector("#error").textContent.includes("needs --reason"));
+    check(true, "Should not have run needs a reason");
+    await page.click("#review-e-0d90-c1 button:text-is('Fine')");
+    await page.waitForFunction(() => !document.querySelector("#review-e-0d90-c1"));
+    check((await spawned("agent-admin review disk-watch config-lifecycle e-0d90 c1 ok")).some(c => c[4] === "require"),
+          "Fine records the verdict through the root bridge");
     await page.fill("#category-reason", "a patch broke nginx");
     await page.click("#category-config-lifecycle button:text-is('Demote')");
     await page.waitForFunction(() => document.querySelector("#category-config-lifecycle").cells[1].textContent === "supervised");

@@ -301,7 +301,38 @@ function categoriesSection(a, data) {
         el("div", { class: "toolbar" }, which), env,
         el("label", null, despite, " Promote despite its readiness (needs a reason)"),
         el("div", { class: "actions" }, go));
-    box.append(table, el("div", { class: "toolbar" }, reason), form);
+    const reviews = el("div", { id: "category-reviews" });
+    box.append(table, el("div", { class: "toolbar" }, reason), reviews, form);
+    // The after-the-fact review of promoted categories' autonomous actions
+    // (agent-admin review, through the root bridge).
+    if (names.some(n => states[n] && states[n].promoted_by)) {
+        admin(["review", a.name]).then(out => {
+            const q = JSON.parse(out);
+            const items = [];
+            for (const [cat, cq] of Object.entries(q.categories || {}).sort()) {
+                for (const x of cq.pending || []) {
+                    const verdict = (v, label, cls) => {
+                        const b = el("button", { class: cls }, label);
+                        b.addEventListener("click", () => {
+                            const args = ["review", a.name, cat, x.activity, x.call, v];
+                            if (reason.value.trim()) args.push("--reason", reason.value.trim());
+                            act(b, "Reviewing " + x.tool, () => admin(args));
+                        });
+                        return b;
+                    };
+                    items.push(el("div", { class: "call", id: "review-" + x.activity + "-" + x.call },
+                        el("div", { class: "head" }, el("strong", { class: "mono" }, x.tool), el("span", { class: "muted" }, cat + " · " + x.activity),
+                            el("span", { class: "muted", style: "margin-left:auto" }, when(x.at) + (x.outcome === "error" ? " · failed" : "")),
+                            verdict("ok", "Fine", "secondary"), verdict("incident", "Should not have run", "danger"))));
+                }
+            }
+            const counts = Object.entries(q.categories || {}).map(([cat, cq]) => cat + ": " + cq.reviewed + " of " + cq.actions + " reviewed this week");
+            reviews.replaceChildren(el("h3", null, "To review"),
+                el("p", { class: "muted" }, "What promoted categories did without an approval. \"Should not have run\" counts as an override " +
+                   "and demotes the category at once; it needs a reason. " + counts.join("; ")),
+                ...(items.length ? items : [el("p", { class: "muted" }, "Nothing to review.")]));
+        }).catch(ex => reviews.replaceChildren(el("p", { class: "muted" }, "Review: " + ex.message)));
+    }
     // Readiness, as the person with administrative access (it reads the
     // agent's and the gateway's journal).
     admin(["readiness", a.name]).then(out => {

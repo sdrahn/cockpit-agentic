@@ -53,7 +53,13 @@ type Measures struct {
 	// Cancelled: approved, then the activity was cancelled before the
 	// call ran.
 	Cancelled int `json:"cancelled"`
-	// Overrides = Declined + Cancelled; OverrideRate = Overrides / Proposals.
+	// Reviewed: autonomous actions of the category an approver reviewed
+	// afterwards (category.review); ReviewOverrides: of those, the ones
+	// that should not have run.
+	Reviewed        int `json:"reviewed"`
+	ReviewOverrides int `json:"review_overrides"`
+	// Overrides = Declined + Cancelled + ReviewOverrides; OverrideRate =
+	// Overrides / (Proposals + Reviewed).
 	Overrides    int     `json:"overrides"`
 	OverrideRate float64 `json:"override_rate"`
 	// Incidents among the approved calls: the tool failed, a limit was
@@ -148,9 +154,15 @@ func Measure(category string, perms []map[string]any, recs []Record, decisions m
 			m.Incidents++
 		}
 	}
-	m.Overrides = m.Declined + m.Cancelled
-	if m.Proposals > 0 {
-		m.OverrideRate = float64(m.Overrides) / float64(m.Proposals)
+	for _, rv := range Reviews(category, recs) {
+		m.Reviewed++
+		if rv.Verdict == VerdictIncident {
+			m.ReviewOverrides++
+		}
+	}
+	m.Overrides = m.Declined + m.Cancelled + m.ReviewOverrides
+	if m.Proposals+m.Reviewed > 0 {
+		m.OverrideRate = float64(m.Overrides) / float64(m.Proposals+m.Reviewed)
 	}
 	if m.Approved-m.Cancelled > 0 {
 		m.IncidentRate = float64(m.Incidents) / float64(m.Approved-m.Cancelled)
@@ -290,4 +302,109 @@ func ParseDecisions(b []byte, principal string) map[string]Decision {
 		out[msg.ID] = Decision{OK: msg.OK, By: msg.By, At: At(r)}
 	}
 	return out
+}
+
+// Review verdicts (category.review, §6a, §10).
+const (
+	VerdictOK       = "ok"
+	VerdictIncident = "incident"
+)
+
+// SampleSize: of a week's autonomous actions, all are offered for review
+// up to this many, then this many (§6a).
+const SampleSize = 20
+
+// Action is an autonomous action: a call of a bounded category that ran
+// without an approval.
+type Action struct {
+	Activity string    `json:"activity"`
+	Call     string    `json:"call"`
+	Tool     string    `json:"tool"`
+	Outcome  string    `json:"outcome"`
+	At       time.Time `json:"-"`
+	Time     string    `json:"at"`
+	Args     string    `json:"args_sha256,omitempty"`
+}
+
+// Review is an approver's verdict on an autonomous action.
+type Review struct {
+	Activity, Call, Verdict, By, Reason string
+	At                                  time.Time
+}
+
+// Autonomous are the category's calls since then that ran without an
+// approval, oldest first.
+func Autonomous(category string, perms []map[string]any, recs []Record, since time.Time) []Action {
+	asked := map[string]bool{}
+	args := map[string]string{}
+	for _, r := range recs {
+		k := r["AGENT_INVOCATION"] + " " + r["AGENT_CALL_ID"]
+		switch r["AGENT_EVENT"] {
+		case "approval.pending":
+			asked[k] = true
+		case "tool.call":
+			args[k] = r["AGENT_ARGS_SHA256"]
+		}
+	}
+	var out []Action
+	for _, r := range recs {
+		k := r["AGENT_INVOCATION"] + " " + r["AGENT_CALL_ID"]
+		if r["AGENT_EVENT"] != "tool.result" || r["AGENT_APPROVAL_ID"] != "" || asked[k] ||
+			At(r).Before(since) || !InCategory(category, r["AGENT_TOOL"], perms) {
+			continue
+		}
+		out = append(out, Action{Activity: r["AGENT_INVOCATION"], Call: r["AGENT_CALL_ID"], Tool: r["AGENT_TOOL"],
+			Outcome: r["AGENT_OUTCOME"], At: At(r), Time: At(r).UTC().Format(time.RFC3339), Args: args[k]})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
+	return out
+}
+
+// Reviews are the category's review records, by activity and call; a
+// later verdict on the same action replaces an earlier one.
+func Reviews(category string, recs []Record) map[string]Review {
+	out := map[string]Review{}
+	for _, r := range recs {
+		if r["AGENT_EVENT"] != "category.review" || r["AGENT_CATEGORY"] != category {
+			continue
+		}
+		k := r["AGENT_INVOCATION"] + " " + r["AGENT_CALL_ID"]
+		if prev, ok := out[k]; ok && At(r).Before(prev.At) {
+			continue
+		}
+		out[k] = Review{Activity: r["AGENT_INVOCATION"], Call: r["AGENT_CALL_ID"], Verdict: r["AGENT_VERDICT"],
+			By: r["AGENT_BY"], Reason: r["AGENT_REASON"], At: At(r)}
+	}
+	return out
+}
+
+// Pending is the sample still to review among the actions of the last
+// week: all of them while the week has at most SampleSize, else the
+// newest unreviewed ones up to SampleSize reviews in the week.
+func Pending(actions []Action, reviews map[string]Review, now time.Time) []Action {
+	week := now.Add(-7 * 24 * time.Hour)
+	var recent, open []Action
+	done := 0
+	for _, a := range actions {
+		if a.At.Before(week) {
+			continue
+		}
+		recent = append(recent, a)
+		if _, ok := reviews[a.Activity+" "+a.Call]; ok {
+			done++
+		} else {
+			open = append(open, a)
+		}
+	}
+	if len(recent) <= SampleSize {
+		return open
+	}
+	n := SampleSize - done
+	if n <= 0 {
+		return nil
+	}
+	if n > len(open) {
+		n = len(open)
+	}
+	return open[len(open)-n:]
 }

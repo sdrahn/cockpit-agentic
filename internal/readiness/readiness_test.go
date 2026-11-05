@@ -177,3 +177,81 @@ func TestCategories(t *testing.T) {
 		t.Errorf("%s", got)
 	}
 }
+
+func (l *log) auto(at time.Time, inv, tool, outcome string) {
+	l.rec(at, "tool.call", map[string]string{"INVOCATION": inv, "CALL_ID": "c1", "TOOL": tool, "ARGS_SHA256": "h-" + inv})
+	l.rec(at.Add(time.Second), "tool.result", map[string]string{"INVOCATION": inv, "CALL_ID": "c1", "TOOL": tool, "OUTCOME": outcome})
+}
+
+func (l *log) review(at time.Time, cat, inv, verdict string) {
+	l.rec(at, "category.review", map[string]string{"CATEGORY": cat, "INVOCATION": inv, "CALL_ID": "c1", "VERDICT": verdict, "BY": "alice"})
+}
+
+func TestAutonomous(t *testing.T) {
+	var l log
+	l.auto(t0, "e-old", "zypp__patch", "ok") // before the promotion
+	since := t0.Add(time.Hour)
+	l.auto(since.Add(time.Hour), "x-1", "zypp__patch", "ok")
+	l.auto(since.Add(2*time.Hour), "x-2", "zypp__patch", "error")
+	l.auto(since.Add(3*time.Hour), "x-3", "systemd__restart_unit", "ok") // another category
+	l.auto(since.Add(4*time.Hour), "x-4", "zypp__list_updates", "ok")    // read-only
+	inv, _ := l.proposal(since.Add(5*time.Hour), "zypp__patch", "x", true, true)
+	l.result(since.Add(5*time.Hour+2*time.Minute), inv, "ok") // approved, not autonomous
+	got := Autonomous("patch-errata", perms, l.recs, since)
+	if len(got) != 2 || got[0].Activity != "x-1" || got[1].Activity != "x-2" || got[1].Outcome != "error" || got[0].Args != "h-x-1" || got[0].Time == "" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestReviewsCountAsOverrides(t *testing.T) {
+	var l log
+	for i := 0; i < 8; i++ {
+		inv, _ := l.proposal(t0.Add(time.Duration(i)*time.Hour), "zypp__patch", "a", true, true)
+		l.result(t0.Add(time.Duration(i)*time.Hour+2*time.Minute), inv, "ok")
+	}
+	l.auto(t0.Add(10*time.Hour), "e-a", "zypp__patch", "ok")
+	l.auto(t0.Add(11*time.Hour), "e-b", "zypp__patch", "ok")
+	l.review(t0.Add(12*time.Hour), "patch-errata", "e-a", VerdictOK)
+	l.review(t0.Add(13*time.Hour), "patch-errata", "e-b", VerdictIncident)
+	l.review(t0.Add(13*time.Hour), "config-lifecycle", "e-b", VerdictIncident) // another category's
+	m := Measure("patch-errata", perms, l.recs, l.decisions, Defaults, t0.Add(20*24*time.Hour))
+	if m.Proposals != 8 || m.Reviewed != 2 || m.ReviewOverrides != 1 || m.Overrides != 1 || fmt.Sprintf("%.3f", m.OverrideRate) != "0.100" {
+		t.Errorf("%+v", m)
+	}
+	// A later verdict replaces an earlier one.
+	l.review(t0.Add(14*time.Hour), "patch-errata", "e-b", VerdictOK)
+	if r := Reviews("patch-errata", l.recs); r["e-b c1"].Verdict != VerdictOK || len(r) != 2 {
+		t.Errorf("%+v", r)
+	}
+}
+
+func TestPendingSample(t *testing.T) {
+	now := t0.Add(30 * 24 * time.Hour)
+	mk := func(n int) []Action {
+		var out []Action
+		for i := 0; i < n; i++ {
+			at := now.Add(-time.Duration(n-i) * time.Hour)
+			out = append(out, Action{Activity: fmt.Sprintf("e-%02d", i), Call: "c1", At: at})
+		}
+		return out
+	}
+	// Below the sample size: every unreviewed one, older weeks left out.
+	acts := append([]Action{{Activity: "e-last-month", Call: "c1", At: now.Add(-10 * 24 * time.Hour)}}, mk(5)...)
+	p := Pending(acts, map[string]Review{"e-01 c1": {Verdict: VerdictOK}}, now)
+	if len(p) != 4 || p[0].Activity != "e-00" {
+		t.Errorf("below the sample size: %+v", p)
+	}
+	// Above it: the newest unreviewed ones, up to 20 reviews in the week.
+	acts = mk(50)
+	p = Pending(acts, map[string]Review{"e-00 c1": {}, "e-01 c1": {}, "e-02 c1": {}}, now)
+	if len(p) != 17 || p[len(p)-1].Activity != "e-49" || p[0].Activity != "e-33" {
+		t.Errorf("above the sample size: %d, %s…%s", len(p), p[0].Activity, p[len(p)-1].Activity)
+	}
+	reviewed := map[string]Review{}
+	for i := 0; i < 20; i++ {
+		reviewed[fmt.Sprintf("e-%02d c1", i)] = Review{}
+	}
+	if p = Pending(acts, reviewed, now); len(p) != 0 {
+		t.Errorf("a week with its 20 reviews: %d pending", len(p))
+	}
+}

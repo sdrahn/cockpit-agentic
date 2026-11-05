@@ -26,6 +26,9 @@ const usage = `usage: agent-admin COMMAND …
   promote NAME CATEGORY --envelope FILE [--despite-readiness --reason TEXT]
                                          let a category act without approval within its envelope (FILE -: stdin)
   demote NAME CATEGORY [--reason TEXT]   back to supervised (the envelope is kept)
+  review NAME [CATEGORY]                 the autonomous actions of promoted categories still to review, as JSON
+  review NAME CATEGORY ACTIVITY CALL ok|incident [--reason TEXT]
+                                         an approver's verdict; incident (should not have run) demotes it
   evaluate                               the demotion evaluator: demote bounded categories whose override rate
                                          or rollback conditions say so (custos-demote.timer)
   pause NAME | resume NAME               hold an agent / let it go on
@@ -177,6 +180,21 @@ func run(a *admin.Admin, args []string) error {
 		}
 		reason, _ := flag("--reason")
 		return a.Demote(args[0], args[1], by(), reason)
+	case "review":
+		if err := need(1); err != nil {
+			return err
+		}
+		if len(args) >= 5 && !strings.HasPrefix(args[2], "--") {
+			reason, _ := flag("--reason")
+			return a.Review(args[0], args[1], args[2], args[3], args[4], by(), reason)
+		}
+		q, err := a.ReviewQueue(args[0], args[1:]...)
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(q)
 	case "evaluate":
 		d, err := a.Evaluate()
 		for _, x := range d {

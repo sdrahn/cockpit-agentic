@@ -77,12 +77,13 @@ with `SYSLOG_IDENTIFIER=custos-promotion`:
 
 | Field | Value |
 |---|---|
-| `AGENT_EVENT` | `category.promoted`, `category.demoted` |
+| `AGENT_EVENT` | `category.promoted`, `category.demoted`, `category.review` (a verdict on an action, [chapter 6](06-permissions-and-modes.md#review)) |
 | `AGENT_NAME`, `AGENT_CATEGORY` | the agent, the category |
 | `AGENT_MODE_FROM`, `AGENT_MODE_TO` | `supervised`, `bounded` |
 | `AGENT_BY`, `AGENT_REASON` | who (the person behind `sudo`) and why |
 | `AGENT_PROMOTION` | the promotion's id (`p-…`), also in the agent's gateway data |
 | `AGENT_ENVELOPE_SHA256` | the envelope's digest |
+| `AGENT_VERDICT`, `AGENT_INVOCATION`, `AGENT_CALL_ID`, `AGENT_TOOL` | a review: `ok` or `incident`, and the action |
 
 ```bash
 journalctl -t custos-promotion -o json | jq -r '[.__REALTIME_TIMESTAMP, .AGENT_EVENT, .AGENT_NAME, .AGENT_CATEGORY, .AGENT_BY, .AGENT_REASON] | @tsv'

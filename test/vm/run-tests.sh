@@ -408,6 +408,16 @@ n0=$(count t1 approval.pending)
 check "within its window, the category's change runs without an approval" eventually 30 runs_with t1 CHANGE 'changed test'
 check "no approval was asked" test "$(count t1 approval.pending)" = "$n0"
 check "journal: category.promoted by root, with the reason" eventually 10 journal_has t1 category.promoted '.SYSLOG_IDENTIFIER == "custos-promotion" and .AGENT_CATEGORY == "patch-errata" and .AGENT_MODE_TO == "bounded" and .AGENT_REASON == "functional test"'
+# The after-the-fact review (§6a) of what the promoted category did.
+check "review lists the change made without an approval" bash -c \
+	"agent-admin review t1 patch-errata | jq -e '.categories[\"patch-errata\"].pending | map(select(.tool == \"custos-test__change\")) | length >= 1' >/dev/null"
+act=$(agent-admin review t1 patch-errata | jq -r '.categories["patch-errata"].pending[-1] | "\(.activity) \(.call)"')
+# shellcheck disable=SC2086 # activity and call
+check "review: ok keeps the category bounded" bash -c "agent-admin review t1 patch-errata $act ok >/dev/null && agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"bounded\"' >/dev/null"
+# shellcheck disable=SC2086
+check "review: incident (should not have run) demotes it" bash -c "agent-admin review t1 patch-errata $act incident --reason 'functional test' >/dev/null && agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"supervised\"' >/dev/null"
+check "journal: category.review, by root, with the verdict" eventually 10 journal_has t1 category.review '.AGENT_VERDICT == "incident" and .AGENT_TOOL == "custos-test__change" and .AGENT_REASON == "functional test"'
+check "readiness counts the review as an override" bash -c "agent-admin readiness t1 patch-errata | jq -e '.categories[\"patch-errata\"] | .reviewed >= 1 and .review_overrides >= 1' >/dev/null"
 check "promote with a window of another day" agent-admin promote t1 patch-errata --envelope "$work/other.yaml" --despite-readiness --reason "functional test"
 check "outside its window, the change waits for an approval" asks_and_deny
 check "agent-admin demote t1 patch-errata" agent-admin demote t1 patch-errata --reason "functional test"

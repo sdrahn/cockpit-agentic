@@ -100,7 +100,9 @@ Selecting an agent shows:
 - **Task categories**: each category its permissions name, with its
   mode and windows, its readiness (ready or not, and what is not met;
   the override and incident rates against their limits; the proposals),
-  **Demote** for a bounded one, and **Promote…**, which opens a form with
+  **Demote** for a bounded one, the actions a promoted category took
+  without an approval to review (**Fine**, **Should not have run**), and
+  **Promote…**, which opens a form with
   the envelope. A category that is not ready is refused unless you
   promote it despite its readiness, with a reason. Readiness and the
   actions need administrative access
