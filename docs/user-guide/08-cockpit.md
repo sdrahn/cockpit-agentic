@@ -150,6 +150,8 @@ Selecting an agent shows:
   **Logs** opens Cockpit's *Logs* page for the agent's unit: the unit's
   messages and the agent's own records ([chapter 10](10-monitoring-and-audit.md#journal));
 - **Autonomy mode**: advisory, supervised or bounded, one click each;
+  and **Owners**, who may approve its calls besides the servers'
+  approvers (**Save owners**, `agent-admin owners`);
 - **Tool boundaries**: its permissions and their effect now, and **Edit
   the permissions** as a YAML list;
 - **Task categories**: each category its permissions name, with its

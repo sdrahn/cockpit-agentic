@@ -86,6 +86,7 @@ install: build
 	install -D -m 0644 packaging/sysusers/custos.conf $(DESTDIR)$(SYSUSERSDIR)/custos.conf
 	install -D -m 0644 packaging/tmpfiles/custos.conf $(DESTDIR)$(TMPFILESDIR)/custos.conf
 	install -D -m 0644 gateway/policy/agents.rego $(DESTDIR)$(DATADIR)/mcp-gateway/policy/custos/agents.rego
+	install -D -m 0644 gateway/policy/owners.rego $(DESTDIR)$(DATADIR)/mcp-gateway/policy/custos/owners.rego
 	install -D -m 0644 gateway/policy/_control.yaml $(DESTDIR)$(SYSCONFDIR)/mcp-gateway/policy/agents/_control.yaml
 	install -D -m 0644 gateway/policy/_http.yaml $(DESTDIR)$(SYSCONFDIR)/mcp-gateway/policy/agents/_http.yaml
 	install -D -m 0644 gateway/servers.d/agents.yaml $(DESTDIR)$(DATADIR)/custos/gateway/servers.d/agents.yaml
