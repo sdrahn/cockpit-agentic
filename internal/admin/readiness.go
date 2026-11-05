@@ -77,7 +77,7 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 		cats = only
 	}
 	now := a.Now()
-	recs, decisions, _, err := a.journalRecords(name, now.AddDate(0, 0, -th.WindowDays))
+	recs, gw, err := a.journalRecords(name, now.AddDate(0, 0, -th.WindowDays))
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 	}
 	r.DiagnosticsApply = e != nil
 	for _, c := range cats {
-		m := readiness.Measure(c, d.Permissions, recs, decisions, th, now)
+		m := readiness.Measure(c, d.Permissions, recs, gw, th, now)
 		if r.DiagnosticsApply && c != Diagnostics {
 			m.Unmet = append(m.Unmet, r.Diagnostics.Unmet(th)...)
 			m.Ready = len(m.Unmet) == 0
@@ -100,9 +100,9 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 	return r, nil
 }
 
-// journalRecords reads the agent's records, and the gateway's decisions
-// and call results (R2) for it, since then.
-func (a *Admin) journalRecords(name string, since time.Time) ([]readiness.Record, map[string]readiness.Decision, []readiness.Result, error) {
+// journalRecords reads the agent's records, and what the gateway's audit
+// says about it (decisions, call results R2, reviews R4), since then.
+func (a *Admin) journalRecords(name string, since time.Time) ([]readiness.Record, readiness.Audit, error) {
 	at := "@" + strconv.FormatInt(since.Unix(), 10)
 	read := a.JournalJSON
 	if read == nil {
@@ -112,11 +112,11 @@ func (a *Admin) journalRecords(name string, since time.Time) ([]readiness.Record
 	}
 	agentLog, err := read("AGENT_NAME="+name, "AGENT_CONTRACT=1")
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("reading agent %s's journal: %w", name, err)
+		return nil, readiness.Audit{}, fmt.Errorf("reading agent %s's journal: %w", name, err)
 	}
 	gwLog, err := read("-u", "mcp-gateway.service")
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("reading mcp-gateway's journal: %w", err)
+		return nil, readiness.Audit{}, fmt.Errorf("reading mcp-gateway's journal: %w", err)
 	}
-	return readiness.ParseRecords(agentLog), readiness.ParseDecisions(gwLog, "agent-"+name), readiness.ParseResults(gwLog, "agent-"+name), nil
+	return readiness.ParseRecords(agentLog), readiness.ParseAudit(gwLog, "agent-"+name), nil
 }

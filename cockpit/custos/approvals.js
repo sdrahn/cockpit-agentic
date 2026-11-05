@@ -208,6 +208,82 @@ async function renderDemotions() {
             el("span", { class: "muted" }, when(new Date(Number(r.__REALTIME_TIMESTAMP) / 1000))), el("div", null, r.AGENT_REASON || ""))));
 }
 
+/* renderReviews lists the calls that ran without an approval and that
+ * the gateway asks their approvers to review (mcp-gateway's review items,
+ * its R4; for Custos, a promoted category's autonomous actions, §6a):
+ * the items the person may review, read and decided as the person.
+ * "Should not have run" counts as an override and demotes the category.
+ * Hidden when the gateway has no reviews. Items are kept across the
+ * tab's refreshes, so that a reason being typed stays. */
+const reviewItems = new Map();
+
+async function renderReviews() {
+    const box = document.getElementById("reviews");
+    let items;
+    try {
+        items = await gateway.get("/v1/reviews");
+    } catch {
+        box.hidden = true; // an mcp-gateway without reviews
+        return;
+    }
+    const open = (items || []).filter(r => !r.verdict);
+    for (const id of [...reviewItems.keys()]) {
+        if (!open.some(r => r.id === id)) reviewItems.delete(id);
+    }
+    for (const r of open) {
+        if (!reviewItems.has(r.id)) reviewItems.set(r.id, reviewItem(r));
+    }
+    box.hidden = open.length === 0;
+    box.replaceChildren(el("h2", null, "To review"),
+        el("p", { class: "muted" }, "Calls that ran without an approval, which mcp-gateway asks you to review (a promoted task " +
+           "category's autonomous actions). \"Should not have run\" counts as an override and demotes the category; it needs a reason."),
+        ...open.map(r => reviewItems.get(r.id)));
+}
+
+function reviewItem(r) {
+    const reason = el("input", { class: "review-reason", "aria-label": "Reason", placeholder: "Reason (needed for \"should not have run\")" });
+    const note = el("span", { class: "muted" });
+    const buttons = [];
+    const verdict = (v, label, cls) => {
+        const b = el("button", { class: cls }, label);
+        b.addEventListener("click", async () => {
+            if (v === "incident" && !reason.value.trim()) {
+                note.className = "error-text";
+                note.textContent = "Say why it should not have run.";
+                return;
+            }
+            buttons.forEach(x => { x.disabled = true });
+            try {
+                await gateway.post("/v1/reviews/" + encodeURIComponent(r.id), { verdict: v, reason: reason.value.trim(), via: "cockpit" });
+                showError(null);
+                reviewItems.delete(r.id);
+            } catch (ex) {
+                let code = null;
+                try { code = JSON.parse(ex.body).code } catch { /* not the gateway's JSON */ }
+                note.className = "error-text";
+                note.textContent = code === "password_required"
+                    ? "Reviewing your own call needs your password: use the MCP Gateway page or mcp-gateway-admin reviews."
+                    : ex && ex.status === 403 ? "You may not review this call: the gateway's approver rules do not name you."
+                        : describeGatewayFailure(ex);
+                buttons.forEach(x => { x.disabled = false });
+                return;
+            }
+            tabs.approvals.refresh();
+        });
+        buttons.push(b);
+        return b;
+    };
+    const sub = (r.principal || {}).sub || "";
+    return el("div", { class: "call review", id: "gw-review-" + r.id },
+        el("div", { class: "head" },
+           el("strong", { class: "mono" }, r.server + "__" + r.name),
+           el("span", { class: "muted" }, sub + (r.ran ? " · ran " + when(r.ran) : "")),
+           r.outcome && r.outcome !== "ok" ? el("span", { class: "badge badge-bad" }, r.outcome) : null,
+           el("span", { class: "muted", title: r.id, style: "margin-left:auto" }, "review " + shortApproval(r.id))),
+        r.args ? el("pre", null, JSON.stringify(r.args, null, 2)) : null,
+        el("div", { class: "actions" }, reason, verdict("ok", "Fine", "secondary"), verdict("incident", "Should not have run", "danger"), note));
+}
+
 tabs.approvals = {
     intervalMs: 2000,
     async refresh() {
@@ -216,7 +292,7 @@ tabs.approvals = {
             refreshState()]);
         renderApprovals(pending);
         setTabCount("approvals", pending.length);
-        await Promise.all([renderDemotions(), renderDecided()]);
+        await Promise.all([renderReviews(), renderDemotions(), renderDecided()]);
     },
 };
 

@@ -284,3 +284,21 @@ names_request(p) if {
 	server_ok(p)
 	glob.match(expand_glob(p[field]), null, input.resource.name)
 }
+
+# Reviews of autonomous actions (§6a) by the gateway's approvers
+# (mcp-gateway's review obligation, its requirement R4): every call a
+# bounded category makes without an approval becomes a review item once
+# it ran, for whoever may decide the agent's calls on its server (the
+# servers' approvers and the agent's owners). An unreviewed item expires
+# after a week. An older gateway ignores the rule.
+review_wanted if {
+	agent_principal
+	not input.discovery
+	input.action == "tools.call"
+	some p in agent_data.permissions
+	permission_enabled(p)
+	has_category(p)
+	not p.read_only == true
+	autonomous_now(p)
+	names_request(p)
+}

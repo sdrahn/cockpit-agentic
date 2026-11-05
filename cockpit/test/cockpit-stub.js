@@ -82,6 +82,10 @@
         lifecycle: name === "triage"
             ? { kind: "openshell", sandbox: "agent-triage", gateway: "openshell", service: "agent-openshell@triage.service" }
             : { kind: "systemd", service: "agent@" + name + ".service", socket: "agent@" + name + ".socket" } });
+    let reviews = [
+        { id: "r-5", action: "tools.call", server: "zypp", name: "patch", principal: { sub: "agent-patch-pilot", uid: 981 },
+          ran: new Date(Date.now() - 600e3).toISOString(), outcome: "ok", decision_id: "d-1", args: { patches: ["SUSE-SLE-16-2026-4712"] } },
+    ];
     let pending = [
         { id: "a-42", channel: "oob", action: "tools.call", server: "zypp", name: "install_patches",
           principal: { sub: "agent-patch-pilot", uid: 981, transport: "unix", client: { name: "custos/patch-pilot" } },
@@ -240,6 +244,16 @@
 
     function gatewayRoute(method, path, body) {
         if (method === "GET" && path === "/v1/approvals") return ok(pending);
+        // The gateway's review items (R4): ?reviews has one, else a gateway
+        // without reviews (404).
+        if (method === "GET" && path === "/v1/reviews") return query.has("reviews") ? ok(reviews) : fail(404, null, "404 page not found\n");
+        const rv = path.match(/^\/v1\/reviews\/([^/]+)$/);
+        if (method === "POST" && rv) {
+            const req = JSON.parse(body);
+            if (req.verdict === "incident" && !req.reason) return fail(400, null, JSON.stringify({ error: "an incident needs a reason" }));
+            reviews = reviews.map(r => r.id === rv[1] ? Object.assign({}, r, { verdict: { verdict: req.verdict, reason: req.reason, by: "carol", via: req.via } }) : r);
+            return ok("{}");
+        }
         const m = path.match(/^\/v1\/approvals\/([^/]+)$/);
         if (method === "POST" && m) {
             if (!pending.some(p => p.id === m[1])) return fail(404, null, JSON.stringify({ error: "not pending" }));

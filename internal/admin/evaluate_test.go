@@ -53,6 +53,14 @@ func (j *fakeJournal) result(at time.Time, f map[string]any) {
 	j.gw = append(j.gw, string(b))
 }
 
+// review: a verdict of the gateway's approvers on a call that ran (R4).
+func (j *fakeJournal) review(at time.Time, id, verdict, reason string) {
+	msg, _ := json.Marshal(map[string]any{"audit": true, "msg": "mcp", "event": "mcp-review", "id": id, "sub": "agent-patch-pilot",
+		"server": "zypp", "name": "install_patches", "verdict": verdict, "reason": reason, "by": "alice"})
+	b, _ := json.Marshal(map[string]string{"MESSAGE": string(msg), "__REALTIME_TIMESTAMP": strconv.FormatInt(at.UnixMicro(), 10)})
+	j.gw = append(j.gw, string(b))
+}
+
 // proposal: a call of the category that waited for an approval, decided ok.
 func (j *fakeJournal) proposal(at time.Time, inv, id string, ok bool) {
 	f := map[string]string{"INVOCATION": inv, "CALL_ID": "c1", "TOOL": "zypp__install_patches"}
@@ -284,5 +292,21 @@ func TestDeclineInTheSecondBeforeThePromotion(t *testing.T) {
 	a.Now = func() time.Time { return later }
 	if d := evaluate(t, a); len(d) != 0 || mode(a, "patch-errata") != "bounded" {
 		t.Errorf("demoted for a decline before the promotion: %v", d)
+	}
+}
+
+// An approver's incident verdict on the gateway (R4) demotes, as root's
+// review does; an ok, or one before the promotion, does not.
+func TestDemotesOnTheGatewaysReview(t *testing.T) {
+	a, _, j, _ := promoted(t, "")
+	j.review(a.Now().Add(-48*time.Hour), "r-0", "incident", "before the promotion")
+	j.review(a.Now().Add(-time.Hour), "r-1", "ok", "")
+	if d := evaluate(t, a); len(d) != 0 {
+		t.Fatalf("demoted: %v", d)
+	}
+	j.review(a.Now().Add(-time.Minute), "r-2", "incident", "patched the database host")
+	d := evaluate(t, a)
+	if len(d) != 1 || !strings.Contains(d[0].Reason, "review by alice on the gateway: zypp__install_patches (review r-2) should not have run: patched the database host") {
+		t.Fatalf("demotions %v", d)
 	}
 }
