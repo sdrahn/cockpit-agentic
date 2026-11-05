@@ -47,6 +47,9 @@ type Report struct {
 	Agent      string                        `json:"agent"`
 	Thresholds readiness.Thresholds          `json:"thresholds"`
 	Categories map[string]readiness.Measures `json:"categories"`
+	// Diagnostics is the agent's diagnostics history over the window
+	// (§6b): evidence shown with the readiness, not a threshold.
+	Diagnostics readiness.Diagnostics `json:"diagnostics"`
 }
 
 // Readiness measures an agent's categories (or one), from the agent's
@@ -73,7 +76,7 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &Report{Agent: name, Thresholds: th, Categories: map[string]readiness.Measures{}}
+	r := &Report{Agent: name, Thresholds: th, Categories: map[string]readiness.Measures{}, Diagnostics: readiness.DiagnosticsOf(recs)}
 	for _, c := range cats {
 		r.Categories[c] = readiness.Measure(c, d.Permissions, recs, decisions, th, now)
 	}
