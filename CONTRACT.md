@@ -1,7 +1,8 @@
 # Custos — Contract
 
 Status: draft 1 (contract version `1`); §6a is a draft 2 design, partly
-implemented (O11). The project was named
+implemented (O11); §4a, §6b, §14c and §17a are a design for the bundled
+diagnostics install, not implemented (O16). The project was named
 cockpit-agentic until before its first release; the names and paths
 below are Custos's (`custos`, `/etc/custos`, …) and are the ones contract
 version 1 keeps.
@@ -176,6 +177,64 @@ to those who may decide it (§7), and logs them as its policy says.
 The host keeps running activities and at least the last 200 ended ones.
 The journal (§10) is the full history.
 
+## 4a. Diagnosis reports (draft, O16)
+
+*Draft, not implemented (O16).* An activity may end with a **diagnosis
+report**: what the agent found, why it thinks so, and what the
+administrator could do about it. A host that writes reports adds the
+field `report` to the activity (§4) and the record `diagnosis.report`
+(§10):
+
+```json
+"report": {
+  "kind": "diagnosis",
+  "playbook": "disk-pressure",
+  "summary": "/var is full: the journal and old snapshots use 18 GiB.",
+  "findings": [
+    {"id": "f1", "text": "/var is 98 % used.", "evidence": ["e1"]}
+  ],
+  "hypotheses": [
+    {"id": "h1", "text": "The journal has no size limit and grew to 11 GiB.",
+     "confidence": "high", "evidence": ["e1", "e2"]}
+  ],
+  "evidence": [
+    {"id": "e1", "call_id": "c2", "tool": "exec__disk_usage", "quote": "/dev/vda3  20G  19.6G  0.4G  98% /var", "verified": true},
+    {"id": "e2", "call_id": "c4", "tool": "systemd__journal_disk_usage", "quote": "Archived and active journals take up 11.0G", "verified": true}
+  ],
+  "plan": [
+    {"step": 1, "text": "Limit the journal to 2 GiB.", "command": "printf '[Journal]\\nSystemMaxUse=2G\\n' > /etc/systemd/journald.conf.d/50-size.conf && systemctl restart systemd-journald",
+     "risk": "Older journal entries are removed."}
+  ]
+}
+```
+
+| Field | Values |
+|---|---|
+| `kind` | `diagnosis` |
+| `playbook` | the playbook the activity ran (§14c), if any |
+| `findings[]`, `hypotheses[]` | what the agent observed, and its root-cause hypotheses, each citing evidence by id |
+| `hypotheses[].confidence` | `low`, `medium`, `high`: **the model's own estimate, self-asserted**; the control plane labels it so and shows it next to how much of the cited evidence is verified |
+| `evidence[]` | a tool call of this activity (`call_id`, `tool`) and a `quote` from its result, at most 500 characters |
+| `evidence[].verified` | set by the **host**, not the model: `true` when the quote occurs in the result of that call (compared with runs of white space as one space), `false` otherwise. A hypothesis whose evidence is not verified is shown as unsupported |
+| `plan[]` | a written remediation plan, step by step, with an optional `command` and `risk`, **for the administrator to carry out**. A host never runs a plan; doing any of it through an agent is a separate activity, decided by the gateway like any other |
+
+This is the recommendation's provenance: "I am saying this because of
+this log line and that metric" is the evidence a hypothesis cites, and
+the host checks that each quote is really in what the tool returned. The
+quotes are excerpts of tool results, so a report can hold host data that
+the journal otherwise does not (§4: arguments are never logged); the
+control plane shows reports to supervisors and root only, as it does
+activities.
+
+**Feedback.** A person gives feedback on a report: per hypothesis
+`confirmed`, `rejected` or `unsure`; for the plan `useful` or
+`not_useful`, and whether they `executed` it; and an optional comment.
+Feedback is trust evidence for the promotion path (§6b), so it is
+recorded outside the agent, as the review verdicts are (§6a): by the
+reference implementation's `agent-admin feedback` (§17), which records
+the person, as `diagnosis.feedback` (§10). A later feedback by the same
+person on the same report replaces the earlier one.
+
 ## 5. Control API
 
 HTTP/1.1 on `/run/agents/<name>/api.sock`, JSON. The caller is identified
@@ -186,7 +245,7 @@ by `SO_PEERCRED`.
 | `GET /v1/status` | supervisors, root | `{"contract":1, "implementation", "lifecycle":{"kind",…} (§3a), "units":{"service","socket"} (systemd only), "name", "version", "model", "paused", "gateway":{"socket","reachable"}, "running", "in_flight":[call…], "started", "limits", "interaction":{"agui","client_tools"}, "schedules":[{"name","on_calendar","prompt"}]}` |
 | `GET /v1/activities` | supervisors, root | `{"activities": [activity…]}`, running first, then ended, newest first |
 | `GET /v1/activities/{id}` | supervisors, root; an agent only for activities it delegated | one activity |
-| `POST /v1/activities` | root (schedules, events, api); supervisors (`api`); agents (`delegation`, §9) | `{"prompt", "session"?, "user"? (root only), "origin"? (root only), "trace"? (agents only), "wait"?}`: `202 {"id","session"}`, or with `wait` the ended activity; `409` while paused |
+| `POST /v1/activities` | root (schedules, events, api); supervisors (`api`); agents (`delegation`, §9) | `{"prompt", "session"?, "user"? (root only), "origin"? (root only), "trace"? (agents only), "wait"?, "playbook"? (§14c; draft, O16)}`: `202 {"id","session"}`, or with `wait` the ended activity; `409` while paused |
 | `POST /v1/activities/{id}/cancel` | root; the activity's user or originator | ends a running activity: `204`, `409` if not running |
 | `POST /v1/pause`, `POST /v1/resume` | root | holds every activity before its next model or tool call and refuses new ones (§8) / lets them go on |
 
@@ -281,7 +340,8 @@ patch-errata:
 ```
 
 GA ships at least `patch-errata`, `security-response` and
-`config-lifecycle`. A category name has the form of an agent name
+`config-lifecycle`, and with the bundled diagnostics install (§6b, O16)
+`diagnostics` and `compliance-audit`. A category name has the form of an agent name
 (§13). Each permission in the agent data may name its category (an added
 field, §6):
 
@@ -459,6 +519,80 @@ the gateway loads the data (§6), and it is recorded with `AGENT_BY`
 `custos-demote` and the trigger as its reason. Pause and
 the emergency stop (§8) still override everything.
 
+## 6b. Category enablement (draft, O16)
+
+*Draft, not implemented (O16).* Whether a category may be used at all on
+this host is separate from its mode. A host is in one of two
+**enablement states**:
+
+| State | Usable categories |
+|---|---|
+| `diagnostics-only` | `diagnostics` only. Every other category of the catalog is installed but disabled, and so is every permission without a category |
+| `categories` | `diagnostics` and the categories listed as enabled. Without any enablement data (every host before this section, and every installation of the broader capability) all catalog categories are enabled |
+
+The state is gateway data, next to the emergency stop:
+
+```yaml
+# data.mcp.agents._enablement (§13: _enablement.yaml)
+_enablement:
+  state: diagnostics-only        # or: categories
+  enabled: [diagnostics]         # with state categories: the enabled ones; diagnostics always
+  changed_by: "alice 2026-12-01T09:00:00.123456789Z"
+  record: n-7c1d…                # the enablement record's id (§10)
+```
+
+**The `diagnostics` category** reads host state, logs and metrics, runs
+the diagnostic playbooks (§14c) and writes reports (§4a). Each of its
+permissions is `read_only`: a permission with `category: diagnostics`
+that is not is refused by `agent-admin permissions`, and the gateway
+treats it as no permission. Promoting `diagnostics` is pointless and
+refused: its calls need no approval in any mode but `advisory`.
+
+**Enforcement is the gateway's**, outside the agent (§1):
+
+- a call matched only by permissions of a disabled category (in
+  `diagnostics-only`: by any permission not in `diagnostics`) is
+  denied, in every mode, and the gateway's audit records the denial;
+- tool discovery does not show such tools: the model is never offered
+  a disabled category's tools;
+- the control plane and `agent-admin` refuse to load a disabled
+  category: `permissions` with a permission in it, `promote`, and
+  `create --template` with a template whose permissions name it. Each
+  refusal is recorded as `category.refused` (§10) with the person.
+
+The agent's own record of a denied call is its `tool.result` with
+`AGENT_OUTCOME=denied` (§10); the control plane names the cause from the
+enablement state and the permission's category.
+
+**Enabling** categories is one administrator action:
+
+```
+agent-admin enable CATEGORY… | --all
+```
+
+It runs as root, so the person is authenticated (sudo or Cockpit's
+administrative access), and it writes the new state and an enablement
+record `categories.enabled` (§10) with the person, the state before and
+after, and the state's digest. A newly enabled category starts
+`supervised` with no envelope (§6a): the result is the same agent data
+and gateway behaviour as an installation of the broader capability with
+those categories enabled, which a release-gate test compares. Going
+back to `diagnostics-only` is not part of version 1 (O16).
+
+**Tampering shows.** Only `agent-admin enable` changes the state, and
+each change records the SHA-256 of `state` and `enabled` (JSON, sorted
+keys). `agent-admin show` and the control plane compare the data in
+force with the last enablement record and report a state that was
+changed without one. On one host root can still edit any file; sealing
+the state (for instance to the TPM) is open (O16).
+
+**Trust evidence.** What the diagnostics agent did before another
+category was enabled is that category's starting evidence: the readiness
+view (above) also shows, per agent, the reports of the window, the
+hypotheses with feedback and how many were confirmed, and the plans
+marked useful and executed. They are shown, not thresholds; whether some
+should become thresholds is open (O16).
+
 ## 7. Approvals
 
 Approvals are the gateway's (mcp-gateway architecture §5.6.1). Neither
@@ -634,6 +768,31 @@ write them with `SYSLOG_IDENTIFIER=custos-promotion`, `AGENT_CONTRACT`,
 | `category.demoted` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a661` |
 | `category.review` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a662` (an approver's verdict on an autonomous action) |
 
+**Diagnostics and enablement records** (§4a, §6b; draft, O16). The host
+writes `diagnosis.report` with the agent's fields; `agent-admin` writes
+`diagnosis.feedback`, `categories.enabled` and `category.refused` with
+`SYSLOG_IDENTIFIER=custos-promotion`, `AGENT_CONTRACT` and these added
+fields:
+
+| Field | Value |
+|---|---|
+| `AGENT_REPORT` | `diagnosis.report`: the report (§4a) as JSON, at most 64 KiB |
+| `AGENT_PLAYBOOK` | `diagnosis.report`: the playbook, if any |
+| `AGENT_INVOCATION` | `diagnosis.report`, `diagnosis.feedback`: the activity whose report it is |
+| `AGENT_FEEDBACK` | `diagnosis.feedback`: `{"hypotheses": {"h1": "confirmed"}, "plan": "useful", "executed": true, "comment": "…"}` |
+| `AGENT_BY` | the person |
+| `AGENT_ENABLEMENT_FROM`, `AGENT_ENABLEMENT_TO` | `categories.enabled`: the state before and after, as JSON (`{"state", "enabled"}`) |
+| `AGENT_ENABLEMENT_SHA256` | `categories.enabled`: the digest of the state after (§6b) |
+| `AGENT_ENABLEMENT` | `categories.enabled`: the record's id (`n-…`), also in the data's `record` |
+| `AGENT_CATEGORY`, `AGENT_REASON` | `category.refused`: the disabled category, and what was refused (`permissions`, `promote`, `create --template patch-pilot`) |
+
+| `AGENT_EVENT` | `MESSAGE_ID` |
+|---|---|
+| `diagnosis.report` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a670` |
+| `diagnosis.feedback` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a671` |
+| `categories.enabled` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a672` |
+| `category.refused` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a673` |
+
 ## 11. Interaction (chat as one mode)
 
 Conversation with an agent is one mode of the control plane, for
@@ -662,6 +821,7 @@ driver-style tasks. It is not its basis. Hosts that offer it serve
 | §7 step 2 | `CUSTOM` `agent.approval.pending` `{"approval_id","tool","call_id","approval_url"}` |
 | §7 step 4 | `CUSTOM` `agent.approval.resolved` `{"approval_id","tool","call_id","outcome"}` |
 | local limit | `CUSTOM` `agent.limit.exceeded` `{"limit","value"}` |
+| diagnosis report (§4a; draft, O16) | `CUSTOM` `agent.report` (the report) |
 
 **Client tools** (`RunAgentInput.tools`) run in the frontend. They are
 offered to the model only if the host's configuration allows them by
@@ -714,6 +874,8 @@ aggregation, policy distribution and approvals across hosts) is parked
 | `/usr/share/custos/templates/<template>/` | root 0644 | the agent templates (§14a), and `exec.d-disk-usage.yaml`, the `exec` command some of them use, for `/etc/mcp-gateway/exec.d/` |
 | `/etc/custos/templates/<template>/` | root 0644 | the administrator's templates: one of a shipped name replaces it, one without `template.yaml` hides it |
 | `/etc/custos/defaults.yaml` | root 0644 | the model for new agents (§14b); absent: none |
+| `/usr/share/custos/playbooks/*.yaml`, `/etc/custos/playbooks/*.yaml` | root 0644 | the diagnostic playbooks (§14c; O16): the package's, and the administrator's |
+| `/etc/mcp-gateway/policy/agents/_enablement.yaml` | root 0644 | the enablement state (§6b; O16); absent: every category enabled |
 | `/etc/custos/agents/<name>/agent.yaml` | root:agent-`<name>` 0640 | configuration (§14) |
 | `/etc/sysusers.d/agent-<name>.conf` | root 0644 | the agent's user |
 | `/etc/mcp-gateway/policy/agents/<name>.yaml` | root 0644 | mode, pause, permissions (§6). All agents' files, the emergency stop's `_control.yaml` and the agents' token issuers' `_http.yaml` (§6; both shipped by the package) are in this one directory: mcp-gateway's OPA (`--watch`) watches only directories it loaded a file from when it started |
@@ -805,6 +967,46 @@ Unknown keys are errors. A new agent's starting configuration
 configuration's. An agent keeps the model in its own `agent.yaml`, so
 changing or removing the defaults changes no existing agent. The file
 holds no secret.
+
+## 14c. Diagnostic playbooks (draft, O16)
+
+*Draft, not implemented (O16).* A playbook is a published, defined
+diagnostic procedure: which read-only tools to call, and what to look
+for. Playbooks are data, shipped in
+`/usr/share/custos/playbooks/*.yaml`; an administrator adds or replaces
+them in `/etc/custos/playbooks/` (the same name replaces, an empty file
+hides it):
+
+```yaml
+# /usr/share/custos/playbooks/disk-pressure.yaml
+disk-pressure:
+  title: Disk and inode pressure
+  description: Which file systems are full, and what fills them.
+  needs: [exec disk_usage (exec.d-disk-usage.yaml), systemd-mcp]
+  steps:
+    - {tool: exec__disk_usage, why: Usage and inodes per file system.}
+    - {tool: systemd__journal_disk_usage, why: The journal's share.}
+    - {tool: snapper__list_snapshots, why: Snapshots that keep deleted data, optional: true}
+  look_for: >
+    A file system above 90 %; the journal, snapshots, caches and logs
+    in /var as the usual causes; growth since the last report.
+```
+
+Unknown keys are errors. Each step is a tool the agent calls through the
+gateway (§6), which decides it like any other call: a playbook grants
+nothing. A step's tool must be allowed by a `diagnostics` permission of
+the agent, or the playbook is refused for that agent (`optional` steps
+are skipped instead). `look_for` guides the model; the report (§4a)
+cites what it found.
+
+An activity runs a playbook when `POST /v1/activities` names it
+(`"playbook"`, §5) or a schedule's prompt does; the host gives the model
+the steps and `look_for`, and the activity ends with a report. The set
+GA ships (O16): `failed-units`, `service-health`, `disk-pressure`,
+`memory-pressure` (including OOM kills), `journal-errors`,
+`selinux-denials`, `time-sync`, `network-reachability`, `boot-health`,
+`package-consistency`, `update-status` (read only: what is pending, not
+installing it).
 
 ## 15. Units and sandbox
 
@@ -914,6 +1116,9 @@ standard error:
 | `mode NAME MODE`, `permissions NAME < list.yaml` | the gateway agent data (§6). Like `pause`, `resume`, `stop-all` and `release-all`, it returns once the gateway's OPA has loaded the change (it reads it back on `/run/mcp-gateway/opa.sock`, for up to 20 s), so the change is in force when the command returns |
 | `set-credential NAME CRED < secret` | `systemd-creds encrypt`; for OpenShell agents `gateway-client-secret` or `gateway-token` (§16a) |
 | `pause NAME`, `resume NAME` | §8 (gateway data and `/v1/pause`) |
+| `enable CATEGORY… \| --all` | enables task categories on a `diagnostics-only` or partly enabled host (§6b): writes `_enablement.yaml` and the record `categories.enabled`, and returns once the gateway's OPA has loaded it. The categories start supervised. Refuses a category not in the catalog |
+| `feedback NAME ACTIVITY [--hypothesis ID=confirmed\|rejected\|unsure…] [--plan useful\|not_useful] [--executed] [--comment TEXT]` | feedback on an activity's report (§4a), recorded as `diagnosis.feedback` with the person |
+| `playbooks` | the playbooks (§14c), as JSON: `{"<playbook>": {"title", "description", "needs", "steps", "dir", "error"?}}`. Needs no root |
 | `stop-all`, `release-all` | the emergency stop (§8) and its end. `release-all` starts again the agents' sockets and schedule timers that are enabled: what an administrator disabled stays stopped. Both record who (`_control.by`: the person behind `sudo`, `SUDO_USER`, else `USER`) and when (`at`) |
 | `delete NAME [--keep-state]` | disables and stops units; removes configuration, gateway data, credentials, drop-ins, timers and, unless kept, state. The user stays, since uids are not reused while files may still belong to them |
 | `trigger NAME_SCHEDULE` | starts the schedule's activity (run by `agent-schedule@.service`) |
@@ -924,6 +1129,34 @@ standard error:
 | `evaluate` | the demotion evaluator (§6a), which `custos-demote.service` runs: demotes every bounded category whose override rate or rollback conditions say so, printing one line per demotion. An agent whose journal it cannot read is reported, and the others are still evaluated |
 | `review NAME [CATEGORY…]`, `review NAME CATEGORY ACTIVITY CALL ok\|incident [--reason TEXT]` | the review (§6a). Without a verdict: per category promoted since (bounded, or demoted after a promotion) the week's autonomous actions still to review, as JSON: `{"agent", "categories": {"<category>": {"mode", "actions", "reviewed", "pending": [{"activity", "call", "tool", "outcome", "at", "args_sha256"?}]}}}`. With one: records `category.review` (the person behind `sudo` as `AGENT_BY`) for an action that ran without an approval in the last week; `incident` needs a reason and demotes a bounded category. Reads the journal: root or `systemd-journal`; a verdict needs root |
 | `readiness NAME [CATEGORY…]` | the readiness of the agent's categories (those its permissions name), or of the given ones, as JSON: `{"agent", "thresholds": {"observation_days", "proposals", "override_rate", "incident_rate", "window_days"}, "categories": {"<category>": {"proposals", "approved", "declined", "cancelled", "reviewed", "review_overrides", "overrides", "override_rate", "incidents", "incident_rate", "tools", "distinct_calls", "observed_days", "first_proposal"?, "ready", "unmet"?}}}` (§6a). Reads the agent's journal and mcp-gateway's, so it needs root or the `systemd-journal` group |
+
+## 17a. `custos-setup` (draft, O16)
+
+The installer's interface for the bundled diagnostics install. The
+installer itself (the choice, not selected by default, and the backends
+in order) is the installer team's (§20b); it runs, as root, after the
+packages are installed:
+
+```
+custos-setup --diagnostics-only --backend on-host|local-network|customer-cloud|vendor
+             [--provider openai|vertex|gemini] [--endpoint URL] --model NAME
+             [--credential-file FILE]
+```
+
+It is non-interactive and idempotent: it sets the model defaults (§14b),
+stores the credential if given, creates the `health-check` agent from
+its template (§14a) with the `diagnostics` permissions, writes the state
+`diagnostics-only` (§6b) with its record (by `custos-setup`), and
+enables the agent's schedule. Its exit status and one line per step tell
+the installer what happened. Without `--diagnostics-only` nothing is
+written: the broader install has all categories, and no agent until an
+administrator creates one.
+
+The four backends, in the documented order (§14, user guide chapter 14):
+`on-host` (a model server on this host), `local-network` (one on the
+local network), `customer-cloud` (the customer's own cloud account) and
+`vendor` (a vendor-hosted service). `on-host` and `local-network` are
+`provider: openai` with the server's endpoint.
 
 ## 18. SELinux (`custos` module)
 
@@ -962,6 +1195,10 @@ tests, for openQA) and `custos-docs` (the user guide and this contract
 in `/usr/share/custos/docs`, with the collection file
 `/usr/share/mcp-docs/collections.d/custos.yaml`, so that mcp-docs serves
 them as the collection `custos`).
+
+Planned with O16: `custos-diagnostics`, the bundled install the
+installer selects: the playbooks, the `health-check` template and
+`custos-setup` (§17a).
 
 ---
 
@@ -1008,6 +1245,31 @@ the product and release process, tracked here so that nothing is lost.
 | Tested open-weight models (2 or 3) with model cards, validation evidence, deprecation policy | — | *outside*; the validation suite to run them against is O15 |
 | Reference hardware sizing for x86_64 and aarch64 (riscv64 excluded) | — | *outside* |
 | Safety report and EU AI Act high-risk evidence; support terms for AI-specific failures | — | *outside*; §6a and §10 supply the oversight and logging evidence |
+
+## 20b. Requirement: bundled health-check and diagnostics agent (SLES 16.2)
+
+The default-installed configuration of §20a, chosen at deployment: a
+health-check and diagnostics agent on the same runtime, control plane
+and inference backends, with only the `diagnostics` category enabled
+and the others installed but disabled until the customer enables them.
+What §20a provides (the audit trail, the backend selection, the
+on-premises reference, the air-gapped variant, the promotion path) is
+inherited, not specified again.
+
+| Requirement | Contract | State in this repository |
+|---|---|---|
+| Opt-in choice at deployment, not selected by default, the four backends in the documented order | §17a | the installer screen is the installer team's (*outside*); `custos-setup` as its interface: open (O16) |
+| A "diagnostics-only" enablement state in which only `diagnostics` is usable, enforced by the runtime, not by files an administrator edits | §6b | design (O16): the gateway denies and hides disabled categories; `agent-admin` refuses to load them; tampering is detected, sealing open |
+| Release-gate test: other categories refused in diagnostics-only | §6b, §19 | open (O16): in the functional tests, and so in the air-gapped gate |
+| Attempts to use a disabled category recorded | §6b, §10 | design (O16): the gateway's audit (calls), `category.refused` (loading) |
+| Enabling more categories: one documented, authenticated, logged action; the result identical to a broader install with them | §6b, §17 | design (O16): `agent-admin enable`, `categories.enabled`; the gate compares the states |
+| Enabled categories start supervised | §6a, §6b | done (§6a); nothing new needed |
+| The diagnostics history as trust evidence for promotion | §4a, §6b | design (O16): reports and feedback in the readiness view |
+| Diagnostics: read host state, logs and metrics; correlate and summarize; root-cause hypotheses; written remediation plans for the administrator | §4a, §6b | design (O16): the `diagnostics` category (read-only), the report |
+| The published diagnostic playbook set | §14c | design (O16) |
+| Confidence indicator | §4a | design (O16): the model's confidence, labelled as such, next to the host-verified evidence; the Cockpit view open |
+| Recommendation provenance ("because of log line X and metric Y") | §4a | design (O16): evidence quotes verified against the tool results by the host |
+| Administrator feedback | §4a, §10 | design (O16): `agent-admin feedback`, `diagnosis.feedback`; Cockpit open |
 
 ## 21. Open items
 
@@ -1131,3 +1393,13 @@ the product and release process, tracked here so that nothing is lost.
   inference backends in the order of §20a (on-premises, the customer's
   own cloud account, vendor-hosted), in the user guide's chapter 14.
   Open: the field briefing in that order.
+- **O16 — bundled diagnostics install.** §20b; designed in §4a, §6b,
+  §14c and §17a, not implemented. The order: the enablement state and
+  its refusals with the gate test; the playbooks and the `health-check`
+  template; the report with verified evidence; the Cockpit report view
+  with confidence, provenance and feedback, and the diagnostics evidence
+  in readiness; `custos-setup` and the `custos-diagnostics` package. Open
+  beyond that: sealing the enablement state against root (the TPM, say);
+  going back to `diagnostics-only`; whether some diagnostics evidence
+  should become a readiness threshold; and a reason in the gateway's
+  audit for a denial ("category not enabled"), which needs mcp-gateway.

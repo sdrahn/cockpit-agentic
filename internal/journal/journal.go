@@ -36,6 +36,13 @@ const (
 	CategoryPromoted = "category.promoted"
 	CategoryDemoted  = "category.demoted"
 	CategoryReview   = "category.review"
+
+	// The bundled diagnostics install (§4a, §6b, §10; draft, O16): the
+	// IDs are reserved by the contract.
+	DiagnosisReport   = "diagnosis.report"
+	DiagnosisFeedback = "diagnosis.feedback"
+	CategoriesEnabled = "categories.enabled"
+	CategoryRefused   = "category.refused"
 )
 
 var MessageIDs = map[string]string{
@@ -57,6 +64,11 @@ var MessageIDs = map[string]string{
 	CategoryPromoted: "6f3c0e1a9b2d4c58a7e1f2d3c4b5a660",
 	CategoryDemoted:  "6f3c0e1a9b2d4c58a7e1f2d3c4b5a661",
 	CategoryReview:   "6f3c0e1a9b2d4c58a7e1f2d3c4b5a662",
+
+	DiagnosisReport:   "6f3c0e1a9b2d4c58a7e1f2d3c4b5a670",
+	DiagnosisFeedback: "6f3c0e1a9b2d4c58a7e1f2d3c4b5a671",
+	CategoriesEnabled: "6f3c0e1a9b2d4c58a7e1f2d3c4b5a672",
+	CategoryRefused:   "6f3c0e1a9b2d4c58a7e1f2d3c4b5a673",
 }
 
 // Fields of a record, without the AGENT_ prefix: "SESSION", "TOOL", ….
