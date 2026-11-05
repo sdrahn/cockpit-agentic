@@ -49,6 +49,8 @@ type Event struct {
 	Outcome     string
 	Limit       string
 	Value       int
+	// Report is EvReport's (§4a).
+	Report *Report
 }
 
 // Call is a tool call of an activity.
@@ -101,6 +103,8 @@ type Activity struct {
 	LLMCalls int        `json:"llm_calls"`
 	// Playbook is the diagnostic playbook it runs (§14c), if any.
 	Playbook string `json:"playbook,omitempty"`
+	// Report is its diagnosis report (§4a), if it wrote one.
+	Report *Report `json:"report,omitempty"`
 }
 
 // Activity states.
@@ -143,6 +147,10 @@ type invocation struct {
 	calls         []*Call
 	cancel        context.CancelFunc
 	cancelled     bool
+	// results are the tools' outputs, for verifying a report's quotes
+	// (§4a); resultBytes their size.
+	results     []toolResult
+	resultBytes int
 }
 
 // History is how many ended activities are kept in memory; the journal
@@ -545,6 +553,9 @@ func (g *Governor) afterModel(cctx agent.CallbackContext, resp *model.LLMRespons
 }
 
 func (g *Governor) beforeTool(tctx agent.ToolContext, t tool.Tool, args map[string]any) (map[string]any, error) {
+	if t.Name() == ReportTool {
+		return nil, nil // the host's own, recorded as diagnosis.report
+	}
 	f := g.toolFields(tctx, t.Name(), args)
 	if ct, ok := t.(ClientTool); ok && ct.ClientTool() && !g.cfg.Interaction.ClientTools.Allowed(t.Name()) {
 		f["OUTCOME"], f["REASON"] = "denied", "client tool not allowed"
@@ -597,6 +608,9 @@ func (g *Governor) afterTool(tctx agent.ToolContext, t tool.Tool, args, result m
 	if call == nil {
 		g.mu.Unlock()
 		return nil, nil // stopped by beforeTool: already recorded
+	}
+	if in := g.inv[tctx.InvocationID()]; in != nil && err == nil {
+		in.keepResult(call.CallID, call.Tool, result)
 	}
 	now := g.now()
 	f["DURATION_MS"] = ms(now.Sub(call.Since))

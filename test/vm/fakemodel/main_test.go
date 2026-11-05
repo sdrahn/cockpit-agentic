@@ -89,3 +89,36 @@ func TestWithLauncherAdapter(t *testing.T) {
 		t.Errorf("other path: %d", res.StatusCode)
 	}
 }
+
+// With REPORT in the first user text, the probe's result is followed by
+// a diagnosis report quoting it, and the report's answer by text.
+func TestScriptReport(t *testing.T) {
+	m := &Model{Prefix: "custos-test"}
+	r := req("PROBE REPORT", "custos-test__probe", "report_diagnosis")
+	probe := m.Respond(r)
+	ok := `{"output":"probe ok"}`
+	r.Messages = append(r.Messages, probe, message{Role: "tool", ToolCallID: probe.ToolCalls[0].ID, Content: &ok})
+	rep := m.Respond(r)
+	if len(rep.ToolCalls) != 1 || rep.ToolCalls[0].Function.Name != "report_diagnosis" {
+		t.Fatalf("after the probe: %+v", rep)
+	}
+	var args struct {
+		Evidence []struct{ Tool, Quote string }
+	}
+	json.Unmarshal([]byte(rep.ToolCalls[0].Function.Arguments), &args)
+	if len(args.Evidence) != 2 || args.Evidence[0].Quote != "probe ok" || args.Evidence[0].Tool != "custos-test__probe" {
+		t.Errorf("evidence %+v", args.Evidence)
+	}
+	done := `{"recorded":true}`
+	r.Messages = append(r.Messages, rep, message{Role: "tool", ToolCallID: rep.ToolCalls[0].ID, Content: &done})
+	if end := m.Respond(r); end.Content == nil || *end.Content != `reported: {"recorded":true}` {
+		t.Errorf("after the report: %+v", end)
+	}
+	// Without REPORT, the probe's result is just done.
+	r2 := req("PROBE", "custos-test__probe", "report_diagnosis")
+	p2 := m.Respond(r2)
+	r2.Messages = append(r2.Messages, p2, message{Role: "tool", ToolCallID: p2.ToolCalls[0].ID, Content: &ok})
+	if end := m.Respond(r2); end.Content == nil || *end.Content != "done: "+ok {
+		t.Errorf("without REPORT: %+v", end)
+	}
+}

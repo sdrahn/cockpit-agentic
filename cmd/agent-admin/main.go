@@ -21,6 +21,8 @@ const usage = `usage: agent-admin COMMAND …
                                          permissions and mode
   templates                              the agent templates (CONTRACT.md §14a), as JSON
   playbooks                              the diagnostic playbooks (CONTRACT.md §14c), as JSON
+  feedback NAME ACTIVITY [--hypothesis ID=confirmed|rejected|unsure…] [--plan useful|not_useful]
+           [--executed] [--comment TEXT]  feedback on an activity's diagnosis report (CONTRACT.md §4a)
   draft NAME [--template TEMPLATE]       a new agent's starting configuration (blank or the template's),
                                          with the host's model defaults
   defaults [--from FILE | --clear]       the model defaults for new agents (CONTRACT.md §14b), as JSON;
@@ -221,6 +223,41 @@ func run(a *admin.Admin, args []string) error {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(d)
+	case "feedback":
+		if err := need(2); err != nil {
+			return err
+		}
+		f := admin.Feedback{Hypotheses: map[string]string{}}
+		for i := 2; i < len(args); i++ {
+			switch args[i] {
+			case "--executed":
+				f.Executed = true
+			case "--hypothesis", "--plan", "--comment":
+				if i+1 >= len(args) {
+					return fmt.Errorf("%s: a value is needed", args[i])
+				}
+				v := args[i+1]
+				switch args[i] {
+				case "--hypothesis":
+					id, verdict, ok := strings.Cut(v, "=")
+					if !ok {
+						return fmt.Errorf("--hypothesis %s: want ID=confirmed|rejected|unsure", v)
+					}
+					f.Hypotheses[id] = verdict
+				case "--plan":
+					f.Plan = v
+				case "--comment":
+					f.Comment = v
+				}
+				i++
+			default:
+				return fmt.Errorf("feedback: unknown argument %q", args[i])
+			}
+		}
+		if len(f.Hypotheses) == 0 {
+			f.Hypotheses = nil
+		}
+		return a.RecordFeedback(args[0], args[1], by(), f)
 	case "playbooks":
 		p, err := a.Playbooks()
 		if err != nil {

@@ -184,9 +184,9 @@ func (p *Playbook) Prompt(offered map[string]bool, extra string) string {
 		fmt.Fprintf(&b, "%d. %s: %s\n", n, s.Tool, s.Why)
 	}
 	b.WriteString("\nLook for: " + strings.TrimSpace(p.LookFor) + "\n")
-	b.WriteString("\nThen report: what you found, your root-cause hypotheses with how confident you are, " +
-		"the tool output each one rests on (quote it), and a written remediation plan for the administrator. " +
-		"Change nothing yourself.\n")
+	b.WriteString("\nThen report with the tool report_diagnosis: what you found, your root-cause hypotheses with how " +
+		"confident you are, the tool output each one rests on (quote it exactly), and a written remediation plan for " +
+		"the administrator. Change nothing yourself.\n")
 	if strings.TrimSpace(extra) != "" {
 		b.WriteString("\nThe administrator adds: " + strings.TrimSpace(extra) + "\n")
 	}
