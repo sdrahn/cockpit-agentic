@@ -103,6 +103,23 @@ no model is needed. For openQA and other test systems:
 /usr/libexec/custos/tests/run-tests.sh --disposable --results DIR.
 They change the system for good; install them on test systems only.
 
+%package diagnostics
+Summary:        The bundled health-check and diagnostics agent of custos
+Group:          System/Management
+Requires:       %{name} = %{version}
+Requires:       mcp-gateway-exec-server
+Recommends:     %{name}-cockpit = %{version}
+Recommends:     %{name}-selinux = %{version}
+
+%description diagnostics
+The bundled health-check and diagnostics install, which the installer
+offers as an opt-in choice: custos-setup, which the installer runs to
+make the host diagnostics-only (only the diagnostics task category is
+usable until an administrator enables more with agent-admin enable),
+set the model, create the agent health-check from its template, and
+install the diagnostic playbooks' commands for mcp-gateway's exec
+server. The playbooks and the template are in custos.
+
 %package docs
 Summary:        User guide of custos, also for mcp-docs
 Group:          Documentation/Other
@@ -225,6 +242,9 @@ done
 %{_datadir}/custos/openshell
 %{_datadir}/custos/playbooks
 %{_datadir}/custos/templates
+
+%files diagnostics
+%{_sbindir}/custos-setup
 
 %files docs
 %dir %{_datadir}/custos

@@ -876,6 +876,44 @@ check "every category enabled decides as the broader install: $all" eventually 3
 cp "$work/dg.yaml" "$dgdata"
 check "agent-admin delete dg" agent-admin delete dg
 
+section "custos-setup (the bundled diagnostics install)"
+# CONTRACT.md §17a: what the installer runs on a fresh host. The host is
+# fresh again here: every test agent is gone, and so is the enablement
+# state.
+if command -v custos-setup >/dev/null; then
+	agent-admin delete health-check >/dev/null 2>&1
+	printf 'sk-test-key\n' >"$work/model-key"
+	setup() { custos-setup --diagnostics-only --backend on-host --model fake --endpoint http://127.0.0.1:8008/v1 --credential-file "$work/model-key"; }
+	check "custos-setup without --diagnostics-only writes nothing" bash -c \
+		"custos-setup --backend on-host --model fake | grep -q 'nothing to set up' && ! test -e /etc/mcp-gateway/policy/agents/_enablement.yaml"
+	check "custos-setup refuses a backend that is not one of the four" not custos-setup --diagnostics-only --backend cloud --model fake
+	setup_once() { setup >"$work/setup.out"; }
+	check "custos-setup --diagnostics-only --backend on-host" setup_once
+	sed 's/^/  /' "$work/setup.out"
+	check "the host is diagnostics-only, by custos-setup" enablement_is '.state == "diagnostics-only" and (.changed_by | startswith("custos-setup "))'
+	check "the model defaults are the backend's" bash -c "agent-admin defaults | jq -e '.model | .provider == \"openai\" and .name == \"fake\" and .credential == \"model-key\"' >/dev/null"
+	check "health-check: supervised, read-only in diagnostics" bash -c \
+		"agent-admin show health-check | jq -e '.agents[\"health-check\"] | .mode == \"supervised\" and all(.permissions[]; .read_only == true and .category == \"diagnostics\")' >/dev/null"
+	check "its key is stored, root's alone" stat_is /etc/credstore.encrypted/agent-health-check.model-key root:root:600
+	check "health-check starts with it and answers" eventually 30 bash -c "$(declare -f api); api health-check /v1/status | jq -e '.contract == 1' >/dev/null"
+	if [ -d /etc/mcp-gateway/exec.d ]; then
+		check "the playbooks' exec commands are installed" test -f /etc/mcp-gateway/exec.d/exec.d-diagnostics.yaml -a -f /etc/mcp-gateway/exec.d/exec.d-disk-usage.yaml
+	else
+		skip "the playbooks' exec commands are installed (no mcp-gateway-exec-server)"
+	fi
+	setup_again() {
+		local out
+		out=$(setup) && grep -q 'diagnostics-only: already' <<<"$out" && grep -q 'agent health-check: already' <<<"$out" &&
+			grep -q 'model defaults: already' <<<"$out"
+	}
+	check "custos-setup again changes nothing but the key" setup_again
+	agent-admin delete health-check >/dev/null 2>&1
+	agent-admin defaults --clear >/dev/null 2>&1
+	rm -f /etc/mcp-gateway/policy/agents/_enablement.yaml /etc/mcp-gateway/exec.d/exec.d-diagnostics.yaml /etc/mcp-gateway/exec.d/exec.d-disk-usage.yaml
+else
+	skip "custos-setup (custos-diagnostics is not installed)"
+fi
+
 rm -f /etc/mcp-gateway/servers.d/custos-test.yaml /etc/mcp-gateway/servers.d/agents.yaml
 systemctl stop custos-fakemodel.service >/dev/null 2>&1
 

@@ -57,7 +57,7 @@ for f in "$dir"/rpms/mcp-gateway-exec-server-*.rpm; do
 	[ -f "$f" ] && { rpm -Uvh --nodeps "$f" || die "installing mcp-gateway-exec-server failed"; }
 done
 zypper -n --no-remote --no-refresh in --no-recommends --allow-unsigned-rpm \
-	"$dir"/rpms/custos-[0-9]*.rpm "$dir"/rpms/custos-selinux-*.rpm "$dir"/rpms/custos-tests-*.rpm \
+	"$dir"/rpms/custos-[0-9]*.rpm "$dir"/rpms/custos-selinux-*.rpm "$dir"/rpms/custos-tests-*.rpm "$dir"/rpms/custos-diagnostics-*.rpm \
 	>/tmp/zypper-custos.log 2>&1 ||
 	{ tail -n 30 /tmp/zypper-custos.log; die "installing custos failed"; }
 semodule -l | grep -qx custos || die "the custos SELinux module is not loaded"

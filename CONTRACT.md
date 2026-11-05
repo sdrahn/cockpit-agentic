@@ -2,7 +2,7 @@
 
 Status: draft 1 (contract version `1`); §6a is a draft 2 design, partly
 implemented (O11); §4a, §6b, §14c and §17a are a design for the bundled
-diagnostics install, of which §4a, §6b and §14c are implemented (O16). The project was named
+diagnostics install, implemented (O16). The project was named
 cockpit-agentic until before its first release; the names and paths
 below are Custos's (`custos`, `/etc/custos`, …) and are the ones contract
 version 1 keeps.
@@ -902,6 +902,7 @@ aggregation, policy distribution and approvals across hosts) is parked
 | `/usr/libexec/custos/agent-launcher` | root 0755 | the host: one ADK agent per process |
 | `/usr/libexec/custos/agent-delegate` | root 0755 | the gateway's `agents` server (§9) |
 | `/usr/sbin/agent-admin` (and a link in the libexec directory) | root 0755 | administration (§17) |
+| `/usr/sbin/custos-setup` | root 0755 | the bundled diagnostics install's setup (§17a; package `custos-diagnostics`) |
 | `/usr/lib/systemd/system/agent@.{service,socket}`, `agent-schedule@.{service,timer}` | root 0644 | unit templates |
 | `/usr/share/mcp-gateway/policy/custos/agents.rego` | root 0644 | the autonomy modes (§6) |
 | `/usr/share/custos/gateway/servers.d/agents.yaml` | root 0644 | the `agents` server definition; copy to `/etc/mcp-gateway/servers.d/` to allow delegation |
@@ -1191,7 +1192,7 @@ standard error:
 
 ## 17a. `custos-setup` (draft, O16)
 
-The installer's interface for the bundled diagnostics install. The
+*Draft, implemented (O16).* The installer's interface for the bundled diagnostics install. The
 installer itself (the choice, not selected by default, and the backends
 in order) is the installer team's (§20b); it runs, as root, after the
 packages are installed:
@@ -1202,14 +1203,31 @@ custos-setup --diagnostics-only --backend on-host|local-network|customer-cloud|v
              [--credential-file FILE]
 ```
 
-It is non-interactive and idempotent: it sets the model defaults (§14b),
-stores the credential if given, creates the `health-check` agent from
-its template (§14a) with the `diagnostics` permissions, writes the state
-`diagnostics-only` (§6b) with its record (by `custos-setup`), and
-enables the agent's schedule. Its exit status and one line per step tell
-the installer what happened. Without `--diagnostics-only` nothing is
-written: the broader install has all categories, and no agent until an
-administrator creates one.
+It is non-interactive and idempotent. In this order, each step printed
+on standard output as `custos-setup: <step>: done|already|skipped
+(<why>)`:
+
+1. it writes the state `diagnostics-only` (§6b) with its record (by
+   `custos-setup`) on a fresh host, and refuses a host with an agent
+   that has a permission outside `diagnostics`, writing nothing; on a host
+   whose administrator has enabled more since, it goes back on nothing;
+2. it sets the model defaults (§14b), with `credential: model-key` when
+   a key is given;
+3. it creates the agent `health-check` from its template (§14a), which
+   takes the defaults' model; one that exists keeps its configuration;
+4. it stores the key from `FILE` (never from the command line) as the
+   agent's `model-key` and restarts the agent if it runs; again, a new key
+   replaces the old one;
+5. it copies the playbooks' commands (`exec.d-diagnostics.yaml`,
+   `exec.d-disk-usage.yaml`, §14c) into `/etc/mcp-gateway/exec.d/` where
+   the exec server is installed, keeping a file of the same name that
+   differs.
+
+The agent's socket and schedule timers are enabled by its creation.
+Exit status 0: set up; 1: not (the reason on standard error); 2: wrong
+arguments. Without `--diagnostics-only` nothing is written: the broader
+install has all categories, and no agent until an administrator creates
+one.
 
 The agent is supervised: its permissions are read-only and need no
 approval, and a category enabled later starts supervised for it as for
@@ -1219,7 +1237,20 @@ The four backends, in the documented order (§14, user guide chapter 14):
 `on-host` (a model server on this host), `local-network` (one on the
 local network), `customer-cloud` (the customer's own cloud account) and
 `vendor` (a vendor-hosted service). `on-host` and `local-network` are
-`provider: openai` with the server's endpoint.
+`provider: openai` with the server's endpoint (`on-host`'s default
+`http://127.0.0.1:8000/v1`, `local-network`'s required);
+`customer-cloud` needs `--provider` (`vertex`, or `openai` with the
+endpoint of a server in the account); `vendor` is `gemini` unless
+`--provider` says otherwise, and needs `--credential-file`.
+
+An installer profile runs it after the packages, for example as an
+Agama post-installation script, with the choices the installer asked
+for:
+
+```bash
+custos-setup --diagnostics-only --backend local-network \
+  --endpoint http://ai.example.com:8000/v1 --model qwen3-32b --credential-file /run/agama/custos-model-key
+```
 
 ## 18. SELinux (`custos` module)
 
@@ -1259,9 +1290,11 @@ in `/usr/share/custos/docs`, with the collection file
 `/usr/share/mcp-docs/collections.d/custos.yaml`, so that mcp-docs serves
 them as the collection `custos`).
 
-Planned with O16: `custos-diagnostics`, the bundled install the
-installer selects: the playbooks, the `health-check` template and
-`custos-setup` (§17a).
+`custos-diagnostics` is the bundled diagnostics install the installer
+selects (O16): `custos-setup` (§17a), requiring `custos` (whose are the
+playbooks and the `health-check` template, used by the broader install
+too) and `mcp-gateway-exec-server`, recommending `custos-cockpit` and
+`custos-selinux`.
 
 ---
 
@@ -1321,14 +1354,14 @@ inherited, not specified again.
 
 | Requirement | Contract | State in this repository |
 |---|---|---|
-| Opt-in choice at deployment, not selected by default, the four backends in the documented order | §17a | the installer screen is the installer team's (*outside*); `custos-setup` as its interface: open (O16) |
+| Opt-in choice at deployment, not selected by default, the four backends in the documented order | §17a, §19 | the installer screen is the installer team's (*outside*); its interface done: the package `custos-diagnostics` to select, and `custos-setup` with the four backends in that order |
 | A "diagnostics-only" enablement state in which only `diagnostics` is usable, enforced by the runtime, not by files an administrator edits | §6b | done: the gateway denies and hides disabled categories (tested with OPA and on the gateway); `agent-admin` refuses to load them; a state changed by hand is reported; sealing open (O16) |
 | Release-gate test: other categories refused in diagnostics-only | §6b, §19 | done: the functional tests' section "Diagnostics-only (release gate)", on every VM run and in the air-gapped gate |
 | Attempts to use a disabled category recorded | §6b, §10 | done: the gateway's audit (calls), `category.refused` (loading) |
 | Enabling more categories: one documented, authenticated, logged action; the result identical to a broader install with them | §6b, §17 | done: `agent-admin enable`, `categories.enabled`; the gate compares the gateway's decisions with a host without enablement state |
 | Enabled categories start supervised | §6a, §6b | done (§6a); nothing new needed |
 | The diagnostics history as trust evidence for promotion | §4a, §6b | done: `agent-admin readiness` and the Cockpit readiness view show the reports, their verified quotes and root's feedback on them; shown, not thresholds |
-| The bundled health-check and diagnostics agent | §14a, §20b | the template `health-check`: every playbook's tools, read-only in `diagnostics`, supervised, with daily and weekly playbook schedules; created on a diagnostics-only host in the release gate. Its install by `custos-setup` open (O16) |
+| The bundled health-check and diagnostics agent | §14a, §17a, §20b | done: the template `health-check` (every playbook's tools, read-only in `diagnostics`, supervised, with daily and weekly playbook schedules), which `custos-setup` creates; both tested on a diagnostics-only host in the functional tests |
 | Diagnostics: read host state, logs and metrics; correlate and summarize; root-cause hypotheses; written remediation plans for the administrator | §4a, §6b | done: the `diagnostics` category (read-only), the playbooks, and the report with findings, hypotheses and a plan |
 | The published diagnostic playbook set | §14c | done: eleven playbooks and their read-only `exec` commands; an activity or a schedule runs one, refused when the gateway does not offer a step's tool |
 | Confidence indicator | §4a | done: in Cockpit, each hypothesis shows the agent's confidence, labelled as its own estimate, next to how many of its quotes the host verified |
@@ -1467,9 +1500,8 @@ inherited, not specified again.
   report with host-verified evidence (§4a) and `agent-admin feedback`;
   the Cockpit report view with confidence, provenance and feedback, and
   running a playbook from an agent's view; the diagnostics evidence in
-  readiness (§6b). Next: `custos-setup` and the `custos-diagnostics`
-  package. Open
-  beyond that: sealing the enablement state against root (the TPM, say);
+  readiness (§6b); `custos-setup` and the package `custos-diagnostics`
+  (§17a), tested on a fresh host in the functional tests. Open: sealing the enablement state against root (the TPM, say);
   going back to `diagnostics-only`; whether some diagnostics evidence
   should become a readiness threshold; and a reason in the gateway's
   audit for a denial ("category not enabled"), which needs mcp-gateway.

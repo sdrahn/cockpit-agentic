@@ -33,6 +33,7 @@ nothing from the internet: Custos works air-gapped.
 | `custos-selinux` | the SELinux module `custos` | where SELinux runs (pulled in automatically with `selinux-policy-targeted`) |
 | `custos-cockpit` | the Cockpit page *Custos* (`/usr/share/cockpit/custos`) | on hosts people supervise through Cockpit |
 | `custos-docs` | this guide and the contract, with a collection file for mcp-docs | where people or agents read the documentation on the host (pulled in automatically where `custos` and `mcp-docs` are both installed) |
+| `custos-diagnostics` | `custos-setup`, the bundled health-check and diagnostics install ([below](#diagnostics)) | when you choose the diagnostics-only install; the installer offers it |
 | `custos-tests` | the functional tests (openQA) | test systems only: they change the system for good |
 
 `custos` requires `mcp-gateway`. `custos-cockpit` requires `custos` of
@@ -75,6 +76,48 @@ categories and templates), `/var/lib/agents` and `/run/agents`. They install the
 policy engine loads together with the gateway's own policy, and the
 files `/etc/mcp-gateway/policy/agents/_control.yaml` (the emergency
 stop, off) and `_http.yaml` (no token issuers for agents).
+
+## The bundled diagnostics install {#diagnostics}
+
+The installer offers a health-check and diagnostics agent as an opt-in
+choice. It installs `custos-diagnostics` and runs `custos-setup`, which
+you can also run yourself on a freshly installed host:
+
+```bash
+zypper install custos-diagnostics
+read -rs KEY && printf '%s' "$KEY" >/root/model-key; unset KEY     # if the model needs a key
+custos-setup --diagnostics-only --backend local-network \
+  --endpoint http://ai.example.com:8000/v1 --model qwen3-32b --credential-file /root/model-key
+shred -u /root/model-key
+```
+
+`--backend` is where the model runs, in this order of preference
+([chapter 14](14-network.md#inference)):
+
+| Backend | Means | Needs |
+|---|---|---|
+| `on-host` | a model server on this host (OpenAI-compatible) | `--endpoint` if not `http://127.0.0.1:8000/v1` |
+| `local-network` | a model server on your network (OpenAI-compatible) | `--endpoint` |
+| `customer-cloud` | your own cloud account | `--provider vertex`, or `--provider openai` with `--endpoint` |
+| `vendor` | a vendor-hosted service | `--credential-file`; `--provider gemini` by default |
+
+It then:
+
+1. makes the host **diagnostics-only**: only the read-only
+   `diagnostics` category is usable until you enable more
+   ([chapter 6](06-permissions-and-modes.md#diagnostics-only));
+2. sets the model defaults;
+3. creates the agent `health-check` from its template
+   ([chapter 9](09-administration.md#templates)): it runs the diagnostic
+   playbooks daily and weekly, and you run any of them from Cockpit;
+4. stores the key as the agent's `model-key`;
+5. copies the playbooks' commands to `/etc/mcp-gateway/exec.d/`.
+
+Each step prints `done`, `already` or `skipped` with why: running it
+again changes only what differs, and never goes back to diagnostics-only
+once you enabled more. It refuses a host that already has agents with
+other permissions, writing nothing. Without `--diagnostics-only` it does
+nothing: the full install needs no setup.
 
 ## SELinux {#selinux}
 
