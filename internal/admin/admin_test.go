@@ -147,6 +147,7 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if s := read(GatewayStop); !strings.Contains(s, "stopped: false") || !strings.Contains(s, `by: "bob"`) {
 		t.Errorf("after release-all: %q", s)
 	}
+	os.MkdirAll(a.p(filepath.Join(SocketDir, "patch-pilot")), 0o755)
 	if err := a.Delete("patch-pilot", false); err != nil {
 		t.Fatal(err)
 	}
@@ -155,6 +156,9 @@ func TestCreateModePauseDelete(t *testing.T) {
 	}
 	if _, err := os.Stat(a.p("/etc/mcp-gateway/policy/agents/patch-pilot.yaml")); !os.IsNotExist(err) {
 		t.Error("gateway data stays")
+	}
+	if _, err := os.Stat(a.p(filepath.Join(SocketDir, "patch-pilot"))); !os.IsNotExist(err) {
+		t.Error("socket directory stays: the Cockpit page would list the agent")
 	}
 }
 

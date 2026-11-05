@@ -80,7 +80,8 @@
     const today = () => WEEK[new Date().getUTCDay()];
     const otherDay = () => WEEK[(new Date().getUTCDay() + 3) % 7];
     // The gateway data (agent-admin show): old-agent has data but no
-    // socket (stopped).
+    // socket (stopped). gone-agent has neither, only its directory in
+    // /run/agents (deleted).
     let posture = {
         agents: {
             "patch-pilot": { mode: "supervised", paused: false, permissions: [
@@ -175,7 +176,7 @@
         if (name === "hung") return Object.assign(new Promise(() => {}), { close() { log.push(["close", "hung", path, "", ""]); } });
         if (name === "disk-watch") return fail(0, "access-denied");
         // Stopped: systemd removed the socket file and kept the directory.
-        if (name === "old-agent" || name === "sandboxed") return fail(0, "not-found");
+        if (name === "old-agent" || name === "sandboxed" || name === "gone-agent") return fail(0, "not-found");
         if (method === "GET" && path === "/v1/status") return ok(status(name));
         if (method === "GET" && path === "/v1/activities") return ok({ activities: activities[name] });
         const cancel = path.match(/^\/v1\/activities\/([^/]+)\/cancel$/);
@@ -402,7 +403,7 @@
                 if (args[1] === "enable" || args[1] === "disable") enabled[args[args.length - 1]] = args[1] === "enable";
                 return Promise.resolve("");
             }
-            if (args[0] === "ls") return Promise.resolve("disk-watch\n" + (query.has("hang") ? "hung\n" : "") + "old-agent\npatch-pilot\nsandboxed\ntriage\nnot_an_agent\n");
+            if (args[0] === "ls") return Promise.resolve("disk-watch\n" + (query.has("hang") ? "hung\n" : "") + "gone-agent\nold-agent\npatch-pilot\nsandboxed\ntriage\nnot_an_agent\n");
             // A stopped agent's backend, from its socket unit: sandboxed's
             // OpenShell socket is enabled.
             if (args[0] === "systemctl" && args[1] === "show") return Promise.resolve(args.includes("agent-openshell@sandboxed.socket") ? "enabled\n" : "disabled\n");

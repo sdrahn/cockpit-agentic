@@ -267,8 +267,14 @@ const state = { agents: [], activities: [], posture: null, user: null };
 
 async function refreshState() {
     const [agents, posture] = await Promise.all([listAgents(), loadPosture()]);
-    // Agents with gateway data but no socket (stopped) are agents too.
+    // Agents with gateway data but no socket (stopped) are agents too. A
+    // directory without a socket and without gateway data is what a
+    // deleted agent left behind (agent-admin delete before 0.2.1 kept
+    // it until reboot): not an agent.
     if (posture) {
+        for (let i = agents.length - 1; i >= 0; i--) {
+            if (agents[i].stopped && !posture.agents[agents[i].name]) agents.splice(i, 1);
+        }
         for (const name of Object.keys(posture.agents)) {
             if (!agents.some(a => a.name === name)) agents.push({ name, error: "not running", stopped: true });
         }
