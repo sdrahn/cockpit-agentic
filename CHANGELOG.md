@@ -87,6 +87,11 @@ removed.
   page waited for it, skipping every refresh. A read of an agent's or
   the gateway's API now gives up after 8 seconds, and the agent is
   listed as not answering, pointing to its logs.
+- The demotion evaluator and the review counted records from the whole
+  second of a promotion, so a proposal declined in the same second just
+  before it counted against the new promotion, which could be demoted
+  at once for its override rate. `promoted_by` and `demoted_by` keep
+  the time to the fraction of the second.
 - An agent whose model credential was stored on a host with a TPM2 did
   not start (`Failed to set up credentials: Protocol error`,
   `243/CREDENTIALS`): `systemd-creds encrypt` seals the secret to the

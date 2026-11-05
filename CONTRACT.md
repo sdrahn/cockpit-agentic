@@ -291,9 +291,13 @@ field, §6):
     patch-errata:
       mode: bounded
       envelope: {…}           # below
-      promoted_by: "alice 2026-12-01T09:00:00Z"
+      promoted_by: "alice 2026-12-01T09:00:00.123456789Z"
       promotion: p-3f9c…      # the promotion record's id (§10)
 ```
+
+`promoted_by` and `demoted_by` are the person (or `custos-demote`) and
+the time, in RFC 3339 UTC with the fraction of the second: what the
+category did after its promotion is what counts for it (below).
 
 A permission's effective mode is its category's `mode` when the
 category has an entry (`supervised` or `bounded`), otherwise

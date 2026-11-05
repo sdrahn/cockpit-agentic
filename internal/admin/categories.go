@@ -251,7 +251,10 @@ func (a *Admin) Promote(name, cat, by string, p Promotion) error {
 	if len(id) > 18 {
 		id = id[:18]
 	}
-	now := a.Now().UTC().Format(time.RFC3339)
+	// To the nanosecond: the review and the evaluator count the records
+	// after it (journal timestamps are microseconds), and a decline in the
+	// same second just before the promotion must not count against it.
+	now := a.Now().UTC().Format(time.RFC3339Nano)
 	if d.Categories == nil {
 		d.Categories = map[string]*CategoryState{}
 	}
@@ -286,7 +289,7 @@ func (a *Admin) Demote(name, cat, by, reason string) error {
 		return fmt.Errorf("agent %s: category %s is not promoted", name, cat)
 	}
 	c.Mode = "supervised"
-	c.DemotedBy = by + " " + a.Now().UTC().Format(time.RFC3339)
+	c.DemotedBy = by + " " + a.Now().UTC().Format(time.RFC3339Nano)
 	if err := a.writeGateway(name, d); err != nil {
 		return err
 	}
