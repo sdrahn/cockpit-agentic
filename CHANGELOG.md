@@ -7,6 +7,44 @@ removed.
 
 ## Unreleased
 
+## v0.2.0 — 2026-11-05
+
+Autonomy per task category, and agent templates. An agent's autonomy is
+promoted per kind of work (patching, service restarts, …) within time
+windows the gateway enforces, once the journal shows approvers rarely
+override it; a demotion evaluator takes it back when the override rate
+or a rollback condition says so, and approvers review what a promoted
+category did. Seven templates give agents that look after one system a
+start, transactional systems included (mcp-server-tukit), with model
+defaults for new agents; the Cockpit page creates agents from them.
+Fixes from testing 0.1.1: model credentials work with SELinux enforcing
+and on hosts with a TPM, and the Cockpit page shows why an action failed
+instead of hanging.
+
+Upgrading from 0.1.x needs no change to configurations or gateway data:
+contract version 1 only gained names. To know:
+
+- Running agents keep the old launcher and unit until they next start
+  (idle exit, or `systemctl restart agent@NAME.service`). OpenShell
+  agents: rebuild the agent image, then set each agent's gateway
+  credential again to move its sandbox to it (user guide, chapter 11).
+- Remove the workarounds for 0.1.x if you used them: the drop-in
+  `/etc/systemd/system/agent@NAME.service.d/60-tpm.conf` and the local
+  SELinux module `custos-credentials` (`semodule -r custos-credentials`).
+- Credentials stored by 0.1.x are readable by everyone (still
+  encrypted): `chmod 0600 /etc/credstore.encrypted/agent-*`.
+- `agent-admin edit` and `release-all` now leave a schedule or an agent
+  you disabled as it is.
+- Nothing is promoted on its own: every category stays supervised until
+  `agent-admin promote`, which also enables `custos-demote.timer`.
+
+Known limits: approvers are not told of an automatic demotion; a review
+verdict needs root (or Cockpit's administrative access), not a gateway
+approver; an envelope's `rate`, `hosts` and `blast_radius` are refused
+until something enforces them (mcp-gateway, the fleet); the templates
+are checked against the servers' tool definitions, not yet run against
+the servers themselves.
+
 ### Added
 
 - User guide, chapter 14: where inference runs, in the order on-premises,
