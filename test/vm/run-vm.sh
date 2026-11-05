@@ -15,7 +15,14 @@
 #              Cockpit page in a real Cockpit (test/cockpit/vm-setup.sh in
 #              the VM, then test/cockpit/vm-test.js here, with node and
 #              playwright-core; Cockpit's port 9090 is forwarded to
-#              127.0.0.1:19090; SHOTS=DIR saves the page's screenshots)
+#              127.0.0.1:19090; SHOTS=DIR saves the page's screenshots);
+#              airgap: the air-gapped release gate (CONTRACT.md O15): the
+#              first boot installs the dependencies, the second has no
+#              network (QEMU's restrict=on: only the forwarded ssh) and
+#              installs the packages, Ollama and the model from the
+#              offline mirror MIRROR (test/airgap/mirror.sh), then runs
+#              the functional tests with --model against it
+#   MIRROR     airgap: the offline mirror's directory
 #   IMAGE_URL  cloud image (default: openSUSE Tumbleweed Minimal-VM, Cloud)
 #   WORK       working directory (default: a new temporary directory); the
 #              serial console log, test output and results (TAP, JUnit)
@@ -105,13 +112,19 @@ ssh_opts=(-i "$work/key" -p "$port" -o StrictHostKeyChecking=no -o UserKnownHost
 	-o LogLevel=ERROR -o ConnectTimeout=5 -o ServerAliveInterval=15)
 vm() { ssh "${ssh_opts[@]}" root@127.0.0.1 "$@"; }
 
-log "booting the VM"
-qemu-system-x86_64 -enable-kvm -cpu host -smp 2 -m 4096 \
-	-drive file="$work/disk.qcow2",if=virtio \
-	-drive file="$work/seed.img",if=virtio,format=raw \
-	-nic user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:$port-:22,hostfwd=tcp:127.0.0.1:19090-:9090 \
-	-display none -serial file:"$work/console.log" \
-	-pidfile "$work/qemu.pid" -daemonize
+# boot [restrict]: starts the VM; with restrict, it has no network but
+# the forwarded ports (QEMU user networking's restrict=on).
+boot() {
+	local restrict=${1:+,restrict=on}
+	log "booting the VM${1:+ without network}"
+	qemu-system-x86_64 -enable-kvm -cpu host -smp 2 -m 4096 \
+		-drive file="$work/disk.qcow2",if=virtio \
+		-drive file="$work/seed.img",if=virtio,format=raw \
+		-nic user,model=virtio-net-pci$restrict,hostfwd=tcp:127.0.0.1:$port-:22,hostfwd=tcp:127.0.0.1:19090-:9090 \
+		-display none -serial file:"$work/console.log" \
+		-pidfile "$work/qemu.pid" -daemonize
+}
+boot
 trap 'kill "$(cat "$work/qemu.pid" 2>/dev/null)" 2>/dev/null || true' EXIT
 
 wait_ssh() {
@@ -151,11 +164,52 @@ scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFi
 scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
 	"$rpms"/*.rpm root@127.0.0.1:/root/custos-vm/rpms/
 
+args="--disposable --results /root/custos-vm/results"
+if [ "${SUITE:-functional}" = airgap ]; then
+	[ -n "${MIRROR:-}" ] && [ -f "$MIRROR/ollama.tar" ] && [ -f "$MIRROR/models.tar" ] ||
+		{ echo "SUITE=airgap needs MIRROR with ollama.tar and models.tar (test/airgap/mirror.sh)" >&2; exit 1; }
+	log "first boot: the dependencies, with network"
+	vm 'bash /root/custos-vm/prepare.sh /root/custos-vm deps' 2>&1 | tee "$work/prepare.log"
+	[ "${PIPESTATUS[0]}" = 0 ] || exit 1
+	log "the offline mirror and the gate's setup"
+	vm 'mkdir -p /root/custos-vm/mirror'
+	scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+		"$here/../airgap/versions" "$here/../airgap/vm-setup.sh" root@127.0.0.1:/root/custos-vm/
+	scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+		"$MIRROR/ollama.tar" "$MIRROR/models.tar" root@127.0.0.1:/root/custos-vm/mirror/
+	vm 'systemctl poweroff' || true
+	for _ in $(seq 60); do kill -0 "$(cat "$work/qemu.pid")" 2>/dev/null || break; sleep 2; done
+	boot restrict
+	wait_ssh
+	vm 'bash /root/custos-vm/vm-setup.sh /root/custos-vm' 2>&1 | tee "$work/airgap-setup.log"
+	if [ "${PIPESTATUS[0]}" != 0 ]; then
+		log "setting up the air-gapped system failed"
+		exit 1
+	fi
+	model=$(. "$here/../airgap/versions" && echo "$MODEL")
+	log "running the tests, without network, with $model"
+	set +e
+	vm "/usr/libexec/custos/tests/run-tests.sh $args --model http://127.0.0.1:11434/v1 '$model'" 2>&1 | tee "$work/test.log"
+	status=${PIPESTATUS[0]}
+	set -e
+	# What tried to leave the host: an agent's attempt fails the gate.
+	vm "journalctl -k -b --no-pager -o short-precise | grep 'custos-egress' || true" >"$work/egress.txt" 2>&1
+	if grep -q 'custos-egress agent:' "$work/egress.txt"; then
+		log "an agent tried to reach a host outside (egress.txt):"
+		grep 'custos-egress agent:' "$work/egress.txt" | head -20
+		status=1
+	fi
+	log "other processes' attempts to leave the host: $(grep -c 'custos-egress other:' "$work/egress.txt" || true) (egress.txt)"
+	scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+		root@127.0.0.1:/root/custos-vm/results/results.tap root@127.0.0.1:/root/custos-vm/results/results.xml \
+		root@127.0.0.1:/root/custos-vm/results/avc.txt root@127.0.0.1:/root/custos-vm/results/journal.txt "$work/" || true
+	log "tests exited with $status"
+	exit "$status"
+fi
 log "installing the packages"
 vm 'bash /root/custos-vm/prepare.sh /root/custos-vm' 2>&1 | tee "$work/prepare.log"
 [ "${PIPESTATUS[0]}" = 0 ] || exit 1
 log "running the tests"
-args="--disposable --results /root/custos-vm/results"
 set +e
 if [ "${SUITE:-functional}" = openshell ]; then
 	vm 'mkdir -p /root/custos-vm/src/test/openshell'

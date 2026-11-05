@@ -989,7 +989,7 @@ the product and release process, tracked here so that nothing is lost.
 | Integration with SLES identity, RBAC, audit, configuration management | §2, §10 | identity, RBAC, audit done per host; configuration management parked with the fleet (O13) |
 | Multiple inference backends, ordered on-premises → customer's cloud → vendor SaaS | §14 | `openai` (any OpenAI-compatible server: on-premises, or the customer's cloud) and `gemini`/`vertex` supported; the ladder in that order in the user guide and the field briefing open (O15) |
 | Zero required egress; each egress flow documented and disable-able | §14, §16a | agents need only the model and the gateway; the full list of flows open (O15) |
-| Air-gapped as a release-gate test | §19 | CI runs without a model service (scripted model); a gate with a real local model and no network open (O15) |
+| Air-gapped as a release-gate test | §19 | CI runs with a scripted model; on release branches the air-gapped gate (CI job `airgap`, `test/airgap`) installs the packages, Ollama and a tested open-weight model (`test/airgap/versions`) from an offline mirror in a VM without network, and runs the functional tests with an agent on that model |
 | Signed distro component, updated through the errata pipeline | §19 | OBS packaging done; signing and errata *outside* |
 | Model serving runtime, model artifacts through errata and offline mirrors | — | *outside* |
 | Tested open-weight models (2 or 3) with model cards, validation evidence, deprecation policy | — | *outside*; the validation suite to run them against is O15 |

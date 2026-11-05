@@ -106,7 +106,9 @@ To release X.Y.0:
 3. `tools/check-release vX.Y.Z` checks that the spec, the first
    `CHANGELOG.md` section and `_service` name the release, and that the
    tree holds sources only (`tools/check-tree`, which CI runs on every
-   change). Push the branch; a maintainer then tags and pushes the tag: `git tag -a vX.Y.Z -m "Custos X.Y.Z"`,
+   change). Push the branch; CI runs on it, including the air-gapped
+   gate (job `airgap`: the packages and a local model from an offline
+   mirror, without network), which must pass. A maintainer then tags and pushes the tag: `git tag -a vX.Y.Z -m "Custos X.Y.Z"`,
    `git push origin release-X.Y vX.Y.Z`. The Release workflow runs the
    same check before it builds anything. After publishing, it downloads
    the files again and checks them against `SHA256SUMS` and `git

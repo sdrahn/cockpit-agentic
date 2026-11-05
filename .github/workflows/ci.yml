@@ -226,6 +226,80 @@ jobs:
             grep -E '^(FAIL|SKIP):' "$f" | sed 's/^/- /' || true
           } >>"$GITHUB_STEP_SUMMARY"
 
+  # The air-gapped release gate (CONTRACT.md O15): the packages, Ollama and
+  # a tested open-weight model (test/airgap/versions) from an offline
+  # mirror, in a Leap 16 VM without network, then the functional tests
+  # with an agent on that model. On release branches only (a release
+  # must pass it before it is tagged), and on branches that change the
+  # gate (their name contains "airgap").
+  airgap:
+    needs: [opensuse]
+    if: startsWith(github.ref, 'refs/heads/release-') || contains(github.head_ref, 'airgap')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: open-policy-agent/setup-opa@v2
+        with:
+          version: latest
+          static: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: rpms-leap16
+          path: rpms
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install QEMU
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils
+      - name: Image cache key
+        id: image
+        run: echo "week=$(date -u +%G-%V)" >>"$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vm/base.qcow2
+          key: vm-image-leap16-${{ steps.image.outputs.week }}
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/mirror
+          key: airgap-mirror-${{ hashFiles('test/airgap/versions') }}
+      - name: The offline mirror (Ollama and the model)
+        run: test/airgap/mirror.sh "$RUNNER_TEMP/mirror"
+      - name: The air-gapped gate (openSUSE Leap 16.0, no network, SELinux enforcing)
+        env:
+          WORK: ${{ runner.temp }}/vm
+          SUITE: airgap
+          MIRROR: ${{ runner.temp }}/mirror
+        run: test/vm/run-vm.sh rpms "$(command -v opa)"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: airgap-logs-leap16
+          path: |
+            ${{ runner.temp }}/vm/console.log
+            ${{ runner.temp }}/vm/prepare.log
+            ${{ runner.temp }}/vm/airgap-setup.log
+            ${{ runner.temp }}/vm/test.log
+            ${{ runner.temp }}/vm/egress.txt
+            ${{ runner.temp }}/vm/results.tap
+            ${{ runner.temp }}/vm/results.xml
+            ${{ runner.temp }}/vm/avc.txt
+            ${{ runner.temp }}/vm/journal.txt
+          if-no-files-found: ignore
+      - if: always()
+        name: Test summary
+        run: |
+          f="$RUNNER_TEMP/vm/test.log"
+          [ -f "$f" ] || exit 0
+          {
+            echo '### Air-gapped gate (Leap 16.0, no network, SELinux enforcing)'
+            tail -1 "$f"
+            echo
+            grep -E '^(FAIL|SKIP):' "$f" | sed 's/^/- /' || true
+          } >>"$GITHUB_STEP_SUMMARY"
+
   # The OpenShell backend on Leap 16 as its RPM intends it: rootless
   # Podman, SELinux enforcing, the installed packages (open item O10).
   openshell-podman:

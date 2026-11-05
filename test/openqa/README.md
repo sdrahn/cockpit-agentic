@@ -26,6 +26,12 @@ zypper -n in custos-tests custos-selinux
 /usr/libexec/custos/tests/run-tests.sh --disposable --results /var/tmp/custos-tests
 ```
 
+With a model server on the system (or the local network), add
+`--model URL NAME`, such as `--model http://127.0.0.1:11434/v1
+qwen3:0.6b`: an agent on that real model then has to call a read-only
+tool and ask for a change, which the tests approve. On a system without
+network this is the air-gapped gate of a release (`test/airgap`).
+
 - **They change the system for good.** They create the agents `t1` and
   `t2` with their users, and the user `custos-tester`. They register
   the MCP servers `custos-test` and `agents` with the gateway, and
