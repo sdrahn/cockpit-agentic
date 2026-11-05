@@ -279,9 +279,18 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check((await page.textContent("#stopped")).includes("Paused agents stay paused"), "Release says what it does first");
     check((await spawned("agent-admin release-all")).length === 0, "nothing is released before the confirmation");
     await page.click("#stopped button:has-text('Release all agents')");
+    await page.waitForFunction(() => document.querySelector("#error").textContent.includes("Releasing all agents failed: the gateway's policy did not load"));
+    check(await page.isVisible("#stopped") && (await page.textContent("#stop-note")) === "",
+          "a refused release says why, and the agents stay stopped");
+    await page.waitForTimeout(5500); // a refresh keeps it
+    check((await page.textContent("#error")).includes("Releasing all agents failed"), "a refresh does not clear an action's error");
+    await page.click("#error button:has-text('Dismiss')");
+    check(!(await page.isVisible("#error")), "Dismiss clears it");
+    await page.click("#stopped button:has-text('Release…')");
+    await page.click("#stopped button:has-text('Release all agents')");
     await page.waitForSelector("#stopped", { state: "hidden" });
     const rel = await spawned("agent-admin release-all");
-    check(rel.length === 1 && rel[0][4] === "require" && rel[0][2] === "SUDO_USER=carol", "release-all names the person too");
+    check(rel.length === 2 && rel[0][4] === "require" && rel[0][2] === "SUDO_USER=carol", "release-all names the person too");
     check(!(await page.$eval("#stop-all", b => b.disabled)), "Stop all agents is back");
 
     // Chat: the person's own thread over AG-UI, as the person.

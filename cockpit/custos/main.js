@@ -13,9 +13,9 @@ async function refreshCurrent() {
     busy = true;
     try {
         await tab.refresh();
-        showError(null);
+        showRefreshError(null);
     } catch (ex) {
-        showError(ex && ex.userMessage ? ex.userMessage : String((ex && (ex.message || ex.problem)) || ex));
+        showRefreshError(ex && ex.userMessage ? ex.userMessage : String((ex && (ex.message || ex.problem)) || ex));
     } finally {
         busy = false;
     }
@@ -26,6 +26,7 @@ function show() {
     if (name !== current) {
         current = name;
         showError(null);
+        showRefreshError(null);
         for (const t of Object.keys(tabs)) {
             document.getElementById("tab-" + t).hidden = t !== name;
         }

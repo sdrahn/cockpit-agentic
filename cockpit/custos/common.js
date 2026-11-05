@@ -13,6 +13,15 @@ const AGENTS_DIR = "/run/agents";
 const GATEWAY_SOCKET = "/run/mcp-gateway/control.sock";
 const NAME_RE = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
+/* native makes a native promise of one of cockpit's (cockpit.spawn,
+ * cockpit.file). A handler that throws in a cockpit promise's then or catch
+ * does not reject the promise they return: the exception escapes as
+ * uncaught and the chain never settles. So a handler that may throw
+ * runs on native(…), never on cockpit's promise itself. */
+function native(p) {
+    return new Promise((resolve, reject) => p.then(resolve, reject));
+}
+
 /* cockpit.http rejects with the body beside the error (a second argument,
  * which await drops); keepBody keeps it as ex.body and, for the gateway's
  * JSON errors, its text as ex.message. With timeoutMs it gives up then. */
@@ -218,10 +227,30 @@ function describeGatewayFailure(ex) {
     return "Talking to mcp-gateway failed: " + ((ex && (ex.message || ex.problem)) || ex);
 }
 
-function showError(msg) {
+/* The error box shows two kinds: an action's failure (showError), which
+ * stays until the next action or Dismiss, and the periodic refresh's
+ * (showRefreshError), which the next good refresh clears. A refresh never
+ * clears an action's failure: it would vanish before anyone read it. */
+const errors = { action: null, refresh: null };
+
+function renderErrors() {
     const box = document.getElementById("error");
-    box.hidden = !msg;
-    box.textContent = msg || "";
+    box.hidden = !errors.action && !errors.refresh;
+    box.replaceChildren(
+        ...(errors.action ? [el("span", null, errors.action), " ",
+            el("button", { class: "link", onclick: () => showError(null) }, "Dismiss")] : []),
+        ...(errors.action && errors.refresh ? [el("br")] : []),
+        ...(errors.refresh ? [el("span", null, errors.refresh)] : []));
+}
+
+function showError(msg) {
+    errors.action = msg || null;
+    renderErrors();
+}
+
+function showRefreshError(msg) {
+    errors.refresh = msg || null;
+    renderErrors();
 }
 
 /* setTabCount shows n after a tab's name; none for 0. */
@@ -280,7 +309,7 @@ function admin(args, input) {
         environ: state.user ? ["SUDO_USER=" + state.user] : [],
     });
     if (input !== undefined) proc.input(input);
-    return proc.catch(ex => {
+    return native(proc).catch(ex => {
         throw new Error(ex && ex.problem === "access-denied"
             ? "This needs administrative access (turn it on in Cockpit's top bar)."
             : ((ex && ex.message) || String(ex)).replace(/^agent-admin: /, "").trim());
@@ -289,7 +318,7 @@ function admin(args, input) {
 
 /* systemctl runs systemctl through the root bridge. */
 function systemctl(...args) {
-    return cockpit.spawn(["systemctl", ...args], { superuser: "require", err: "message" }).catch(ex => {
+    return native(cockpit.spawn(["systemctl", ...args], { superuser: "require", err: "message" })).catch(ex => {
         throw new Error(ex && ex.problem === "access-denied"
             ? "This needs administrative access (turn it on in Cockpit's top bar)."
             : ((ex && ex.message) || String(ex)).trim());
