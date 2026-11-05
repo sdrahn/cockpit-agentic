@@ -284,7 +284,8 @@
                     if (model()) text = text.replace(/^model:\n(?:  .*\n)*/m, model());
                     return Promise.resolve(text);
                 }
-                if (cmd === "defaults" && args.length === 2) return Promise.resolve(JSON.stringify(defaults));
+                // Read with a delay, as a real spawn takes a moment.
+                if (cmd === "defaults" && args.length === 2) return new Promise(r => setTimeout(() => r(JSON.stringify(defaults)), 300));
                 // A configuration is valid with a version, its name and a model;
                 // check needs no root, changes need the root bridge.
                 const invalid = text => !/^version: 1$/m.test(text) ? "agent-admin: version: want 1"

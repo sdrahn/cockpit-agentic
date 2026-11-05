@@ -427,7 +427,11 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     // Model defaults for new agents (§14b), and the new agent's credential.
     await page.click("#create-agent button[name=cancel]");
     await page.click("#defaults-open");
+    check(await page.$eval("#model-defaults input[name=model]", e => e.disabled) &&
+          await page.$eval("#model-defaults button[name=save]", e => e.disabled),
+          "the fields wait for the current defaults (typing before would be overwritten)");
     await page.waitForFunction(() => document.querySelector("#defaults-note").textContent.includes("No defaults yet"));
+    check(!(await page.$eval("#model-defaults input[name=model]", e => e.disabled)), "then they can be filled");
     check((await spawned("agent-admin defaults")).every(c => c[4] === ""), "the defaults are read as the person");
     await page.selectOption("#model-defaults select[name=provider]", "gemini");
     check(!(await page.isVisible("#model-defaults input[name=endpoint]")), "no endpoint for gemini");
