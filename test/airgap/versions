@@ -7,4 +7,4 @@
 #                 checked)
 OLLAMA_VERSION=0.9.0
 MODEL=qwen3:0.6b
-MODEL_MANIFEST=
+MODEL_MANIFEST=7df6b6e09427a769808717c0a93cadc4ae99ed4eb8bf5ca557c90846becea435

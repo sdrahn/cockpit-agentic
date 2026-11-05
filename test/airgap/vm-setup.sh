@@ -23,6 +23,9 @@ if getent hosts download.opensuse.org >/dev/null 2>&1; then
 	log "  names resolve, but nothing answers"
 fi
 log "  nothing outside is reachable"
+# The rule names the agents' slice, which must exist when it is loaded
+# (it holds no agent yet): started here, it stays.
+systemctl start system-agent.slice
 nft -f - <<'NFT' && log "  egress logged (custos-egress)" || log "  egress not logged: nft refused the rules"
 table inet custos_airgap {
 	chain out {
@@ -47,10 +50,16 @@ tar -C /var/lib/ollama/models -xf "$dir/mirror/models.tar"
 # once labelled (user guide, chapter 5).
 semanage port -a -t http_port_t -p tcp 11434 2>/dev/null || semanage port -m -t http_port_t -p tcp 11434
 systemctl stop custos-ollama.service >/dev/null 2>&1 || true
-systemd-run --unit=custos-ollama -p Environment=OLLAMA_MODELS=/var/lib/ollama/models \
+# Ollama keeps its key in $HOME/.ollama: a transient unit has no HOME.
+systemd-run --unit=custos-ollama -p Environment=HOME=/var/lib/ollama -p Environment=OLLAMA_MODELS=/var/lib/ollama/models \
 	-p Environment=OLLAMA_HOST=127.0.0.1:11434 /usr/local/bin/ollama serve >/dev/null
 for _ in $(seq 60); do curl -sf http://127.0.0.1:11434/api/version >/dev/null && break; sleep 1; done
-curl -sf http://127.0.0.1:11434/v1/models | grep -q "\"$MODEL\"" || die "Ollama does not serve $MODEL"
+if ! curl -sf http://127.0.0.1:11434/v1/models | grep -q "\"$MODEL\""; then
+	echo "  models: $(curl -sS http://127.0.0.1:11434/v1/models 2>&1)"
+	systemctl status custos-ollama.service --no-pager 2>&1 | tail -5
+	journalctl -u custos-ollama.service --no-pager -o cat -n 30 2>&1
+	die "Ollama does not serve $MODEL"
+fi
 log "  $(/usr/local/bin/ollama --version 2>&1 | tail -1); serving $MODEL"
 # The first answer loads the model; later ones are faster.
 curl -sf -m 300 http://127.0.0.1:11434/v1/chat/completions \
