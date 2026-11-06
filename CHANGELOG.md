@@ -32,6 +32,11 @@ removed.
 
 ### Fixed
 
+- The diagnostic commands `boot_time`, `boot_blame` and `pressure_stall`
+  (`exec.d-diagnostics.yaml`) failed under SELinux with a tool error
+  (0.3.0): mcp-gateway's exec server domain, `mcpsrv_exec_t`, may not
+  ask systemd for the boot's times or read `/proc/pressure`. Custos's
+  SELinux module now allows these, for the commands it ships.
 - A call to an `openai` model was cut off after 10 minutes, whatever the
   activity's limit, which a slow local model with a growing prompt
   reached ("Client.Timeout exceeded while awaiting headers").

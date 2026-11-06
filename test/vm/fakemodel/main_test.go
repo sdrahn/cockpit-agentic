@@ -37,6 +37,8 @@ func TestScript(t *testing.T) {
 		{"CHANGE it", "", "not offered: custos-test__change", nil},
 		{"CHANGE FAIL now", "custos-test__change", "Writing a marker that fails.", []string{"custos-test__change"}},
 		{"DELEGATE t1 PROBE now", "agents__delegate", "Handing this to t1.", []string{"agents__delegate"}},
+		{"CALL exec__boot_time.", "exec__boot_time", "", []string{"exec__boot_time"}},
+		{"CALL exec__boot_time", "", "not offered: exec__boot_time", []string{"custos-test__probe"}},
 		{"hello", "", "ok", []string{"custos-test__probe"}},
 	} {
 		got := m.Respond(req(tc.in, tc.tools...))

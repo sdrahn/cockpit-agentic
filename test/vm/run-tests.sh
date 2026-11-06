@@ -1121,6 +1121,22 @@ if command -v custos-setup >/dev/null; then
 	check "health-check starts with it and answers" eventually 30 bash -c "$(declare -f api); api health-check /v1/status | jq -e '.contract == 1' >/dev/null"
 	if [ -d /etc/mcp-gateway/exec.d ]; then
 		check "the playbooks' exec commands are installed" test -f /etc/mcp-gateway/exec.d/exec.d-diagnostics.yaml -a -f /etc/mcp-gateway/exec.d/exec.d-disk-usage.yaml
+		# Each shipped command runs through the gateway, as the agent, in
+		# the exec server's domain (mcpsrv_exec_t): the gateway sees it
+		# come back ok (mcp-result), with no SELinux denial.
+		exec_t0=$(date +%s)
+		for tool in $(sed -n 's/^  \([a-z_]*\):$/\1/p' /usr/share/custos/templates/exec.d-diagnostics.yaml /usr/share/custos/templates/exec.d-disk-usage.yaml); do
+			run_activity health-check "CALL exec__$tool" >/dev/null
+			check "health-check runs exec__$tool: ok, as the gateway saw it" eventually 10 gw_audit_has \
+				".event == \"mcp-result\" and .sub == \"agent-health-check\" and .server == \"exec\" and .name == \"$tool\" and .outcome == \"ok\""
+		done
+		if enforcing; then
+			exec_avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$exec_t0" '+%x %T')" 2>/dev/null | grep 'mcpsrv_exec_t' || true)
+			check "no SELinux denial for the diagnostic commands (mcpsrv_exec_t)" test -z "$exec_avc"
+			[ -n "$exec_avc" ] && sed 's/^/    | /' <<<"$exec_avc" | head -30
+		else
+			skip "no SELinux denial for the diagnostic commands (SELinux is not enforcing)"
+		fi
 	else
 		skip "the playbooks' exec commands are installed (no mcp-gateway-exec-server)"
 	fi
