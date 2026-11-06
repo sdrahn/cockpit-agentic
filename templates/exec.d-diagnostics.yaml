@@ -53,7 +53,8 @@ commands:
     read_only: true
   package_dependencies:
     description: Unsatisfied dependencies of the installed packages; no file checks (rpm -Va --nofiles)
-    argv: [/usr/bin/rpm, -Va, --nofiles, --nodigest, --nosignature]
+    # --noscripts: no package's %verify script runs; this only reads.
+    argv: [/usr/bin/rpm, -Va, --nofiles, --nodigest, --nosignature, --noscripts]
     # rpm opens its working directory; the server's sandbox does not let
     # it read /, the default.
     dir: /usr

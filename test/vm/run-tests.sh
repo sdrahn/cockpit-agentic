@@ -1129,6 +1129,13 @@ if command -v custos-setup >/dev/null; then
 		exec_failed=
 		for tool in $(sed -n 's/^  \([a-z_]*\):$/\1/p' /usr/share/custos/templates/exec.d-diagnostics.yaml /usr/share/custos/templates/exec.d-disk-usage.yaml); do
 			answer=$(run_activity health-check "CALL exec__$tool")
+			# rpm -Va exits 1 when it finds something: here opa, which the
+			# test host has as a binary, not as the package mcp-gateway
+			# requires. A finding is the command working.
+			if [ "$tool" = package_dependencies ] && jq -e '.summary | contains("is needed by")' <<<"$answer" >/dev/null 2>&1; then
+				check "health-check runs exec__package_dependencies: it reports the unsatisfied dependencies" true
+				continue
+			fi
 			check "health-check runs exec__$tool: ok, as the gateway saw it" eventually 10 gw_audit_has \
 				".event == \"mcp-result\" and .sub == \"agent-health-check\" and .server == \"exec\" and .name == \"$tool\" and .outcome == \"ok\"" || {
 				echo "    | the activity: $(jq -c '{state, summary, reason}' <<<"$answer" 2>/dev/null || echo "$answer")"
@@ -1147,9 +1154,23 @@ if command -v custos-setup >/dev/null; then
 				hidden_t0=$(date +%s)
 				for tool in $exec_failed; do run_activity health-check "CALL exec__$tool" >/dev/null; done
 				semodule -B >/dev/null 2>&1
-				echo "    | denials, the dontaudit ones included, of:$exec_failed"
+				echo "    | every denial, the dontaudit ones included, while running again:$exec_failed"
 				ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$hidden_t0" '+%x %T')" 2>/dev/null |
-					grep 'mcpsrv_exec_t' | grep -o 'avc: .*' | sort | uniq -c | sort -rn | head -40 | sed 's/^/    | /'
+					grep -o 'avc: .*' | sed 's/ pid=[0-9]*//' | sort | uniq -c | sort -rn | head -40 | sed 's/^/    | /'
+			fi
+			if [ -n "$exec_failed" ]; then
+				# The same programs as the agent's user, outside the exec server.
+				for p in ip timedatectl rpm; do
+					f=$(PATH=/usr/sbin:/usr/bin command -v "$p") && ls -lZ "$f" "$(readlink -f "$f")" 2>&1 | sed 's/^/    | /'
+				done
+				for c in "ip -brief address" "timedatectl show"; do
+					echo "    | as agent-health-check: $c"
+					runuser -u agent-health-check -- env PATH=/usr/sbin:/usr/bin $c 2>&1 | head -5 | sed 's/^/    |   /'
+				done
+				journalctl --no-pager -o cat --since "@$exec_t0" -u systemd-timedated.service -u dbus.service -u dbus-broker.service 2>/dev/null |
+					tail -15 | sed 's/^/    | /'
+				systemctl show -p ProtectSystem,ProtectHome,PrivateNetwork,NoNewPrivileges,ExecPaths,NoExecPaths,RestrictAddressFamilies,SystemCallFilter,CapabilityBoundingSet,ReadOnlyPaths,InaccessiblePaths \
+					"$(systemctl list-units --plain --no-legend 'mcp-exec-*' | awk 'NR == 1 {print $1}')" 2>&1 | sed 's/^/    | /'
 			fi
 		else
 			skip "no SELinux denial for the diagnostic commands (SELinux is not enforcing)"
