@@ -177,7 +177,10 @@ func TestPromoteRefuses(t *testing.T) {
 			return a.Promote("patch-pilot", "patch-errata", "alice", Promotion{Envelope: []byte(sat), DespiteReadiness: true})
 		}, "needs --reason"},
 		{"no windows", func() error { return promote(a, "patch-errata", "windows: []\n") }, "no windows"},
-		{"rate", func() error { return promote(a, "patch-errata", sat+"rate: {calls: 20, per: 1h}\n") }, "not enforced by mcp-gateway yet (CONTRACT.md O12)"},
+		{"rate per day", func() error { return promote(a, "patch-errata", sat+"rate: {calls: 20, per: 1d}\n") }, `per "1d": want 1s, 1m or 1h`},
+		{"rate per 2h", func() error { return promote(a, "patch-errata", sat+"rate: {calls: 20, per: 2h}\n") }, `per "2h"`},
+		{"rate without calls", func() error { return promote(a, "patch-errata", sat+"rate: {per: 1h}\n") }, "calls 0: want 1 or more"},
+		{"rate key", func() error { return promote(a, "patch-errata", sat+"rate: {calls: 5, per: 1h, burst: 2}\n") }, "burst"},
 		{"rollback without conditions", func() error { return promote(a, "patch-errata", sat+"rollback: {on: []}\n") }, "rollback: no conditions"},
 		{"unknown rollback condition", func() error { return promote(a, "patch-errata", sat+"rollback: {on: [disk_full]}\n") }, `condition "disk_full"`},
 		{"health check without a command", func() error { return promote(a, "patch-errata", sat+"rollback: {on: [health_check_failed]}\n") }, "health_check_failed and health_check (a command) go together"},
@@ -214,6 +217,21 @@ func TestPromoteRefuses(t *testing.T) {
 	}
 	if d, _ := a.readGateway("patch-pilot"); d.Categories != nil {
 		t.Errorf("a refused promotion was written: %v", d.Categories)
+	}
+}
+
+func TestPromoteWithRate(t *testing.T) {
+	a, _ := withCategories(t)
+	if err := promote(a, "patch-errata", sat+"rate: {calls: 20, per: 1h}\n"); err != nil {
+		t.Fatal(err)
+	}
+	d, _ := a.readGateway("patch-pilot")
+	if r := d.Categories["patch-errata"].Envelope.Rate; r == nil || r.Calls != 20 || r.Per != "1h" {
+		t.Errorf("rate: %+v", r)
+	}
+	b, _ := os.ReadFile(a.p(GatewayAgents + "/patch-pilot.yaml"))
+	if !strings.Contains(string(b), "rate:\n") || !strings.Contains(string(b), "calls: 20") || !strings.Contains(string(b), "per: 1h") {
+		t.Errorf("agent data:\n%s", b)
 	}
 }
 

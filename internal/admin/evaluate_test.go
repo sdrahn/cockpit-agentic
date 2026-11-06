@@ -310,3 +310,58 @@ func TestDemotesOnTheGatewaysReview(t *testing.T) {
 		t.Fatalf("demotions %v", d)
 	}
 }
+
+// capped: the gateway's decision record of a call it denied over a rate
+// limit (its rate_limit obligation).
+func (j *fakeJournal) capped(at time.Time, f map[string]any) {
+	m := map[string]any{"audit": true, "msg": "mcp", "sub": "agent-patch-pilot", "action": "tools.call", "server": "zypp",
+		"name": "install_patches", "effect": "deny", "reason": "rate limit exceeded"}
+	for k, v := range f {
+		m[k] = v
+	}
+	msg, _ := json.Marshal(m)
+	b, _ := json.Marshal(map[string]string{"MESSAGE": string(msg), "__REALTIME_TIMESTAMP": strconv.FormatInt(at.UnixMicro(), 10)})
+	j.gw = append(j.gw, string(b))
+}
+
+// The gateway capped the envelope's rate three times within a day (O12).
+func TestDemotesOnRepeatedRateCaps(t *testing.T) {
+	a, mem, j, _ := promoted(t, "rate: {calls: 2, per: 1m}\n")
+	now := a.Now()
+	j.capped(now.Add(-time.Hour), nil)
+	j.capped(now.Add(-50*time.Minute), nil)
+	// Not counted: before the day, another agent, another category's tool,
+	// another reason, not the gateway's audit, an allowed call.
+	j.capped(now.Add(-25*time.Hour), nil)
+	j.capped(now.Add(-time.Minute), map[string]any{"sub": "agent-other"})
+	j.capped(now.Add(-time.Minute), map[string]any{"server": "systemd", "name": "restart_unit"})
+	j.capped(now.Add(-time.Minute), map[string]any{"reason": "denied by policy"})
+	j.capped(now.Add(-time.Minute), map[string]any{"audit": false})
+	j.capped(now.Add(-time.Minute), map[string]any{"effect": "allow"})
+	if d := evaluate(t, a); len(d) != 0 {
+		t.Fatalf("demoted on two caps: %v", d)
+	}
+	j.capped(now.Add(-10*time.Minute), nil)
+	d := evaluate(t, a)
+	if len(d) != 1 || !strings.Contains(d[0].Reason, "rate cap (2 calls per 1m per tool) reached 3 times within a day: zypp__install_patches at ") {
+		t.Fatalf("demotions %v", d)
+	}
+	if mode(a, "patch-errata") != "supervised" {
+		t.Error("not demoted")
+	}
+	if r := mem.Events(journal.CategoryDemoted); len(r) != 1 || r[0].Fields["BY"] != DemoteBy {
+		t.Errorf("records: %v", r)
+	}
+}
+
+// Caps without a rate in the envelope (a rate_limit the permission sets
+// itself) are no reason to demote.
+func TestRateCapsWithoutAnEnvelopeRate(t *testing.T) {
+	a, _, j, _ := promoted(t, "")
+	for i := range 5 {
+		j.capped(a.Now().Add(-time.Duration(i+1)*time.Minute), nil)
+	}
+	if d := evaluate(t, a); len(d) != 0 {
+		t.Fatalf("demotions %v", d)
+	}
+}

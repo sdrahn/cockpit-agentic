@@ -19,7 +19,8 @@
 #     categories:             # written by agent-admin promote / demote
 #       patch-errata:
 #         mode: bounded       # supervised | bounded
-#         envelope: {windows: [{days: [sat], from: '02:00', to: '04:00', tz: Europe/Berlin}]}
+#         envelope: {windows: [{days: [sat], from: '02:00', to: '04:00', tz: Europe/Berlin}],
+#                    rate: {calls: 20, per: 1h}}
 #
 # A permission is read-only only when it says so; everything else
 # changes the system (supervised by default). By mode:
@@ -123,7 +124,7 @@ category_usable(p) if {
 
 agent_permission(p) := object.remove(p, agent_flags) if {
 	p.read_only == true
-} else := object.remove(p, agent_flags) if {
+} else := with_envelope_rate(object.remove(p, agent_flags), p) if {
 	autonomous_now(p)
 } else := object.union(object.remove(p, agent_flags), {"require_approval": true, "approval_channel": "oob"}) if {
 	permission_mode(p) in {"supervised", "bounded"}
@@ -156,7 +157,39 @@ autonomous_now(p) if {
 	has_category(p)
 	permission_mode(p) == "bounded"
 	in_envelope(agent_categories[p.category])
+	rate_valid(agent_categories[p.category])
 }
+
+# The envelope's rate (§6a, O12): {calls: N, per: 1s | 1m | 1h}, the
+# gateway's rate_limit obligation ("N/s", "N/m", "N/h") on each of the
+# category's permissions while they act without an approval. The gateway
+# counts per agent and tool, in its memory, and denies a call over it
+# ("rate limit exceeded"). Calls that need an approval are not counted:
+# a person decides each. A rate that is not one of these makes the
+# category supervised: it is never ignored.
+rate_units := {"1s": "s", "1m": "m", "1h": "h"}
+
+envelope_rate(c) := object.get(object.get(c, "envelope", {}), "rate", null)
+
+rate_valid(c) if envelope_rate(c) == null
+
+rate_valid(c) if rate_limit(envelope_rate(c))
+
+rate_limit(r) := sprintf("%d/%s", [r.calls, rate_units[r.per]]) if {
+	is_number(r.calls)
+	r.calls == round(r.calls)
+	r.calls >= 1
+	count(r) == 2
+}
+
+with_envelope_rate(q, p) := q if {
+	not has_category(p)
+} else := q if {
+	envelope_rate(agent_categories[p.category]) == null
+} else := object.union(q, {"obligations": object.union(object.get(q, "obligations", {}), {"rate_limit": array.concat(
+	as_list(object.get(q, ["obligations", "rate_limit"], [])),
+	[rate_limit(envelope_rate(agent_categories[p.category]))],
+)})})
 
 # The envelope's windows (§6a): outside them a bounded category acts as
 # supervised. Each window: days (mon … sun; all if absent), from and to

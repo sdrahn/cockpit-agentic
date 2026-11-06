@@ -3,5 +3,6 @@
 # Cleaning up snapshots every morning; change the time zone.
 windows:
   - {from: '07:00', to: '08:00', tz: Europe/Berlin}
+# rate: {calls: 20, per: 1h}       # optional: at most 20 calls per tool per hour, beyond it denied
 rollback:
   on: [tool_error, limit_exceeded]

@@ -344,9 +344,8 @@ local limits. A different host implementation changes none of this.
 envelope's `windows`, readiness and its thresholds, `promote` (refused
 below readiness without `--despite-readiness`) and `demote`, and their
 records, the demotion evaluator with the override rate and `rollback`,
-and the review of autonomous actions. Not yet: `rate` (O12), with the
-demotion that needs it; an envelope with `rate` is refused until it
-is enforced. Part I defines the data, the measures and
+the review of autonomous actions, and `rate` (O12), with the demotion
+on repeated rate caps. Part I defines the data, the measures and
 the records. The commands named here are the reference implementation's
 (§17); another host or control plane provides the same actions. An
 agent's autonomy is promoted **per
@@ -421,7 +420,7 @@ host:
 envelope:
   windows:                              # when; outside them the category is supervised
     - {days: [sat], from: '02:00', to: '04:00', tz: Europe/Berlin}
-  rate: {calls: 20, per: 1h}            # state-changing calls of this category, per host
+  rate: {calls: 20, per: 1h}            # calls without approval, per tool of the category; per: 1s, 1m or 1h
   rollback:                             # conditions that demote at once (below)
     on: [tool_error, health_check_failed, limit_exceeded]
     health_check: 'systemctl is-system-running --quiet'   # run as root with sh -c, 60 s at most
@@ -430,7 +429,7 @@ envelope:
 | Part | Enforced by | Outside it |
 |---|---|---|
 | `windows` | the gateway's policy (`time.now_ns()` in the agents module); at least one is required. Each has `days` (`mon` … `sun`; every day if absent), `from` and `to` (`HH:MM`, `from` before `to`: a window across midnight is two windows) and `tz` (an IANA zone; `UTC` if absent) | the call needs an approval, as supervised |
-| `rate` | the gateway: a per-agent, per-category counter it keeps itself (mcp-gateway, O12) | the call needs an approval |
+| `rate` | the gateway: its `rate_limit` obligation (`"20/h"`) on each of the category's permissions while they act without an approval, a sliding-window counter per agent and tool that it keeps in memory. `calls` is 1 or more; `per` is `1s`, `1m` or `1h` (the gateway counts per second, minute or hour); calls that need an approval are not counted. A rate the policy cannot read makes the category supervised | the call is denied ("rate limit exceeded"); three such denials within a day demote the category (below) |
 | `rollback` | the demotion evaluator (below), outside the agent. `tool_error`: a call of the category made without an approval since the promotion failed: the gateway's `mcp-result` for it is `tool_error`, `error` or `timeout` (its requirement R2; a call allowed by a grant is approved), or its `tool.result` is an error; `limit_exceeded`: an activity with such a call reached a limit; `health_check_failed`: `health_check` exited non-zero. `on` names at least one; `health_check` is given exactly when `health_check_failed` is | the category is demoted |
 
 Everything that relaxes an approval is enforced by the gateway or by
@@ -488,7 +487,7 @@ thresholds, with what is not met.
 Not yet (O11): matching calls against the agent data in force at their
 time (the reference implementation uses the current permissions);
 counting an emergency stop during an activity as an incident; the
-envelope's size next to what was observed (it needs `rate`, O12); and
+envelope's size next to what was observed; and
 listing the proposals behind each number.
 
 In a `bounded` category, nothing is approved beforehand. Its override
@@ -559,8 +558,10 @@ holds for a bounded category:
   exceeds the threshold. Outside its windows the category is
   supervised, so it still has proposals an approver can decline;
 - a `rollback` condition fires;
-- *not yet:* the gateway's rate cap is reached repeatedly (three times in
-  a day; needs `rate`, O12);
+- the gateway denied calls of the category over the envelope's `rate`
+  three times within the last 24 hours since the promotion (its audit's
+  decisions with `"effect": "deny"` and `"reason": "rate limit
+  exceeded"`, for the agent's principal and the category's tools);
 - an approver marks an autonomous action as an `incident` (`review`
   demotes at once; the evaluator also does, should that have failed;
   a verdict on the gateway is the evaluator's to act on).
@@ -1409,8 +1410,8 @@ the product and release process, tracked here so that nothing is lost.
 | Requirement | Contract | State in this repository |
 |---|---|---|
 | Supervised by default for every category; not configurable away at install | §6, §6a | done (§6, §6a) |
-| Policy-bounded autonomy as a named destination, with an envelope (hosts, windows, rates, blast radius, rollback) | §6a | `bounded` with `windows`, and `rollback` (the demotion evaluator), done; rates need mcp-gateway (O12); hosts and blast radius across hosts parked with the fleet (O13) |
-| Observation period, override rate, explicit authenticated promotion, demotion path | §6a, §10 | observation, override rate (with reviews of autonomous actions), promotion and demotion by hand, and automatic demotion on the override rate, rollback conditions and incident reviews, done; on repeated rate caps open (O12) |
+| Policy-bounded autonomy as a named destination, with an envelope (hosts, windows, rates, blast radius, rollback) | §6a | `bounded` with `windows`, `rate` (the gateway's `rate_limit`, per tool) and `rollback` (the demotion evaluator), done; hosts and blast radius across hosts parked with the fleet (O13) |
+| Observation period, override rate, explicit authenticated promotion, demotion path | §6a, §10 | observation, override rate (with reviews of autonomous actions), promotion and demotion by hand, and automatic demotion on the override rate, rollback conditions and incident reviews, and on repeated rate caps (O12), done |
 | Per-category, not whole-agent, promotion; audit per category | §6a, §10 | done: `promote`, `demote`, promotion records (O11) |
 | Promotion-readiness view (override rate, incident rate, diversity, envelope size) | §6a | measures, thresholds, `agent-admin readiness` and the Cockpit view done, and `promote` checks them; envelope size open (O11) |
 | Hard capability limits, audit trail, emergency stop | §6, §8, §10, §15, §18 | done |
@@ -1567,9 +1568,14 @@ inherited, not specified again.
   review` offers to root are the gateway's record of the calls too. Open in Custos: in the measures: the agent data in force at a call's time, emergency
   stops as incidents, the envelope's size, and the proposals behind each
   number.
-- **O12 — envelope limits in the gateway.** A per-agent, per-category
-  call counter in mcp-gateway, with the window and the limit from the
-  agent data, so that `rate` is enforced where the approvals are.
+- **O12 — envelope limits in the gateway.** Done, per tool: `rate` is
+  the gateway's `rate_limit` obligation on each of the category's
+  permissions while they act without an approval, so it is enforced
+  where the approvals are, and the evaluator demotes on repeated caps.
+  Open: a counter across all of a category's tools together, which
+  needs a new mcp-gateway feature; and a call over the rate that asks
+  for an approval instead of being denied (the gateway counts after its
+  policy has decided).
 - **O13 — fleet control plane (parked).** The requirement in §20a also
   asks for a control plane for on-premises deployments above a defined
   fleet size `N`: inventory, policy distribution through the site's

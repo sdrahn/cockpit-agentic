@@ -177,6 +177,16 @@ journal() { journalctl -o json --no-pager --since "@$t0" "AGENT_NAME=$1" "AGENT_
 journal_has() { journal "$1" "$2" | jq -e "select($3)" >/dev/null 2>&1; }
 gw_audit_has() { journalctl -u mcp-gateway.service -o cat --no-pager --since "@$t0" | grep '"audit":true' | jq -e "select($1)" >/dev/null 2>&1; }
 enforcing() { [ "$(getenforce 2>/dev/null)" = Enforcing ]; }
+# opa_effect <agent> <tool>: the decision of the gateway's OPA for a call
+# of custos-test's tool by the agent (the input the gateway gives it).
+opa_decision() {
+	jq -nc --arg a "agent-$1" --arg t "$2" '{input: {principal: {sub: $a, uid: 990, groups: [$a, "mcp-users"], transport: "unix", session_id: "s"},
+		action: "tools.call", resource: {server: "custos-test", kind: "tool", name: $t}, args: {}, grants: []}}' |
+		curl -sS --max-time 10 --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/authz/decision -d @-
+}
+opa_effect() { opa_decision "$@" | jq -r '.result.effect // "none"'; }
+# reason_is <agent> <tool> <reason>: the reason of the OPA's denial.
+reason_is() { [ "$(opa_decision "$1" "$2" | jq -r '.result.reason // "none"')" = "$3" ]; }
 # gateway_at_least <version>: the installed mcp-gateway is that or newer.
 gateway_at_least() { [ "$(printf '%s\n' "$1" "$(rpm -q --qf '%{VERSION}' mcp-gateway 2>/dev/null)" | sort -V | head -1)" = "$1" ]; }
 label() { ps -o label= -p "$1" 2>/dev/null | tr -d ' '; }
@@ -481,7 +491,7 @@ other=$(date -u -d tomorrow +%a | tr '[:upper:]' '[:lower:]')
 printf 'windows:\n  - {days: [%s], from: "00:00", to: "23:59", tz: UTC}\n' "$today" >"$work/now.yaml"
 printf 'windows:\n  - {days: [%s], from: "00:00", to: "23:59", tz: UTC}\n' "$other" >"$work/other.yaml"
 check "promote refuses without readiness" not agent-admin promote t1 patch-errata --envelope "$work/now.yaml"
-check "promote refuses a rate (not enforced yet)" not bash -c "{ cat '$work/now.yaml'; echo 'rate: {calls: 1, per: 1h}'; } | agent-admin promote t1 patch-errata --envelope - --despite-readiness --reason test"
+check "promote refuses a rate per day (the gateway counts per second, minute or hour)" not bash -c "{ cat '$work/now.yaml'; echo 'rate: {calls: 1, per: 1d}'; } | agent-admin promote t1 patch-errata --envelope - --despite-readiness --reason test"
 check "agent-admin promote t1 patch-errata" agent-admin promote t1 patch-errata --envelope "$work/now.yaml" --despite-readiness --reason "functional test"
 check "show: patch-errata is bounded" bash -c "agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"bounded\"' >/dev/null"
 n0=$(count t1 approval.pending)
@@ -597,6 +607,21 @@ if gw_audit_has '.event == "mcp-result"'; then
 else
 	skip "rollback on the gateway's tool_error (this mcp-gateway does not audit call outcomes, mcp-result)"
 fi
+# The envelope's rate (O12): the gateway's rate_limit on the category's
+# calls without an approval; three calls over it in a day demote it.
+printf 'windows:\n  - {days: [%s], from: "00:00", to: "23:59", tz: UTC}\nrate: {calls: 1, per: 1h}\n' "$today" >"$work/rate.yaml"
+check "promote with a rate of 1 call per hour" agent-admin promote t1 patch-errata --envelope "$work/rate.yaml" --despite-readiness --reason "functional test"
+check "the gateway's policy has the rate as its rate_limit" eventually 30 bash -c \
+	"$(declare -f opa_decision); opa_decision t1 change | jq -e '.result.effect == \"allow\" and .result.obligations.rate_limit == [\"1/h\"]' >/dev/null"
+check "within the rate, the change runs without an approval" eventually 30 runs_with t1 CHANGE 'changed test'
+n0=$(count t1 approval.pending)
+for _ in 1 2 3; do run_activity t1 CHANGE >/dev/null; done
+check "over the rate, the gateway denies the change: rate limit exceeded" eventually 10 gw_audit_has \
+	'.sub == "agent-t1" and .name == "change" and .effect == "deny" and .reason == "rate limit exceeded"'
+check "over the rate, no approval was asked" test "$(count t1 approval.pending)" = "$n0"
+check "evaluate demotes it after three rate caps within a day" bash -c \
+	"agent-admin evaluate | grep -q 'category patch-errata demoted: rate cap (1 calls per 1h per tool) reached 3 times within a day'"
+check "the category is supervised again after the rate caps" bash -c "agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"supervised\"' >/dev/null"
 check "custos-demote.service runs the evaluator" systemctl start custos-demote.service
 systemctl disable --now custos-demote.timer >/dev/null 2>&1
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' | agent-admin permissions t1
@@ -1001,16 +1026,6 @@ section "Diagnostics-only (release gate)"
 # CONTRACT.md §6b: on a diagnostics-only host only the diagnostics
 # category is usable, enforced by the gateway; enable is the one action
 # out of it, and its result is the broader install's.
-# opa_effect <agent> <tool>: the decision of the gateway's OPA for a call
-# of custos-test's tool by the agent (the input the gateway gives it).
-opa_decision() {
-	jq -nc --arg a "agent-$1" --arg t "$2" '{input: {principal: {sub: $a, uid: 990, groups: [$a, "mcp-users"], transport: "unix", session_id: "s"},
-		action: "tools.call", resource: {server: "custos-test", kind: "tool", name: $t}, args: {}, grants: []}}' |
-		curl -sS --max-time 10 --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/authz/decision -d @-
-}
-opa_effect() { opa_decision "$@" | jq -r '.result.effect // "none"'; }
-# reason_is <agent> <tool> <reason>: the reason of the OPA's denial.
-reason_is() { [ "$(opa_decision "$1" "$2" | jq -r '.result.reason // "none"')" = "$3" ]; }
 # The gateway names a module's reasons (deny_reasons, unmatched_reasons:
 # its requirement R1) when its shipped policy has them.
 gateway_reasons() { grep -rqs unmatched_reason /usr/share/mcp-gateway/policy/; }

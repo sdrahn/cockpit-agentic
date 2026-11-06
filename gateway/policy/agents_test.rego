@@ -208,6 +208,44 @@ test_window_without_days_or_tz if {
 	cat_effect("supervised", utc, "zypp", "install_patches", sat_0500_berlin) == "ask"
 }
 
+# The envelope's rate (O12): the gateway's rate_limit obligation on the
+# category's calls without an approval, and only on those.
+rated := {"patch-errata": {"mode": "bounded", "envelope": object.union(window, {"rate": {"calls": 20, "per": "1h"}})}}
+
+cat_decision(mode, categories, server, tool, now) := d if {
+	d := authz.decision with input as call(pp, server, tool, {})
+		with data.mcp.agents as cat_agent(mode, categories)
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+		with time.now_ns as now
+}
+
+test_rate_is_the_gateways_rate_limit if {
+	d := cat_decision("supervised", rated, "zypp", "install_patches", sat_0300_berlin)
+	d.effect == "allow"
+	d.obligations.rate_limit == ["20/h"]
+}
+
+test_rate_not_on_calls_that_need_an_approval if {
+	# Outside the window a person decides each call: no rate.
+	d := cat_decision("supervised", rated, "zypp", "install_patches", sat_0500_berlin)
+	d.effect == "ask"
+	not d.obligations.rate_limit
+}
+
+test_rate_units if {
+	every per, want in {"1s": "5/s", "1m": "5/m", "1h": "5/h"} {
+		c := {"patch-errata": {"mode": "bounded", "envelope": object.union(window, {"rate": {"calls": 5, "per": per}})}}
+		cat_decision("supervised", c, "zypp", "install_patches", sat_0300_berlin).obligations.rate_limit == [want]
+	}
+}
+
+test_invalid_rate_is_supervised if {
+	every r in [{"calls": 5, "per": "2h"}, {"calls": 0, "per": "1h"}, {"calls": 1.5, "per": "1h"}, {"calls": "5", "per": "1h"}, {"calls": 5}, {"calls": 5, "per": "1h", "burst": 2}] {
+		c := {"patch-errata": {"mode": "bounded", "envelope": object.union(window, {"rate": r})}}
+		cat_effect("supervised", c, "zypp", "install_patches", sat_0300_berlin) == "ask"
+	}
+}
+
 test_window_ends_before_to if {
 	at_0400 := time.parse_rfc3339_ns("2026-11-07T03:00:00Z")
 	cat_effect("supervised", promoted, "zypp", "install_patches", at_0400) == "ask"
