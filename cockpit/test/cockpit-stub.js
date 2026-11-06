@@ -348,7 +348,7 @@
                 }
             }
         },
-        spawn(args, opts) { return cockpitPromise(spawnStub(args, opts)); },
+        spawn(args, opts) { return cockpitPromise(spawnStub(args, opts), slowCommand(args)); },
     };
 
     function spawnStub(args, opts) {
@@ -577,7 +577,13 @@
     // ones, a handler that throws does not reject the promise then returns.
     // The exception escapes as uncaught and the chain never settles, so a
     // page must not throw in their handlers.
-    function cockpitPromise(r) {
+    // ?slow: what fills the agent view's sections after it is drawn
+    // (agent-admin's journal reads) answers after 1.5 s, as on a host.
+    function slowCommand(args) {
+        return query.has("slow") && args[0] === "agent-admin" && ["readiness", "review", "credentials", "playbooks"].includes(args[1]);
+    }
+
+    function cockpitPromise(r, slow) {
         const wrap = h => h && (v => {
             try {
                 return h(v);
@@ -592,7 +598,8 @@
         });
         // Run when first asked for its result: after input().
         let p = null;
-        const c = chain({ then: (ok, bad) => (p || (p = Promise.resolve(r))).then(ok, bad) });
+        const settle = () => slow ? new Promise(res => setTimeout(() => res(r), 1500)) : Promise.resolve(r);
+        const c = chain({ then: (ok, bad) => (p || (p = settle())).then(ok, bad) });
         c.input = text => { if (r && r.input) r.input(text); return c; };
         return c;
     }
