@@ -1126,9 +1126,13 @@ if command -v custos-setup >/dev/null; then
 		# come back ok (mcp-result), with no SELinux denial.
 		exec_t0=$(date +%s)
 		for tool in $(sed -n 's/^  \([a-z_]*\):$/\1/p' /usr/share/custos/templates/exec.d-diagnostics.yaml /usr/share/custos/templates/exec.d-disk-usage.yaml); do
-			run_activity health-check "CALL exec__$tool" >/dev/null
+			answer=$(run_activity health-check "CALL exec__$tool")
 			check "health-check runs exec__$tool: ok, as the gateway saw it" eventually 10 gw_audit_has \
-				".event == \"mcp-result\" and .sub == \"agent-health-check\" and .server == \"exec\" and .name == \"$tool\" and .outcome == \"ok\""
+				".event == \"mcp-result\" and .sub == \"agent-health-check\" and .server == \"exec\" and .name == \"$tool\" and .outcome == \"ok\"" || {
+				echo "    | the activity: $(jq -c '{state, summary, reason}' <<<"$answer" 2>/dev/null || echo "$answer")"
+				journalctl -u mcp-gateway.service -o cat --no-pager --since "@$exec_t0" | grep '"audit":true' |
+					jq -c "select(.sub == \"agent-health-check\" and (.name // \"\") == \"$tool\")" 2>/dev/null | tail -3 | sed 's/^/    | /'
+			}
 		done
 		if enforcing; then
 			exec_avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$exec_t0" '+%x %T')" 2>/dev/null | grep 'mcpsrv_exec_t' || true)
