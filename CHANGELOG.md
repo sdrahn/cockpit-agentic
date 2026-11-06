@@ -5,6 +5,25 @@ All notable changes to Custos. Versions follow
 (CONTRACT.md), names, paths and fields are added, never renamed or
 removed.
 
+## v0.4.2 — 2026-11-06
+
+The agent's full response. An activity keeps the model's last text in
+full, and Cockpit's activity detail opens it in a dialog that renders
+its Markdown, so a playbook's report table can be read whole.
+
+Upgrading from 0.4.1 needs no change to configurations or gateway
+data. Within contract version 1 this release adds the activity's
+`response` (in `GET /v1/activities/{id}`).
+
+### Added
+
+- The agent's full response: an activity keeps the model's last text
+  in full (`response`, up to 32 KiB, in `GET /v1/activities/{id}`), and
+  Cockpit's activity detail shows its start with **Show the full
+  response**, a dialog that renders its Markdown (tables, lists, code)
+  as text, never as HTML. Before, only the first 500 characters were
+  kept, and a playbook's table could not be read.
+
 ## v0.4.1 — 2026-11-06
 
 Fixes for running the diagnostic playbooks with a local model. The
