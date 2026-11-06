@@ -92,7 +92,8 @@ file or a note, can carry instructions someone planted for the model
 outputs its model read before each call for signs of that, for example
 "ignore all previous instructions", a forged system message, a claim
 that the change is already approved, an instruction to use exactly this
-tool, or this call's own argument values. When it finds any, the item
+tool, or a line that tells the model to use this call's own argument
+values. When it finds any, the item
 is marked **suspected injection**, lists the signs and opens the output
 they are in. Check that the call is what the person or schedule behind
 the activity asked for. If it is not, decline. The check is a hint: it
