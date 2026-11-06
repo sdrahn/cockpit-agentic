@@ -198,6 +198,9 @@ type Governor struct {
 	resume   chan struct{}     // closed on Resume
 	reasons  map[string]string // function call id -> rationale
 	hostStep map[string]int    // function call id -> playbook step
+	// historyPath keeps them across restarts (Keep); historyErr is the
+	// last failure to write it.
+	historyPath, historyErr string
 }
 
 // New returns a governor for the agent cfg, writing records to log.
@@ -501,6 +504,7 @@ func (g *Governor) afterRun(ictx agent.InvocationContext) {
 	if len(g.ended) > History {
 		g.ended = g.ended[len(g.ended)-History:]
 	}
+	g.saveHistory()
 	g.mu.Unlock()
 	outcome := map[string]string{StateFinished: "ok", StateCancelled: "cancelled", StateLimit: "limit", StateFailed: "error"}[a.State]
 	g.log.Log(journal.InvocationEnd, fmt.Sprintf("Invocation %s %s: %d model calls, %d tool calls", a.ID, a.State, in.llmCalls, in.toolCalls), journal.Fields{
