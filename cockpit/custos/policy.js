@@ -93,7 +93,7 @@ function renderWhatIf() {
     }
     const out = document.getElementById("whatif-result");
     const data = state.posture && state.posture.agents[select.value];
-    const [server, tool] = document.querySelector("#whatif input").value.trim().split("__");
+    const [server, tool] = document.getElementById("whatif-tool").value.trim().split("__");
     if (!data || !server || !tool) {
         out.replaceChildren(el("span", { class: "muted" }, "Name a tool as server__tool."));
         return;
@@ -128,7 +128,7 @@ tabs.policy = {
     intervalMs: 10000,
     init() {
         document.querySelector("#whatif select").addEventListener("change", renderWhatIf);
-        document.querySelector("#whatif input").addEventListener("input", renderWhatIf);
+        document.getElementById("whatif-tool").addEventListener("input", renderWhatIf);
         document.getElementById("whatif-args").addEventListener("input", renderWhatIf);
         document.getElementById("whatif").addEventListener("submit", ev => ev.preventDefault());
     },

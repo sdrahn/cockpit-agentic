@@ -156,7 +156,7 @@ textarea { width: 100%; box-sizing: border-box; font: 13px "Red Hat Mono", ui-mo
     background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.5rem; margin: 0.5rem 0; }
 form.inline { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 input, select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem; }
-#whatif input { min-width: 22rem; }
+#whatif-tool, #whatif-args { min-width: 22rem; }
 details > summary { cursor: pointer; margin-top: 0.75rem; color: var(--accent); }
 
 .action { border-top: 1px solid var(--border); padding: 0.6rem 0; }

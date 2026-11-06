@@ -306,7 +306,7 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     const whatIf = async (agent, tool, args) => {
         await page.selectOption("#whatif select", agent);
         await page.fill("#whatif-args", args || "");
-        await page.fill("#whatif input", tool);
+        await page.fill("#whatif-tool", tool);
         await page.waitForFunction(t => document.querySelector("#whatif-result").dataset.for === t, agent + " " + tool + " " + (args || ""));
         return page.textContent("#whatif-result");
     };
