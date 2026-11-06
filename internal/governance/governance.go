@@ -201,9 +201,6 @@ type Governor struct {
 	// historyPath keeps them across restarts (Keep); historyErr is the
 	// last failure to write it.
 	historyPath, historyErr string
-	paused                  bool
-	resume                  chan struct{}     // closed on Resume
-	reasons                 map[string]string // function call id -> rationale
 }
 
 // New returns a governor for the agent cfg, writing records to log.
