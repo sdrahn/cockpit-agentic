@@ -1126,6 +1126,7 @@ if command -v custos-setup >/dev/null; then
 		# the exec server's domain (mcpsrv_exec_t): the gateway sees it
 		# come back ok (mcp-result), with no SELinux denial.
 		exec_t0=$(date +%s)
+		exec_failed=
 		for tool in $(sed -n 's/^  \([a-z_]*\):$/\1/p' /usr/share/custos/templates/exec.d-diagnostics.yaml /usr/share/custos/templates/exec.d-disk-usage.yaml); do
 			answer=$(run_activity health-check "CALL exec__$tool")
 			check "health-check runs exec__$tool: ok, as the gateway saw it" eventually 10 gw_audit_has \
@@ -1133,12 +1134,23 @@ if command -v custos-setup >/dev/null; then
 				echo "    | the activity: $(jq -c '{state, summary, reason}' <<<"$answer" 2>/dev/null || echo "$answer")"
 				journalctl -u mcp-gateway.service -o cat --no-pager --since "@$exec_t0" | grep '"audit":true' |
 					jq -c "select(.sub == \"agent-health-check\" and (.name // \"\") == \"$tool\")" 2>/dev/null | tail -3 | sed 's/^/    | /'
+				exec_failed="$exec_failed $tool"
 			}
 		done
 		if enforcing; then
 			exec_avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$exec_t0" '+%x %T')" 2>/dev/null | grep 'mcpsrv_exec_t' || true)
 			check "no SELinux denial for the diagnostic commands (mcpsrv_exec_t)" test -z "$exec_avc"
 			[ -n "$exec_avc" ] && sed 's/^/    | /' <<<"$exec_avc" | head -30
+			# A command that failed without an audited denial: once more with
+			# the policy's dontaudit rules off, to name what it was refused.
+			if [ -n "$exec_failed" ] && semodule -DB >/dev/null 2>&1; then
+				hidden_t0=$(date +%s)
+				for tool in $exec_failed; do run_activity health-check "CALL exec__$tool" >/dev/null; done
+				semodule -B >/dev/null 2>&1
+				echo "    | denials, the dontaudit ones included, of:$exec_failed"
+				ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$hidden_t0" '+%x %T')" 2>/dev/null |
+					grep 'mcpsrv_exec_t' | grep -o 'avc: .*' | sort | uniq -c | sort -rn | head -40 | sed 's/^/    | /'
+			fi
 		else
 			skip "no SELinux denial for the diagnostic commands (SELinux is not enforcing)"
 		fi

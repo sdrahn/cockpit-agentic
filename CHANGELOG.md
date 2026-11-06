@@ -37,6 +37,12 @@ removed.
   (0.3.0): mcp-gateway's exec server domain, `mcpsrv_exec_t`, may not
   ask systemd for the boot's times or read `/proc/pressure`. Custos's
   SELinux module now allows these, for the commands it ships.
+- Diagnostic commands that failed on any host (0.3.0): `disk_usage` (its
+  `--output=` list was split at the commas, unquoted in a YAML list) and
+  `package_dependencies` (rpm could not open its working directory, `/`;
+  it runs in `/usr` now). `pressure_stall` says that pressure stall
+  information is off in the kernel (SUSE's default; boot with `psi=1`)
+  instead of failing.
 - `custos-setup` installed the exec commands without telling the exec
   server, which reads them when an instance starts: an instance running
   already offered the health-check agent none of them. It now stops the
