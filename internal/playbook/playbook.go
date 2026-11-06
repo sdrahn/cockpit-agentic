@@ -165,24 +165,35 @@ func (p *Playbook) Missing(offered map[string]bool) []string {
 	return out
 }
 
+// Run are the steps the host runs, in order: all of them but the
+// optional ones not offered.
+func (p *Playbook) Run(offered map[string]bool) []Step {
+	var out []Step
+	for _, s := range p.Steps {
+		if s.Optional && !offered[s.Tool] {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
 // Prompt is what the model is given to run the playbook: its steps (the
 // optional ones only when offered), what to look for, and the person's
-// own words, if any.
+// own words, if any. The host makes the steps' calls itself before the
+// model's first turn (CONTRACT.md §14c), so the model reads their
+// outputs rather than having to issue the calls.
 func (p *Playbook) Prompt(offered map[string]bool, extra string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Run the diagnostic playbook %q (%s).\n", p.Name, p.Title)
 	if p.Description != "" {
 		b.WriteString(p.Description + "\n")
 	}
-	b.WriteString("\nCall these tools in this order; they only read:\n")
-	n := 0
-	for _, s := range p.Steps {
-		if s.Optional && !offered[s.Tool] {
-			continue
-		}
-		n++
-		fmt.Fprintf(&b, "%d. %s: %s\n", n, s.Tool, s.Why)
+	b.WriteString("\nThe host calls these tools for you, in this order, and you get their outputs; they only read:\n")
+	for n, s := range p.Run(offered) {
+		fmt.Fprintf(&b, "%d. %s: %s\n", n+1, s.Tool, s.Why)
 	}
+	b.WriteString("\nDo not call them again. You may call further tools you are offered if the outputs leave a question open.\n")
 	b.WriteString("\nLook for: " + strings.TrimSpace(p.LookFor) + "\n")
 	b.WriteString("\nThen report with the tool report_diagnosis: what you found, your root-cause hypotheses with how " +
 		"confident you are, the tool output each one rests on (quote it exactly), and a written remediation plan for " +
