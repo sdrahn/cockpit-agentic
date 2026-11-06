@@ -167,6 +167,23 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 	for _, s := range execSteps {
 		execAdded = execAdded || s.Result == "done"
 	}
+	// The exec server reads its commands when an instance starts: one
+	// running already (for another client, or from before) would offer
+	// the agent none of the new ones.
+	if execAdded {
+		stop := a.StopInstances
+		if stop == nil {
+			stop = stopInstances
+		}
+		switch n, err := stop("exec"); {
+		case errors.Is(err, errNoControl):
+			add("exec instances", "skipped", "the gateway does not run: its exec instances start with the commands")
+		case err != nil:
+			add("exec instances", "skipped", "not stopped ("+err.Error()+"): stop them in Cockpit's Servers tab, or the new commands are offered once they end when idle")
+		default:
+			add("exec instances", "done", fmt.Sprintf("%d stopped: the next ones read the new commands", n))
+		}
+	}
 
 	// 4. The health-check agent, from its template with the defaults.
 	if _, err := os.Stat(filepath.Join(a.agentDir(HealthCheck), "agent.yaml")); err == nil {

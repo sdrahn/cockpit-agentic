@@ -1301,8 +1301,12 @@ on standard output as `custos-setup: <step>: done|already|skipped
 3. it copies the playbooks' commands (`exec.d-diagnostics.yaml`,
    `exec.d-disk-usage.yaml`, §14c) into `/etc/mcp-gateway/exec.d/` where
    the exec server is installed, keeping a file of the same name that
-   differs. Before the agent: its session with the gateway, and the exec
-   server started for it, offer the commands there when it starts;
+   differs. The exec server reads its commands when an instance starts,
+   so when it added one it stops the server's running instances through
+   the gateway's control API (`GET /v1/servers`, `DELETE
+   /v1/instances/{id}`, as Cockpit's Servers tab); without the gateway
+   running it says so. All this before the agent, whose session then
+   offers the commands;
 4. it creates the agent `health-check` from its template (§14a), which
    takes the defaults' model; one that exists keeps its configuration,
    and is restarted if step 3 added a command;

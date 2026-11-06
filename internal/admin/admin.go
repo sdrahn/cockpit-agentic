@@ -77,6 +77,9 @@ type Admin struct {
 	HealthCheck func(cmd string) error
 	// By is the person, for the records of refusals (category.refused).
 	By string
+	// StopInstances stops a server's running instances through the
+	// gateway's control API and says how many; nil: stopInstances.
+	StopInstances func(server string) (int, error)
 	// Notify posts a notice to the approvers through the gateway (R3) and
 	// gives its id; nil: no notices.
 	Notify func(Notice) (string, error)

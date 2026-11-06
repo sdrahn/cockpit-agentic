@@ -1121,6 +1121,7 @@ if command -v custos-setup >/dev/null; then
 	check "health-check starts with it and answers" eventually 30 bash -c "$(declare -f api); api health-check /v1/status | jq -e '.contract == 1' >/dev/null"
 	if [ -d /etc/mcp-gateway/exec.d ]; then
 		check "the playbooks' exec commands are installed" test -f /etc/mcp-gateway/exec.d/exec.d-diagnostics.yaml -a -f /etc/mcp-gateway/exec.d/exec.d-disk-usage.yaml
+		check "custos-setup stopped the exec server's running instances, for the new commands" grep -q 'exec instances: done' "$work/setup.out"
 		# Each shipped command runs through the gateway, as the agent, in
 		# the exec server's domain (mcpsrv_exec_t): the gateway sees it
 		# come back ok (mcp-result), with no SELinux denial.

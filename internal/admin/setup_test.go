@@ -15,6 +15,10 @@ func setupHost(t *testing.T) (*Admin, *rec) {
 	mem := &journal.Memory{}
 	a.Journal = func(string) journal.Logger { return mem }
 	os.MkdirAll(a.p(ExecDir), 0o755)
+	a.StopInstances = func(server string) (int, error) {
+		r.cmds = append(r.cmds, "stop instances of "+server)
+		return 1, nil
+	}
 	return a, r
 }
 
@@ -37,8 +41,10 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 	}
 	// The exec commands before the agent: its session with the gateway
 	// has the commands there when it starts.
+	// The exec server's running instances stop, so that the next ones
+	// read the new commands.
 	want := "diagnostics-only=done, model defaults=done, exec commands exec.d-diagnostics.yaml=done, " +
-		"exec commands exec.d-disk-usage.yaml=done, agent health-check=done, credential=done"
+		"exec commands exec.d-disk-usage.yaml=done, exec instances=done, agent health-check=done, credential=done"
 	if got := results(steps); got != want {
 		t.Errorf("first run:\n got %s\nwant %s", got, want)
 	}
@@ -86,12 +92,13 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 	if _, err := a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "qwen3-8b"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(r.cmds, "\n"), "systemctl try-restart agent@health-check.service") {
-		t.Errorf("health-check not restarted for the new commands: %v", r.cmds)
+	if c := strings.Join(r.cmds, "\n"); !strings.Contains(c, "stop instances of exec") || !strings.Contains(c, "systemctl try-restart agent@health-check.service") ||
+		strings.Index(c, "stop instances of exec") > strings.Index(c, "try-restart") {
+		t.Errorf("exec instances not stopped, then health-check restarted, for the new commands: %v", r.cmds)
 	}
 	r.cmds = nil
 	a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "qwen3-8b"})
-	if strings.Contains(strings.Join(r.cmds, "\n"), "try-restart") {
+	if c := strings.Join(r.cmds, "\n"); strings.Contains(c, "try-restart") || strings.Contains(c, "stop instances") {
 		t.Errorf("restarted with nothing new: %v", r.cmds)
 	}
 
