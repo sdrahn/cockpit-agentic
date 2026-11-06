@@ -7,6 +7,20 @@ removed.
 
 ## Unreleased
 
+## v0.4.1 — 2026-11-06
+
+Fixes for running the diagnostic playbooks with a local model. The
+host now makes a playbook's steps itself, through the gateway, so a
+model that is unreliable at issuing tool calls still gets every
+output; the activities and their reports outlive the agent's idle
+exit; Cockpit offers an agent only the playbooks it can run; and a
+listing that names a unit no longer marks the next call as a suspected
+prompt injection.
+
+Upgrading from 0.4.0 needs no change to configurations or gateway
+data. Within contract version 1 this release adds
+`calls[].playbook_step`, `AGENT_PLAYBOOK_STEP` and `GET /v1/playbooks`.
+
 ### Fixed
 
 - A call was marked as a suspected prompt injection whenever one of its
