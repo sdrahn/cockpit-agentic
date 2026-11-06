@@ -148,9 +148,6 @@ anyway. Check in this order:
 | `an agent's subject from an issuer not trusted for agents` | an OpenShell agent's token from another issuer ([chapter 11](11-openshell.md#issuers)) | list the issuer in `agents/_http.yaml` |
 | `no matching permission` | no permission names the tool | add the permission (step 2) |
 
-These reasons need an mcp-gateway whose policy takes them from modules
-(`deny_reasons`, `unmatched_reasons`); an older one says `denied by
-policy` or `no matching permission` for all of them.
 
 ## The model is not reached {#model}
 

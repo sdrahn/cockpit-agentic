@@ -14,8 +14,7 @@ removed.
   for the servers of the category's permissions, by mail, desktop
   notification and the gateway's approval page, to the servers'
   approvers and the agent's owners. `agent-admin evaluate` says whether
-  they were notified; a gateway without notices leaves the demotion as
-  it is.
+  they were notified; a refused notice leaves the demotion as it is.
 - The gateway's approvers review a promoted category's autonomous
   actions (mcp-gateway's review items, its requirement R4): the agents
   module marks each call a bounded category makes without an approval
@@ -30,14 +29,12 @@ removed.
   agent-admin enable patch-errata", "the agent is paused", "the
   emergency stop is in effect", "the agent is advisory" and the others,
   in the agent's error and the gateway's audit, instead of "denied by
-  policy" or "no matching permission" (user guide chapter 12). An older
-  mcp-gateway decides the same and keeps its generic reasons.
+  policy" or "no matching permission" (user guide chapter 12).
 - The rollback condition `tool_error` and the incident rate take each
   call's outcome from the gateway's audit (mcp-gateway's `mcp-result`,
   its requirement R2): a call the gateway saw fail (a tool error, an
   error, a timeout) counts although the agent recorded it as ok, or not
-  at all. The agent's own `tool.result` still counts too; an older
-  mcp-gateway without `mcp-result` leaves it the only source.
+  at all. The agent's own `tool.result` still counts too.
 - A suspected prompt injection is shown with the approval item
   (CONTRACT.md §7, O14): the agent checks what its model read before each
   call for signs of an injection (an instruction to ignore its
@@ -175,6 +172,13 @@ removed.
   tab (enabled and disabled categories, who changed it, a state changed
   outside agent-admin), with **Enable…**; a disabled category is marked
   in an agent's task categories and offers no **Promote…**.
+
+### Changed
+
+- `custos` and `custos-tests` require mcp-gateway 1.14, which has
+  what Custos asked of it (`docs/requirements/mcp-gateway-for-custos-0.3.md`):
+  reasons for denials from policy modules, each call's outcome in the
+  audit, notices to approvers and reviews by approvers.
 
 ### Fixed
 

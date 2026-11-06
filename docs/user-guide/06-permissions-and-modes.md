@@ -336,9 +336,7 @@ with `mcp-gateway-admin reviews`, or in Cockpit's *Approvals* tab under
 and a reason. Their verdicts are the gateway's audit records
 (`mcp-review`) and count as root's do: in the readiness, and an
 incident demotes the category at the evaluator's next run (within five
-minutes). An item nobody reviewed expires after a week. This needs an
-mcp-gateway with review items (its requirement R4); an older one has
-none, and root's review above is the only one.
+minutes). An item nobody reviewed expires after a week.
 
 ## Automatic demotion {#auto-demote}
 
@@ -382,9 +380,9 @@ may decide the agent's calls on those servers, owners included
 ([chapter 7](07-approvals.md)): by mail to its notification recipients,
 as a desktop notification (`mcp-gateway-notify`), and on its approval
 page, until they dismiss it or a week has passed. `agent-admin
-evaluate` prints `approvers notified (notice …)` for each demotion. An
-mcp-gateway without notices (before its requirement R3) gets none, and
-the demotion stands all the same.
+evaluate` prints `approvers notified (notice …)` for each demotion; if
+the gateway refuses the notice, it says why, and the demotion stands all
+the same.
 
 ## How the gateway applies modes {#how-enforced}
 

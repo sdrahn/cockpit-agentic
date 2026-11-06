@@ -30,7 +30,7 @@ the version it implements in `GET /v1/status` (`contract`).
 
 | Part | Role | Enforces |
 |---|---|---|
-| **mcp-gateway** (≥ 1.12) | the agents' only tools; OPA policy (autonomy modes, §6); approvals and grants (§7) | *may this agent call this tool with these arguments now* |
+| **mcp-gateway** (≥ 1.14) | the agents' only tools; OPA policy (autonomy modes, §6); approvals and grants (§7) | *may this agent call this tool with these arguments now* |
 | **systemd** | runs, schedules and stops agents; sandboxes them with the `systemd` backend | what an agent process can touch; that a stopped agent stays stopped |
 | **SELinux** | confines agents (`systemd` backend: `agent_t`; `openshell` backend: the container runtime's domain) | that an agent reaches the gateway's MCP socket, never its control socket nor another agent's socket |
 | **sandbox backend** (§3a) | `systemd` (the default) or `openshell` (NVIDIA OpenShell) | files, processes and network egress of the agent process |
@@ -329,11 +329,8 @@ the host never writes itself:
   permission now is explained (`unmatched_reasons`): its task category is
   not enabled on this host (§6b), a diagnostics permission that is not
   read-only, an advisory agent. The gateway puts the reason in the
-  denial the agent receives and in its audit. With an mcp-gateway whose
-  policy does not take reasons from modules (before its requirement R1,
-  `docs/requirements/mcp-gateway-for-custos-0.3.md`), the decisions are
-  the same and the reasons read `denied by policy` or `no matching
-  permission`.
+  denial the agent receives and in its audit (mcp-gateway 1.14, its
+  requirement R1 in `docs/requirements/mcp-gateway-for-custos-0.3.md`).
 
 **Showing the posture.** The control plane reads the agent data file
 for the mode, the pause flag and the permissions. It reads the gateway's
@@ -1242,7 +1239,7 @@ standard error:
 | `show [NAME…]` | the gateway data (§6) of the named agents, or of all, and the emergency stop (§8), as JSON: `{"agents": {"<name>": {"mode", "paused", "paused_by"?, "permissions", "categories"?}}, "control": {"stopped", "by"?, "at"?}, "enablement"?: {"state", "enabled", "changed_by", "record", "tampered"?}}`, where `categories` is §6a's entries and `enablement` §6b's state (absent: every category), with `tampered` saying why it does not match its record. Needs no root: the files are readable by everyone; without access to the journal there is no tamper check |
 | `categories` | the catalog (§6a), as JSON: `{"<category>": {"title", "description"?}}`. Needs no root |
 | `promote NAME CATEGORY --envelope FILE [--despite-readiness --reason TEXT]`, `demote NAME CATEGORY [--reason TEXT]` | a category's promotion with its envelope (`FILE` `-` is stdin), and its demotion (§6a). They write `categories.<category>` in the gateway data and a promotion record (§10), and return once the gateway has loaded the change, as `mode` does. `promote` refuses a category that is not ready, naming what is not met, unless it is given `--despite-readiness` with a reason; its record's `AGENT_READINESS` is the category's measures |
-| `evaluate` | the demotion evaluator (§6a), which `custos-demote.service` runs: demotes every bounded category whose override rate or rollback conditions say so, printing one line per demotion, and posts a notice of each to the gateway's approvers (mcp-gateway's `POST /v1/notices` on its control socket, as root: about `agent-<name>`, for the servers of the category's permissions, severity `warning`), printing how that went. A gateway without notices, or one that refuses it, leaves the demotion as it is. An agent whose journal it cannot read is reported, and the others are still evaluated |
+| `evaluate` | the demotion evaluator (§6a), which `custos-demote.service` runs: demotes every bounded category whose override rate or rollback conditions say so, printing one line per demotion, and posts a notice of each to the gateway's approvers (mcp-gateway's `POST /v1/notices` on its control socket, as root: about `agent-<name>`, for the servers of the category's permissions, severity `warning`), printing how that went. A notice the gateway refuses leaves the demotion as it is. An agent whose journal it cannot read is reported, and the others are still evaluated |
 | `review NAME [CATEGORY…]`, `review NAME CATEGORY ACTIVITY CALL ok\|incident [--reason TEXT]` | the review (§6a). Without a verdict: per category promoted since (bounded, or demoted after a promotion) the week's autonomous actions still to review, as JSON: `{"agent", "categories": {"<category>": {"mode", "actions", "reviewed", "pending": [{"activity", "call", "tool", "outcome", "at", "args_sha256"?}]}}}`. With one: records `category.review` (the person behind `sudo` as `AGENT_BY`) for an action that ran without an approval in the last week; `incident` needs a reason and demotes a bounded category. Reads the journal: root or `systemd-journal`; a verdict needs root |
 | `readiness NAME [CATEGORY…]` | the readiness of the agent's categories (those its permissions name), or of the given ones, as JSON: `{"agent", "thresholds": {"observation_days", "proposals", "override_rate", "incident_rate", "window_days"}, "categories": {"<category>": {"proposals", "approved", "declined", "cancelled", "reviewed", "review_overrides", "overrides", "override_rate", "incidents", "incident_rate", "tools", "distinct_calls", "observed_days", "first_proposal"?, "ready", "unmet"?}}, "diagnostics": {"reports", "hypotheses", "quotes", "verified_quotes", "with_feedback", "confirmed", "rejected", "unsure", "plans_useful", "plans_not_useful", "plans_executed", "confirmed_rate"}, "diagnostics_apply"}` (§6a; `diagnostics` §6b; `diagnostics_apply`: they count in the readiness, the host started diagnostics-only). Reads the agent's journal and mcp-gateway's, so it needs root or the `systemd-journal` group |
 
@@ -1337,7 +1334,7 @@ may connect to `agent_sock_t`, and so may Cockpit's bridge
 ## 19. Packaging
 
 OBS packages for SLES 16.0/16.1 and openSUSE Leap 16.0/16.1
-(`packaging/suse`): `custos` (requires `mcp-gateway` ≥ 1.12)
+(`packaging/suse`): `custos` (requires `mcp-gateway` ≥ 1.14: the reasons for denials, call outcomes, notices and reviews of §6, §6a)
 and `custos-selinux` (required where `selinux-policy-targeted`
 is installed), `custos-cockpit` (the Cockpit page, in
 `/usr/share/cockpit/custos`), `custos-tests` (the functional
