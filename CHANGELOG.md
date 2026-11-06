@@ -7,6 +7,15 @@ removed.
 
 ## Unreleased
 
+### Fixed
+
+- A playbook's steps are called by the host, in order, before the
+  model's first turn, through the gateway with the same decision,
+  approvals and records (`calls[].playbook_step`,
+  `AGENT_PLAYBOOK_STEP`). A model that cut off its tool calls, as
+  gpt-oss did for tools without arguments, left steps out of the
+  report.
+
 ## v0.4.0 — 2026-11-06
 
 Autonomy within limits the gateway enforces, and the agent's account of

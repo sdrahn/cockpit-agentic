@@ -99,6 +99,12 @@ func TestMissingAndPrompt(t *testing.T) {
 	if strings.Contains(pr, "snapper__list_snapshots") {
 		t.Error("an optional step that is not offered is in the prompt")
 	}
+	if r := p.Run(map[string]bool{"exec__disk_usage": true}); len(r) != 1 || r[0].Tool != "exec__disk_usage" {
+		t.Errorf("run %v", r)
+	}
+	if r := p.Run(map[string]bool{"exec__disk_usage": true, "snapper__list_snapshots": true}); len(r) != 2 || r[1].Tool != "snapper__list_snapshots" {
+		t.Errorf("run with the optional step offered %v", r)
+	}
 	if pr := p.Prompt(map[string]bool{"exec__disk_usage": true, "snapper__list_snapshots": true}, ""); !strings.Contains(pr, "2. snapper__list_snapshots") ||
 		strings.Contains(pr, "administrator adds") {
 		t.Errorf("with the optional step offered:\n%s", pr)
