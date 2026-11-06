@@ -9,6 +9,11 @@ removed.
 
 ### Fixed
 
+- A call was marked as a suspected prompt injection whenever one of its
+  argument values was in an earlier tool's output: a diagnostic
+  playbook that reads the log of a unit `boot_blame` named was flagged.
+  The value counts only where the output tells the model to use it
+  ("please set", "call … with value").
 - Cockpit offered every playbook on the host for every agent, though
   only an agent the gateway offers a playbook's tools (as health-check)
   can run it. It now offers only those the agent can run and lists the
