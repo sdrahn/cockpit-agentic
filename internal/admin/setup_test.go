@@ -15,6 +15,12 @@ func setupHost(t *testing.T) (*Admin, *rec) {
 	mem := &journal.Memory{}
 	a.Journal = func(string) journal.Logger { return mem }
 	os.MkdirAll(a.p(ExecDir), 0o755)
+	os.MkdirAll(a.p(GatewayServersDir), 0o755)
+	b, err := os.ReadFile("../../gateway/servers.d/custos-net.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(a.p(NetServerVendor), b, 0o644)
 	a.StopInstances = func(server string) (int, error) {
 		r.cmds = append(r.cmds, "stop instances of "+server)
 		return 1, nil
@@ -44,7 +50,7 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 	// The exec server's running instances stop, so that the next ones
 	// read the new commands.
 	want := "diagnostics-only=done, model defaults=done, exec commands exec.d-diagnostics.yaml=done, " +
-		"exec commands exec.d-disk-usage.yaml=done, exec instances=done, agent health-check=done, credential=done"
+		"exec commands exec.d-disk-usage.yaml=done, exec instances=done, server custos-net=done, agent health-check=done, credential=done"
 	if got := results(steps); got != want {
 		t.Errorf("first run:\n got %s\nwant %s", got, want)
 	}
@@ -73,6 +79,9 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 			t.Errorf("%s: %v", f, err)
 		}
 	}
+	if b, err := os.ReadFile(a.p(filepath.Join(GatewayServersDir, "custos-net.yaml"))); err != nil || !strings.Contains(string(b), "network_view: host") {
+		t.Errorf("server custos-net: %v\n%s", err, b)
+	}
 
 	// Again: nothing to do but the credential, which a new key replaces.
 	steps, err = a.Setup(o)
@@ -80,7 +89,7 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	want = "diagnostics-only=already, model defaults=already, exec commands exec.d-diagnostics.yaml=already, " +
-		"exec commands exec.d-disk-usage.yaml=already, agent health-check=already, credential=done"
+		"exec commands exec.d-disk-usage.yaml=already, server custos-net=already, agent health-check=already, credential=done"
 	if got := results(steps); got != want {
 		t.Errorf("second run:\n got %s\nwant %s", got, want)
 	}
@@ -197,5 +206,31 @@ func TestSetupKeepsChangedExecCommands(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(a.p(filepath.Join(ExecDir, "exec.d-diagnostics.yaml"))); string(b) != "version: 1\ncommands: {}\n" {
 		t.Error("overwritten")
+	}
+}
+
+// An earlier release's copy of a command file, unchanged, is replaced; a
+// copy the administrator changed stays.
+func TestSetupReplacesAnEarlierReleasesCommands(t *testing.T) {
+	a, _ := setupHost(t)
+	old := []byte("version: 1\ncommands: {}\n")
+	defer func(s map[string][]string) { shippedBefore = s }(shippedBefore)
+	shippedBefore = map[string][]string{"exec.d-diagnostics.yaml": {sha256Hex(old)}}
+	writeFile(a.p(filepath.Join(ExecDir, "exec.d-diagnostics.yaml")), old, 0o644)
+	writeFile(a.p(filepath.Join(ExecDir, "exec.d-disk-usage.yaml")), []byte("# mine\n"), 0o644)
+	steps, err := a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := results(steps)
+	if !strings.Contains(got, "exec commands exec.d-diagnostics.yaml=done") || !strings.Contains(got, "exec commands exec.d-disk-usage.yaml=skipped") {
+		t.Errorf("steps: %s", got)
+	}
+	want, _ := os.ReadFile(a.p(filepath.Join(TemplatesVendor, "exec.d-diagnostics.yaml")))
+	if have, _ := os.ReadFile(a.p(filepath.Join(ExecDir, "exec.d-diagnostics.yaml"))); string(have) != string(want) {
+		t.Error("the earlier release's copy was not replaced")
+	}
+	if have, _ := os.ReadFile(a.p(filepath.Join(ExecDir, "exec.d-disk-usage.yaml"))); string(have) != "# mine\n" {
+		t.Error("the administrator's copy was replaced")
 	}
 }

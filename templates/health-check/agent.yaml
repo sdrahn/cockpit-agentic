@@ -27,7 +27,7 @@ instruction: |
   If everything is healthy, say so in one sentence. If a tool fails or
   is not offered, say what you could not check.
 gateway:
-  servers: [systemd, exec, zypp, snapper, tukit]
+  servers: [systemd, exec, custos-net, zypp, snapper, tukit]
   tools:
     - systemd__list_loaded_units
     - systemd__list_log
@@ -38,9 +38,9 @@ gateway:
     - exec__pressure_stall
     - exec__load_average
     - exec__time_status
-    - exec__network_addresses
-    - exec__network_routes
-    - exec__listening_sockets
+    - custos-net__network_addresses
+    - custos-net__network_routes
+    - custos-net__listening_sockets
     - exec__boot_time
     - exec__boot_blame
     - exec__selinux_status

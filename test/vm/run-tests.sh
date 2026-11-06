@@ -1184,14 +1184,6 @@ if command -v custos-setup >/dev/null; then
 		exec_t0=$(date +%s)
 		exec_failed=
 		for tool in $(sed -n 's/^  \([a-z_]*\):$/\1/p' /usr/share/custos/templates/exec.d-diagnostics.yaml /usr/share/custos/templates/exec.d-disk-usage.yaml); do
-			case $tool in
-			network_addresses | network_routes | listening_sockets)
-				# The exec server's instances have a private network namespace:
-				# they see none of the host's network (mcp-gateway R7).
-				skip "health-check runs exec__$tool (the exec server sees none of the host's network: needs mcp-gateway R7)"
-				continue
-				;;
-			esac
 			answer=$(run_activity health-check "CALL exec__$tool")
 			# rpm -Va exits 1 when it finds something: here opa, which the
 			# test host has as a binary, not as the package mcp-gateway
@@ -1208,6 +1200,19 @@ if command -v custos-setup >/dev/null; then
 				exec_failed="$exec_failed $tool"
 			}
 		done
+		# Custos's server custos-net: the network commands in the host's
+		# network namespace (network_view: host, mcp-gateway R7), which
+		# the exec server's instances do not see.
+		check "custos-setup installed the server custos-net" grep -q 'server custos-net: done' "$work/setup.out"
+		net_has() { # net_has <tool> <text>: the tool's answer, through the gateway, has the text
+			local a
+			a=$(run_activity health-check "CALL custos-net__$1")
+			jq -e --arg t "$2" '.summary | startswith("done: ") and contains($t) and (contains("\"error\"") | not)' <<<"$a" >/dev/null ||
+				{ echo "    | the activity: $(jq -c '{state, summary}' <<<"$a" 2>/dev/null || echo "$a")"; return 1; }
+		}
+		check "custos-net__network_addresses sees the host's interfaces (one up), not an empty namespace" net_has network_addresses UP
+		check "custos-net__network_routes sees the host's default route" net_has network_routes default
+		check "custos-net__listening_sockets sees the host's listening sockets (the fake model's 8008)" net_has listening_sockets :8008
 		if enforcing; then
 			exec_avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$exec_t0" '+%x %T')" 2>/dev/null | grep 'mcpsrv_exec_t' || true)
 			check "no SELinux denial for the diagnostic commands (mcpsrv_exec_t)" test -z "$exec_avc"

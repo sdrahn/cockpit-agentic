@@ -10,9 +10,9 @@
 - {server: exec, tool: pressure_stall, read_only: true, category: diagnostics}
 - {server: exec, tool: load_average, read_only: true, category: diagnostics}
 - {server: exec, tool: time_status, read_only: true, category: diagnostics}
-- {server: exec, tool: network_addresses, read_only: true, category: diagnostics}
-- {server: exec, tool: network_routes, read_only: true, category: diagnostics}
-- {server: exec, tool: listening_sockets, read_only: true, category: diagnostics}
+- {server: custos-net, tool: network_addresses, read_only: true, category: diagnostics}
+- {server: custos-net, tool: network_routes, read_only: true, category: diagnostics}
+- {server: custos-net, tool: listening_sockets, read_only: true, category: diagnostics}
 - {server: exec, tool: boot_time, read_only: true, category: diagnostics}
 - {server: exec, tool: boot_blame, read_only: true, category: diagnostics}
 - {server: exec, tool: selinux_status, read_only: true, category: diagnostics}

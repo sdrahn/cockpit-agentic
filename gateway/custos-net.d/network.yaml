@@ -1,0 +1,18 @@
+# The network commands of Custos's diagnostics, for its server
+# custos-net (../servers.d/custos-net.yaml), whose instances see the
+# host's network namespace. ip and ss are found on the server's PATH
+# (/usr/sbin:/usr/bin), wherever the distribution puts them.
+version: 1
+commands:
+  network_addresses:
+    description: The network interfaces, their state and addresses (ip -brief address)
+    argv: [/usr/bin/env, ip, -brief, address]
+    read_only: true
+  network_routes:
+    description: The routing table (ip route show)
+    argv: [/usr/bin/env, ip, route, show]
+    read_only: true
+  listening_sockets:
+    description: TCP and UDP sockets listening on this host (ss -tulnH)
+    argv: [/usr/bin/env, ss, -tulnH]
+    read_only: true

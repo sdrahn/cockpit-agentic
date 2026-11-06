@@ -53,6 +53,23 @@ removed.
 
 ### Fixed
 
+- The network diagnostics (`network_addresses`, `network_routes`,
+  `listening_sockets`; the playbook `network-config`) saw nothing of the
+  host since 0.3.0: mcp-gateway's exec server runs its instances in a
+  network namespace of their own, where `ip` cannot open a netlink
+  socket and `ss` finds no sockets. They are Custos's server
+  `custos-net` now (`/usr/share/custos/gateway/`), whose instances see the
+  host's network without using it (`network_view: host`, mcp-gateway
+  1.15, requirement R7); the template `health-check` and the playbook use
+  its tools, `custos-setup` installs it, and Custos's SELinux module
+  lets `mcpsrv_exec_t` read the network through netlink and run `ip`.
+  A `health-check` agent made by 0.3.0 keeps its permissions: give it the
+  template's `custos-net` ones (`agent-admin permissions health-check <
+  /usr/share/custos/templates/health-check/permissions.yaml`).
+- `custos-setup` replaces an unchanged copy of an earlier release's exec
+  commands (0.3.0's), which it kept as the administrator's before; so the
+  fixed commands reach a host set up with 0.3.0 when it runs again.
+
 - The diagnostic commands `boot_time`, `boot_blame` and `pressure_stall`
   (`exec.d-diagnostics.yaml`) failed under SELinux with a tool error
   (0.3.0): mcp-gateway's exec server domain, `mcpsrv_exec_t`, may not

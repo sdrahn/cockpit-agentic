@@ -303,10 +303,23 @@ cp /usr/share/custos/templates/exec.d-diagnostics.yaml /usr/share/custos/templat
 /usr/libexec/mcp-servers/mcp-server-exec --check
 ```
 
-and the agent needs `read_only` permissions for the tools, with
+The network commands of `network-config` (`network_addresses`,
+`network_routes`, `listening_sockets`) are not the exec server's, whose
+instances see a network namespace of their own and so none of the
+host's interfaces. They are Custos's server `custos-net`, whose instances
+see the host's network but cannot use it (mcp-gateway's `network_view:
+host`: unix and netlink sockets only, no IP traffic):
+
+```bash
+cp /usr/share/custos/gateway/servers.d/custos-net.yaml /etc/mcp-gateway/servers.d/
+```
+
+`custos-setup` does both on the diagnostics-only install.
+The agent needs `read_only` permissions for the tools, with
 `category: diagnostics` on a diagnostics-only host
 ([chapter 6](06-permissions-and-modes.md#diagnostics-only)), for example
-`- {server: exec, tool: memory_usage, read_only: true, category: diagnostics}`.
+`- {server: exec, tool: memory_usage, read_only: true, category: diagnostics}`
+or `- {server: custos-net, tool: network_addresses, read_only: true, category: diagnostics}`.
 Each playbook's `needs` says what it uses.
 
 Your own playbooks go in `/etc/custos/playbooks/`, one file per playbook,

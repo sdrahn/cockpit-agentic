@@ -90,6 +90,8 @@ install: build
 	install -D -m 0644 gateway/policy/_control.yaml $(DESTDIR)$(SYSCONFDIR)/mcp-gateway/policy/agents/_control.yaml
 	install -D -m 0644 gateway/policy/_http.yaml $(DESTDIR)$(SYSCONFDIR)/mcp-gateway/policy/agents/_http.yaml
 	install -D -m 0644 gateway/servers.d/agents.yaml $(DESTDIR)$(DATADIR)/custos/gateway/servers.d/agents.yaml
+	install -D -m 0644 gateway/servers.d/custos-net.yaml $(DESTDIR)$(DATADIR)/custos/gateway/servers.d/custos-net.yaml
+	install -D -m 0644 gateway/custos-net.d/network.yaml $(DESTDIR)$(DATADIR)/custos/gateway/custos-net.d/network.yaml
 	install -D -m 0644 examples/patch-pilot/agent.yaml $(DESTDIR)$(DATADIR)/custos/examples/patch-pilot/agent.yaml
 	install -D -m 0644 examples/patch-pilot/permissions.yaml $(DESTDIR)$(DATADIR)/custos/examples/patch-pilot/permissions.yaml
 	install -d -m 0755 $(DESTDIR)$(SYSCONFDIR)/custos/agents
