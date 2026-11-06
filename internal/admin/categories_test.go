@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -47,6 +48,10 @@ func withCategoriesRec(t *testing.T) (*Admin, *journal.Memory, *rec) {
 	if err := a.SetPermissions("patch-pilot", strings.NewReader(perms)); err != nil {
 		t.Fatal(err)
 	}
+	if r := mem.Events(journal.PermissionsChanged); len(r) != 1 || r[0].Fields["PERMISSIONS_FROM"] != "[]" { // create gave none
+		t.Fatalf("permissions records: %v", r)
+	}
+	mem.Records = nil
 	return a, mem, r
 }
 
@@ -433,5 +438,37 @@ func TestReadinessCountsDiagnostics(t *testing.T) {
 		if _, err := a.Readiness("patch-pilot"); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+// The emergency stops are read for readiness: root's stop during an
+// approved call's activity is an incident; a stop written as the agent is
+// none (O11).
+func TestReadinessCountsTheEmergencyStop(t *testing.T) {
+	a, _ := withCategories(t)
+	start := a.Now().AddDate(0, 0, -20)
+	read := readinessJournal(60, 0, start)
+	stop := func(at time.Time, uid string) string {
+		b, _ := json.Marshal(map[string]any{"AGENT_EVENT": "agents.stopped", "SYSLOG_IDENTIFIER": "custos-promotion", "_UID": uid,
+			"__REALTIME_TIMESTAMP": strconv.FormatInt(at.UnixMicro(), 10)})
+		return string(b)
+	}
+	var asked [][]string
+	a.JournalJSON = func(args ...string) ([]byte, error) {
+		if slices.Contains(args, "AGENT_EVENT=agents.stopped") {
+			asked = append(asked, args)
+			return []byte(stop(start.Add(90*time.Second), "0") + "\n" + stop(start.Add(5*time.Hour+90*time.Second), "981")), nil
+		}
+		return read(args...)
+	}
+	r, err := a.Readiness("patch-pilot", "patch-errata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pe := r.Categories["patch-errata"]; pe.Approved != 60 || pe.Incidents != 1 {
+		t.Errorf("approved %d, incidents %d; want 60, 1", pe.Approved, pe.Incidents)
+	}
+	if len(asked) != 1 || !slices.Contains(asked[0], "_UID=0") || !slices.Contains(asked[0], "SYSLOG_IDENTIFIER=custos-promotion") {
+		t.Errorf("stop records read with %q", asked)
 	}
 }

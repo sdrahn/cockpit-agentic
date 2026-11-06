@@ -206,7 +206,7 @@ agent-admin readiness patch-pilot patch-errata | jq '.categories["patch-errata"]
 | `approved`, `declined`, `cancelled` | approved; declined; approved but then cancelled before the call ran |
 | `reviewed`, `review_overrides` | autonomous actions [reviewed](#review) since a promotion; of those, judged `incident` |
 | `overrides`, `override_rate` | `declined` + `cancelled` + `review_overrides`, and their share of `proposals` + `reviewed` |
-| `incidents`, `incident_rate` | approved calls that failed (as the gateway saw them come back, or as the agent recorded them), hit a limit, or had the agent paused during their activity; their share of the approved calls that ran |
+| `incidents`, `incident_rate` | approved calls that failed (as the gateway saw them come back, or as the agent recorded them), hit a limit, or had the agent paused or every agent stopped (`stop-all`) during their activity; their share of the approved calls that ran |
 | `tools`, `distinct_calls` | how varied the proposals were |
 | `observed_days`, `first_proposal` | since the first proposal, and when it was |
 | `ready`, `unmet` | whether every threshold is met, and which are not |
@@ -224,7 +224,13 @@ The keys are `observation_days`, `proposals`, `override_rate`,
 `incident_rate` (fractions: `0.05` is 5 %) and `window_days`. The
 command reads the agent's and the gateway's journal, so run it as root
 or as a member of `systemd-journal`. It counts a call in a category by
-the agent's current permissions.
+the agent's permissions at the time of the call: `agent-admin` records
+each change of an agent's permissions (`permissions.changed`, [chapter
+10](10-monitoring-and-audit.md#promotion-records)), so moving a tool into
+a category does not bring its earlier calls along. Before the first
+recorded change, the permissions it changed from count; an agent whose
+permissions never changed in the window is measured by its current
+ones.
 
 ### The diagnostics history {#diagnostics-evidence}
 

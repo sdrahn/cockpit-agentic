@@ -132,12 +132,15 @@ func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record
 		}
 	}
 	gw.Reviews = reviews
-	if why := reviewIncident(c, st, d.Permissions, after, gw.Reviews); why != "" {
+	// The permissions in force at each call's time (O11), from root's
+	// records of their changes.
+	perms := readiness.NewHistory(d.Permissions, recs)
+	if why := reviewIncident(c, st, perms, after, gw.Reviews); why != "" {
 		return why
 	}
 	// Outside its windows a bounded category is supervised, so it still
 	// has proposals to decline.
-	m := readiness.Measure(c, d.Permissions, after, gw, th, now)
+	m := readiness.Measure(c, perms, after, gw, th, now)
 	if m.Proposals > 0 && m.OverrideRate > th.OverrideRate {
 		return fmt.Sprintf("override rate %.1f %% above %.1f %% since %s (%d of %d proposals)",
 			m.OverrideRate*100, th.OverrideRate*100, since.UTC().Format(time.RFC3339), m.Overrides, m.Proposals)
@@ -167,7 +170,7 @@ func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record
 	// through without an approval or a grant. The agent cannot hide its
 	// failure by leaving out its own record.
 	for _, res := range gw.Results {
-		if res.At.Before(since) || res.ApprovalID != "" || res.Grant != "" || !readiness.InCategory(c, res.Tool, d.Permissions) {
+		if res.At.Before(since) || res.ApprovalID != "" || res.Grant != "" || !perms.InCategory(c, res.Tool, res.At) {
 			continue
 		}
 		if res.Invocation != "" {
@@ -182,7 +185,7 @@ func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record
 		}
 	}
 	for _, r := range after {
-		if r["AGENT_EVENT"] != "tool.result" || !readiness.InCategory(c, r["AGENT_TOOL"], d.Permissions) ||
+		if r["AGENT_EVENT"] != "tool.result" || !perms.InCategory(c, r["AGENT_TOOL"], readiness.At(r)) ||
 			r["AGENT_APPROVAL_ID"] != "" || approved[r["AGENT_INVOCATION"]+" "+r["AGENT_CALL_ID"]] {
 			continue
 		}

@@ -768,9 +768,14 @@ func (a *Admin) writeGateway(name string, d *GatewayData) error {
 		return err
 	}
 	head := "# Written by agent-admin: the autonomy mode and permissions of agent " + name + "\n# (Custos CONTRACT.md §6). mcp-gateway's OPA reloads it by itself.\n"
+	from := []map[string]any{}
+	if prev, err := a.readGateway(name); err == nil && prev.Permissions != nil {
+		from = prev.Permissions
+	}
 	if err := writeFile(a.gatewayFile(name), append([]byte(head), b...), 0o644); err != nil {
 		return err
 	}
+	a.recordPermissions(name, from, d.Permissions)
 	return a.waitPolicy("mcp/agents/"+name, func(v any) bool {
 		m, _ := v.(map[string]any)
 		perms, _ := m["permissions"].([]any)
@@ -796,6 +801,27 @@ func (a *Admin) writeGateway(name string, d *GatewayData) error {
 		}
 		return true
 	})
+}
+
+// recordPermissions writes root's record of a change of the agent's
+// permissions, with them before and after (§10): readiness judges each
+// call by the permissions in force at its time (O11).
+func (a *Admin) recordPermissions(name string, from, to []map[string]any) {
+	f, _ := json.Marshal(from)
+	t, _ := json.Marshal(to)
+	if string(f) == string(t) {
+		return
+	}
+	a.record(journal.PermissionsChanged, name, fmt.Sprintf("%s changed the permissions of agent %s (%d → %d)", a.who(), name, len(from), len(to)),
+		journal.Fields{"PERMISSIONS_FROM": string(f), "PERMISSIONS_TO": string(t), "BY": a.who()})
+}
+
+// who is the person for a record: By, else root.
+func (a *Admin) who() string {
+	if a.By != "" {
+		return a.By
+	}
+	return "root"
 }
 
 // SetMode sets the autonomy mode, enforced by the gateway.
@@ -955,6 +981,9 @@ func (a *Admin) StopAll(by string) error {
 	if err := a.writeStop(true, by); err != nil {
 		return err
 	}
+	// Root's record: readiness counts an approved call whose activity it
+	// stopped as an incident (O11).
+	a.record(journal.AgentsStopped, "", by+" stopped every agent (emergency stop)", journal.Fields{"BY": by})
 	err := a.Run(nil, "systemctl", "stop", "agent-schedule@*.timer", "agent@*.socket", "agent@*.service",
 		"agent-openshell@*.socket", "agent-openshell@*.service")
 	// Sandboxes outlive their relay unit: stop them by name as well.
@@ -1041,6 +1070,7 @@ func (a *Admin) ReleaseAll(by string) error {
 	if err := a.writeStop(false, by); err != nil {
 		return err
 	}
+	a.record(journal.AgentsReleased, "", by+" released the emergency stop", journal.Fields{"BY": by})
 	names, err := a.List()
 	if err != nil {
 		return err

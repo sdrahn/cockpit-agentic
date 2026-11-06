@@ -455,7 +455,13 @@ and the gateway's decision for each approval id (its `mcp-approval`
 audit record: `id`, `ok`, `by`, `principal`). A call belongs to a
 category when a permission of that category that is not `read_only`
 matches its tool (`server__tool`, the permission's `server` and `tool`
-as globs). Hosts write no category of their own.
+as globs), among the permissions **in force at the call's time**: those
+after root's last `permissions.changed` record (§10) before the call;
+before the first such record read, those it changed from; without one,
+the current ones. A tool moved into a category later does not bring its
+earlier calls along, and one moved out keeps them. A review of the
+gateway's approvers counts by its verdict's time. Hosts write no
+category of their own.
 
 | Measure | Definition, over the last `window_days` |
 |---|---|
@@ -463,7 +469,7 @@ as globs). Hosts write no category of their own.
 | approved, declined | by the gateway's decision, never by the agent's `approval.resolved` (which also reports a tool's error after an approval as declined) |
 | cancelled | approved, then an `activity.cancel` for its activity after the decision and before the call's `tool.result` |
 | **override rate** | (declined + cancelled) / proposals |
-| incident rate | incidents / (approved − cancelled); an incident is an approved call that failed (the gateway's `mcp-result` for its approval id is `tool_error`, `error` or `timeout`, or its `tool.result` is an error), whose activity has a `limit.exceeded`, or during whose activity (from the proposal to `invocation.end`) the agent was paused (`agent.paused`). A call the gateway saw cancelled is cancelled |
+| incident rate | incidents / (approved − cancelled); an incident is an approved call that failed (the gateway's `mcp-result` for its approval id is `tool_error`, `error` or `timeout`, or its `tool.result` is an error), whose activity has a `limit.exceeded`, or during whose activity (from the proposal to `invocation.end`) the agent was paused (`agent.paused`) or every agent was stopped (root's `agents.stopped`, the emergency stop, §8). A call the gateway saw cancelled is cancelled |
 | diversity | distinct tools, and distinct tool and `AGENT_ARGS_SHA256` pairs, among the proposals |
 | observed days | from the first proposal to now |
 
@@ -485,11 +491,8 @@ view** (`agent-admin readiness NAME [CATEGORY]`, §17; the control
 plane; the Cockpit page) shows these measures per category against the
 thresholds, with what is not met.
 
-Not yet (O11): matching calls against the agent data in force at their
-time (the reference implementation uses the current permissions);
-counting an emergency stop during an activity as an incident; the
-envelope's size next to what was observed (it needs `rate`, O12); and
-listing the proposals behind each number.
+Not yet (O11): the envelope's size next to what was observed (it needs
+`rate`, O12); and listing the proposals behind each number.
 
 In a `bounded` category, nothing is approved beforehand. Its override
 rate is measured **afterwards**: the approvers review a sample of its
@@ -866,6 +869,7 @@ did, and readiness reads them as such, next to the gateway's decisions.
 | `AGENT_VERDICT` | `category.review`: `ok` or `incident` |
 | `AGENT_INVOCATION`, `AGENT_CALL_ID`, `AGENT_TOOL` | `category.review`: the reviewed action |
 | `AGENT_DECISION_ID` | `category.review`: the gateway's decision id of the reviewed call, when the gateway recorded it; a call reviewed by root and on the gateway counts once, with the later verdict |
+| `AGENT_PERMISSIONS_FROM`, `AGENT_PERMISSIONS_TO` | `permissions.changed`: the agent's permissions (§6) before and after, as JSON |
 | `AGENT_REASON` | the reason given, or the trigger (`override rate 7.1 % above 5.0 % since …`, `rollback tool_error: …`, `rollback health_check_failed: …`) |
 | `AGENT_ENVELOPE_SHA256` | SHA-256 of the envelope's JSON with sorted keys |
 | `AGENT_READINESS` | the readiness measures at the time, as JSON |
@@ -875,6 +879,14 @@ did, and readiness reads them as such, next to the gateway's decisions.
 | `category.promoted` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a660` |
 | `category.demoted` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a661` |
 | `category.review` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a662` (an approver's verdict on an autonomous action) |
+| `permissions.changed` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a663` (any change of an agent's permissions: `agent-admin permissions`, `create --template`) |
+| `agents.stopped` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a664` (`stop-all`; `AGENT_NAME` empty) |
+| `agents.released` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a665` (`release-all`; `AGENT_NAME` empty) |
+
+Readiness reads `permissions.changed` and `agents.stopped` only as
+root's (`_UID=0`, as every trusted record): an agent that wrote a
+change of its own permissions or a stop into the journal would move its
+calls between categories or add incidents.
 
 **Diagnostics and enablement records** (§4a, §6b; draft, O16). The host
 writes `diagnosis.report` with the agent's fields; `agent-admin` writes
@@ -1564,9 +1576,12 @@ inherited, not specified again.
   mail, on its event stream and its approval page; and the gateway's
   approvers review autonomous actions on the gateway (its review items,
   R4), their verdicts counting as root's do; the actions `agent-admin
-  review` offers to root are the gateway's record of the calls too. Open in Custos: in the measures: the agent data in force at a call's time, emergency
-  stops as incidents, the envelope's size, and the proposals behind each
-  number.
+  review` offers to root are the gateway's record of the calls too. In
+  the measures, each call is judged by the permissions in force at its
+  time (root's `permissions.changed`), and an emergency stop during an
+  approved call's activity is an incident (root's `agents.stopped`).
+  Open in Custos: in the measures, the envelope's size and the proposals
+  behind each number.
 - **O12 — envelope limits in the gateway.** A per-agent, per-category
   call counter in mcp-gateway, with the window and the limit from the
   agent data, so that `rate` is enforced where the approvals are.

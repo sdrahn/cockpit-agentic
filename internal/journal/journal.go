@@ -37,6 +37,12 @@ const (
 	CategoryDemoted  = "category.demoted"
 	CategoryReview   = "category.review"
 
+	// Root's records the readiness measures need (O11): a change of an
+	// agent's permissions, the emergency stop and its release.
+	PermissionsChanged = "permissions.changed"
+	AgentsStopped      = "agents.stopped"
+	AgentsReleased     = "agents.released"
+
 	// The bundled diagnostics install (§4a, §6b, §10; draft, O16): the
 	// IDs are reserved by the contract.
 	DiagnosisReport   = "diagnosis.report"
@@ -64,6 +70,10 @@ var MessageIDs = map[string]string{
 	CategoryPromoted: "6f3c0e1a9b2d4c58a7e1f2d3c4b5a660",
 	CategoryDemoted:  "6f3c0e1a9b2d4c58a7e1f2d3c4b5a661",
 	CategoryReview:   "6f3c0e1a9b2d4c58a7e1f2d3c4b5a662",
+
+	PermissionsChanged: "6f3c0e1a9b2d4c58a7e1f2d3c4b5a663",
+	AgentsStopped:      "6f3c0e1a9b2d4c58a7e1f2d3c4b5a664",
+	AgentsReleased:     "6f3c0e1a9b2d4c58a7e1f2d3c4b5a665",
 
 	DiagnosisReport:   "6f3c0e1a9b2d4c58a7e1f2d3c4b5a670",
 	DiagnosisFeedback: "6f3c0e1a9b2d4c58a7e1f2d3c4b5a671",

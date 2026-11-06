@@ -9,6 +9,14 @@ removed.
 
 ### Added
 
+- Readiness judges each call by the agent's permissions at the call's
+  time, and counts an emergency stop during an approved call's activity
+  as an incident (O11). `agent-admin` records each change of an agent's
+  permissions (`permissions.changed`, with them before and after) and
+  the emergency stop and its release (`agents.stopped`,
+  `agents.released`), as root; readiness, review and the demotion
+  evaluator read them, an agent's own records of them never.
+
 - `model.timeout_seconds`: how long one model call may take. Without it,
   a call has no limit of its own and `limits.max_invocation_seconds`
   bounds it with the rest of the activity; a call that runs out says
