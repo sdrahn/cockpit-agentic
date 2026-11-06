@@ -37,6 +37,10 @@ removed.
   (0.3.0): mcp-gateway's exec server domain, `mcpsrv_exec_t`, may not
   ask systemd for the boot's times or read `/proc/pressure`. Custos's
   SELinux module now allows these, for the commands it ships.
+- `custos-setup` installed the exec commands after creating and starting
+  the health-check agent, whose session with the gateway then offered
+  none of them until the agent restarted. It installs them first now,
+  and restarts an existing agent when it adds one.
 - A call to an `openai` model was cut off after 10 minutes, whatever the
   activity's limit, which a slow local model with a growing prompt
   reached ("Client.Timeout exceeded while awaiting headers").

@@ -1298,15 +1298,17 @@ on standard output as `custos-setup: <step>: done|already|skipped
    whose administrator has enabled more since, it goes back on nothing;
 2. it sets the model defaults (§14b), with `credential: model-key` when
    a key is given;
-3. it creates the agent `health-check` from its template (§14a), which
-   takes the defaults' model; one that exists keeps its configuration;
-4. it stores the key from `FILE` (never from the command line) as the
-   agent's `model-key` and restarts the agent if it runs; again, a new key
-   replaces the old one;
-5. it copies the playbooks' commands (`exec.d-diagnostics.yaml`,
+3. it copies the playbooks' commands (`exec.d-diagnostics.yaml`,
    `exec.d-disk-usage.yaml`, §14c) into `/etc/mcp-gateway/exec.d/` where
    the exec server is installed, keeping a file of the same name that
-   differs.
+   differs. Before the agent: its session with the gateway, and the exec
+   server started for it, offer the commands there when it starts;
+4. it creates the agent `health-check` from its template (§14a), which
+   takes the defaults' model; one that exists keeps its configuration,
+   and is restarted if step 3 added a command;
+5. it stores the key from `FILE` (never from the command line) as the
+   agent's `model-key` and restarts the agent if it runs; again, a new key
+   replaces the old one.
 
 The agent's socket and schedule timers are enabled by its creation.
 Exit status 0: set up; 1: not (the reason on standard error); 2: wrong

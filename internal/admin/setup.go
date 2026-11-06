@@ -158,9 +158,23 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 		add("model defaults", "done", m.Provider+" "+m.Name)
 	}
 
-	// 3. The health-check agent, from its template with the defaults.
+	// 3. The exec server's diagnostic commands, which the playbooks use,
+	// before the agent: its session with the gateway, and the exec server
+	// started for it, have the commands that are there when it starts.
+	execSteps := a.setupExec()
+	steps = append(steps, execSteps...)
+	execAdded := false
+	for _, s := range execSteps {
+		execAdded = execAdded || s.Result == "done"
+	}
+
+	// 4. The health-check agent, from its template with the defaults.
 	if _, err := os.Stat(filepath.Join(a.agentDir(HealthCheck), "agent.yaml")); err == nil {
 		add("agent "+HealthCheck, "already", "its configuration is kept; change it with agent-admin edit")
+		if execAdded {
+			// A running agent sees new commands only in a new session.
+			a.Run(nil, "systemctl", "try-restart", "agent@"+HealthCheck+".service")
+		}
 	} else {
 		if err := a.CreateFromTemplate(HealthCheck, HealthCheck, ""); err != nil {
 			return steps, fmt.Errorf("agent %s: %w", HealthCheck, err)
@@ -168,7 +182,7 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 		add("agent "+HealthCheck, "done", "")
 	}
 
-	// 4. Its credential: stored again when given, so a new key replaces
+	// 5. Its credential: stored again when given, so a new key replaces
 	// the old one.
 	if o.Credential != nil {
 		cfg, err := config.Load(a.agentDir(HealthCheck))
@@ -185,9 +199,6 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 			a.Run(nil, "systemctl", "try-restart", "agent@"+HealthCheck+".service")
 		}
 	}
-
-	// 5. The exec server's diagnostic commands, which the playbooks use.
-	steps = append(steps, a.setupExec()...)
 	return steps, nil
 }
 

@@ -35,8 +35,10 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "diagnostics-only=done, model defaults=done, agent health-check=done, credential=done, " +
-		"exec commands exec.d-diagnostics.yaml=done, exec commands exec.d-disk-usage.yaml=done"
+	// The exec commands before the agent: its session with the gateway
+	// has the commands there when it starts.
+	want := "diagnostics-only=done, model defaults=done, exec commands exec.d-diagnostics.yaml=done, " +
+		"exec commands exec.d-disk-usage.yaml=done, agent health-check=done, credential=done"
 	if got := results(steps); got != want {
 		t.Errorf("first run:\n got %s\nwant %s", got, want)
 	}
@@ -71,10 +73,26 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = "diagnostics-only=already, model defaults=already, agent health-check=already, credential=done, " +
-		"exec commands exec.d-diagnostics.yaml=already, exec commands exec.d-disk-usage.yaml=already"
+	want = "diagnostics-only=already, model defaults=already, exec commands exec.d-diagnostics.yaml=already, " +
+		"exec commands exec.d-disk-usage.yaml=already, agent health-check=already, credential=done"
 	if got := results(steps); got != want {
 		t.Errorf("second run:\n got %s\nwant %s", got, want)
+	}
+
+	// Commands added for an agent that is there already: it is restarted,
+	// for a session with them.
+	os.Remove(a.p(filepath.Join(ExecDir, "exec.d-disk-usage.yaml")))
+	r.cmds = nil
+	if _, err := a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "qwen3-8b"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(r.cmds, "\n"), "systemctl try-restart agent@health-check.service") {
+		t.Errorf("health-check not restarted for the new commands: %v", r.cmds)
+	}
+	r.cmds = nil
+	a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "qwen3-8b"})
+	if strings.Contains(strings.Join(r.cmds, "\n"), "try-restart") {
+		t.Errorf("restarted with nothing new: %v", r.cmds)
 	}
 
 	// After the administrator enabled more, setup does not go back.
