@@ -115,9 +115,10 @@ type Measures struct {
 }
 
 // Measure computes a category's readiness. perms are the agent's
-// permissions (the gateway data); a call belongs to the category when a
-// permission of the category that is not read-only matches its tool.
-func Measure(category string, perms []map[string]any, recs []Record, gw Audit, th Thresholds, now time.Time) Measures {
+// permissions (the gateway data) and their changes; a call belongs to the
+// category when a permission of the category that is not read-only
+// matches its tool, among the permissions in force at the call's time.
+func Measure(category string, perms History, recs []Record, gw Audit, th Thresholds, now time.Time) Measures {
 	decisions := gw.Decisions
 	type key struct{ inv, call string }
 	calls := map[key]Record{}
@@ -126,7 +127,7 @@ func Measure(category string, perms []map[string]any, recs []Record, gw Audit, t
 	cancels := map[string][]time.Time{} // invocation → cancel times
 	limits := map[string]bool{}         // invocations with a limit reached
 	ends := map[string]time.Time{}      // invocation → its end
-	var pauses []time.Time
+	var pauses, stops []time.Time
 	for _, r := range recs {
 		k := key{r["AGENT_INVOCATION"], r["AGENT_CALL_ID"]}
 		switch r["AGENT_EVENT"] {
@@ -135,7 +136,7 @@ func Measure(category string, perms []map[string]any, recs []Record, gw Audit, t
 		case "tool.result":
 			results[k] = r
 		case "approval.pending":
-			if r["AGENT_APPROVAL_ID"] != "" && InCategory(category, r["AGENT_TOOL"], perms) {
+			if r["AGENT_APPROVAL_ID"] != "" && perms.InCategory(category, r["AGENT_TOOL"], At(r)) {
 				proposals = append(proposals, r)
 			}
 		case "activity.cancel":
@@ -146,6 +147,10 @@ func Measure(category string, perms []map[string]any, recs []Record, gw Audit, t
 			ends[r["AGENT_INVOCATION"]] = At(r)
 		case "agent.paused":
 			pauses = append(pauses, At(r))
+		case AgentsStopped:
+			if ByRoot(r) {
+				stops = append(stops, At(r))
+			}
 		}
 	}
 	var m Measures
@@ -187,6 +192,8 @@ func Measure(category string, perms []map[string]any, recs []Record, gw Audit, t
 		case limits[k.inv]:
 			m.Incidents++
 		case pausedBetween(pauses, At(p), end):
+			m.Incidents++
+		case pausedBetween(stops, At(p), end): // the emergency stop (O11)
 			m.Incidents++
 		}
 	}
@@ -422,10 +429,10 @@ func (a Action) key() string {
 // ReviewMap is the reviews by action: root's by activity and call
 // (Reviews), and the gateway's approvers' by the decision id of the call
 // they reviewed (R4).
-func ReviewMap(category string, perms []map[string]any, recs []Record, gateway []Review) map[string]Review {
+func ReviewMap(category string, perms History, recs []Record, gateway []Review) map[string]Review {
 	out := Reviews(category, recs)
 	for _, rv := range gateway {
-		if rv.Decision != "" && InCategory(category, rv.Tool, perms) {
+		if rv.Decision != "" && perms.InCategory(category, rv.Tool, rv.At) {
 			out["decision "+rv.Decision] = rv
 		}
 	}
@@ -448,7 +455,7 @@ func Reviewed(a Action, reviews map[string]Review) bool {
 // from the progress token the agent sent; then those only the agent
 // recorded (Autonomous). An agent can add actions to review this way,
 // never hide one the gateway let through.
-func AutonomousActions(category string, perms []map[string]any, recs []Record, results []Result, since time.Time) []Action {
+func AutonomousActions(category string, perms History, recs []Record, results []Result, since time.Time) []Action {
 	args := map[string]string{}
 	for _, r := range recs {
 		if r["AGENT_EVENT"] == "tool.call" {
@@ -458,7 +465,7 @@ func AutonomousActions(category string, perms []map[string]any, recs []Record, r
 	var out []Action
 	seen := map[string]bool{}
 	for _, res := range results {
-		if res.ApprovalID != "" || res.Grant != "" || res.At.Before(since) || !InCategory(category, res.Tool, perms) {
+		if res.ApprovalID != "" || res.Grant != "" || res.At.Before(since) || !perms.InCategory(category, res.Tool, res.At) {
 			continue
 		}
 		outcome := "ok"
@@ -580,7 +587,7 @@ func ParseReviews(b []byte, principal string) []Review {
 //
 // A call reviewed by both (root's review names the gateway's decision id
 // of the call) is one review: the later verdict.
-func AllReviews(category string, perms []map[string]any, recs []Record, gateway []Review) []Review {
+func AllReviews(category string, perms History, recs []Record, gateway []Review) []Review {
 	var out []Review
 	byDecision := map[string]int{} // decision id → index in out
 	add := func(rv Review) {
@@ -599,7 +606,7 @@ func AllReviews(category string, perms []map[string]any, recs []Record, gateway 
 		add(rv)
 	}
 	for _, rv := range gateway {
-		if InCategory(category, rv.Tool, perms) {
+		if perms.InCategory(category, rv.Tool, rv.At) {
 			add(rv)
 		}
 	}
@@ -609,7 +616,7 @@ func AllReviews(category string, perms []map[string]any, recs []Record, gateway 
 
 // Autonomous are the category's calls since then that ran without an
 // approval, oldest first.
-func Autonomous(category string, perms []map[string]any, recs []Record, since time.Time) []Action {
+func Autonomous(category string, perms History, recs []Record, since time.Time) []Action {
 	asked := map[string]bool{}
 	args := map[string]string{}
 	for _, r := range recs {
@@ -625,7 +632,7 @@ func Autonomous(category string, perms []map[string]any, recs []Record, since ti
 	for _, r := range recs {
 		k := r["AGENT_INVOCATION"] + " " + r["AGENT_CALL_ID"]
 		if r["AGENT_EVENT"] != "tool.result" || r["AGENT_APPROVAL_ID"] != "" || asked[k] ||
-			At(r).Before(since) || !InCategory(category, r["AGENT_TOOL"], perms) {
+			At(r).Before(since) || !perms.InCategory(category, r["AGENT_TOOL"], At(r)) {
 			continue
 		}
 		out = append(out, Action{Activity: r["AGENT_INVOCATION"], Call: r["AGENT_CALL_ID"], Tool: r["AGENT_TOOL"],
@@ -828,4 +835,79 @@ func (d Diagnostics) Unmet(th Thresholds) []string {
 		}
 	}
 	return out
+}
+
+// AgentsStopped is root's record of the emergency stop (agent-admin
+// stop-all; §8, §10): an approved call whose activity it stopped is an
+// incident. AgentsReleased is its end.
+const (
+	AgentsStopped  = "agents.stopped"
+	AgentsReleased = "agents.released"
+)
+
+// PermissionsChanged is root's record of a change of an agent's
+// permissions (agent-admin; §10), with the permissions before and after
+// as JSON.
+const PermissionsChanged = "permissions.changed"
+
+// History is an agent's permissions now and their changes, oldest first:
+// which permissions were in force at a time (O11).
+type History struct {
+	Current []map[string]any
+	Changes []Change
+}
+
+// Change is one change of the permissions.
+type Change struct {
+	At       time.Time
+	From, To []map[string]any
+}
+
+// Now is a history without changes: the current permissions at any time.
+func Now(perms []map[string]any) History { return History{Current: perms} }
+
+// NewHistory is the current permissions and the changes root recorded
+// among recs (permissions.changed with _UID 0; ByRoot). An agent's own
+// record of a change is none.
+func NewHistory(current []map[string]any, recs []Record) History {
+	h := History{Current: current}
+	for _, r := range recs {
+		if r["AGENT_EVENT"] != PermissionsChanged || !ByRoot(r) {
+			continue
+		}
+		var c Change
+		if json.Unmarshal([]byte(r["AGENT_PERMISSIONS_FROM"]), &c.From) != nil ||
+			json.Unmarshal([]byte(r["AGENT_PERMISSIONS_TO"]), &c.To) != nil {
+			continue
+		}
+		c.At = At(r)
+		h.Changes = append(h.Changes, c)
+	}
+	sort.SliceStable(h.Changes, func(i, j int) bool { return h.Changes[i].At.Before(h.Changes[j].At) })
+	return h
+}
+
+// At is the permissions in force at t: those after the last change
+// before t; before the first change read, those it changed from; without
+// changes, the current ones.
+func (h History) At(t time.Time) []map[string]any {
+	if len(h.Changes) == 0 {
+		return h.Current
+	}
+	if t.Before(h.Changes[0].At) {
+		return h.Changes[0].From
+	}
+	in := h.Changes[0].To
+	for _, c := range h.Changes[1:] {
+		if t.Before(c.At) {
+			break
+		}
+		in = c.To
+	}
+	return in
+}
+
+// InCategory is InCategory with the permissions in force at t.
+func (h History) InCategory(category, tool string, t time.Time) bool {
+	return InCategory(category, tool, h.At(t))
 }

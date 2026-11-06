@@ -90,7 +90,7 @@ func TestMeasures(t *testing.T) {
 	l.proposal(t0.Add(28*time.Hour), "zypp__list_updates", "x", true, false)
 
 	now := t0.Add(20 * 24 * time.Hour)
-	m := Measure("patch-errata", perms, l.recs, Audit{Decisions: l.decisions}, Defaults, now)
+	m := Measure("patch-errata", Now(perms), l.recs, Audit{Decisions: l.decisions}, Defaults, now)
 	want := Measures{Proposals: 15, Approved: 14, Declined: 1, Cancelled: 1, Overrides: 2, Incidents: 3, Tools: 1, Calls: 3}
 	if m.Proposals != want.Proposals || m.Approved != want.Approved || m.Declined != want.Declined || m.Cancelled != want.Cancelled ||
 		m.Overrides != want.Overrides || m.Incidents != want.Incidents || m.Tools != want.Tools || m.Calls != want.Calls {
@@ -115,7 +115,7 @@ func TestMeasures(t *testing.T) {
 		t.Errorf("20 days observed reported unmet: %q", got)
 	}
 	// The other category's own measures.
-	c := Measure("config-lifecycle", perms, l.recs, Audit{Decisions: l.decisions}, Defaults, now)
+	c := Measure("config-lifecycle", Now(perms), l.recs, Audit{Decisions: l.decisions}, Defaults, now)
 	if c.Proposals != 1 || c.Declined != 1 || c.OverrideRate != 1 {
 		t.Errorf("config-lifecycle %+v", c)
 	}
@@ -128,19 +128,19 @@ func TestReady(t *testing.T) {
 		inv, _ := l.proposal(at, "zypp__patch", "a", true, true)
 		l.result(at.Add(time.Minute+time.Second), inv, "ok")
 	}
-	m := Measure("patch-errata", perms, l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(16*24*time.Hour))
+	m := Measure("patch-errata", Now(perms), l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(16*24*time.Hour))
 	if !m.Ready || len(m.Unmet) != 0 || m.Proposals != 60 || m.OverrideRate != 0 || m.IncidentRate != 0 {
 		t.Errorf("%+v", m)
 	}
 	// Too recent for the observation period.
-	m = Measure("patch-errata", perms, l.recs, Audit{Decisions: l.decisions}, Thresholds{ObservationDays: 30, Proposals: 50, OverrideRate: 0.05, IncidentRate: 0.02}, t0.Add(16*24*time.Hour))
+	m = Measure("patch-errata", Now(perms), l.recs, Audit{Decisions: l.decisions}, Thresholds{ObservationDays: 30, Proposals: 50, OverrideRate: 0.05, IncidentRate: 0.02}, t0.Add(16*24*time.Hour))
 	if m.Ready || !strings.Contains(strings.Join(m.Unmet, ";"), "observed 16.0 days of 30") {
 		t.Errorf("%+v", m)
 	}
 }
 
 func TestEmpty(t *testing.T) {
-	m := Measure("patch-errata", perms, nil, Audit{Decisions: nil}, Defaults, t0)
+	m := Measure("patch-errata", Now(perms), nil, Audit{Decisions: nil}, Defaults, t0)
 	if m.Ready || m.Proposals != 0 || m.OverrideRate != 0 || m.FirstProposal != "" {
 		t.Errorf("%+v", m)
 	}
@@ -201,7 +201,7 @@ func TestAutonomous(t *testing.T) {
 	l.auto(since.Add(4*time.Hour), "x-4", "zypp__list_updates", "ok")    // read-only
 	inv, _ := l.proposal(since.Add(5*time.Hour), "zypp__patch", "x", true, true)
 	l.result(since.Add(5*time.Hour+2*time.Minute), inv, "ok") // approved, not autonomous
-	got := Autonomous("patch-errata", perms, l.recs, since)
+	got := Autonomous("patch-errata", Now(perms), l.recs, since)
 	if len(got) != 2 || got[0].Activity != "x-1" || got[1].Activity != "x-2" || got[1].Outcome != "error" || got[0].Args != "h-x-1" || got[0].Time == "" {
 		t.Fatalf("%+v", got)
 	}
@@ -218,7 +218,7 @@ func TestReviewsCountAsOverrides(t *testing.T) {
 	l.review(t0.Add(12*time.Hour), "patch-errata", "e-a", VerdictOK)
 	l.review(t0.Add(13*time.Hour), "patch-errata", "e-b", VerdictIncident)
 	l.review(t0.Add(13*time.Hour), "config-lifecycle", "e-b", VerdictIncident) // another category's
-	m := Measure("patch-errata", perms, l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(20*24*time.Hour))
+	m := Measure("patch-errata", Now(perms), l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(20*24*time.Hour))
 	if m.Proposals != 8 || m.Reviewed != 2 || m.ReviewOverrides != 1 || m.Overrides != 1 || fmt.Sprintf("%.3f", m.OverrideRate) != "0.100" {
 		t.Errorf("%+v", m)
 	}
@@ -268,7 +268,7 @@ func TestForgedReviewsIgnored(t *testing.T) {
 		inv, _ := l.proposal(t0.Add(time.Duration(i)*time.Hour), "zypp__patch", "a", true, false) // all declined
 		l.result(t0.Add(time.Duration(i)*time.Hour+2*time.Minute), inv, "error")
 	}
-	before := Measure("patch-errata", perms, l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(20*24*time.Hour))
+	before := Measure("patch-errata", Now(perms), l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(20*24*time.Hour))
 	for i := 0; i < 50; i++ {
 		inv := fmt.Sprintf("x-%d", i)
 		l.auto(t0.Add(10*time.Hour), inv, "zypp__patch", "ok")
@@ -276,7 +276,7 @@ func TestForgedReviewsIgnored(t *testing.T) {
 		l.recs[len(l.recs)-1]["_UID"] = "981"
 		l.recs[len(l.recs)-1]["SYSLOG_IDENTIFIER"] = "custos-promotion"
 	}
-	after := Measure("patch-errata", perms, l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(20*24*time.Hour))
+	after := Measure("patch-errata", Now(perms), l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(20*24*time.Hour))
 	if after.Reviewed != 0 || after.OverrideRate != before.OverrideRate || before.OverrideRate != 1 {
 		t.Errorf("before %+v\nafter %+v", before, after)
 	}
@@ -360,7 +360,7 @@ func TestIncidentsFromTheGateway(t *testing.T) {
 		}
 		l.decisions[id] = d
 	}
-	m := Measure("patch-errata", perms, l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(20*24*time.Hour))
+	m := Measure("patch-errata", Now(perms), l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(20*24*time.Hour))
 	if m.Approved != 4 || m.Cancelled != 1 || m.Incidents != 2 {
 		t.Errorf("%+v", m)
 	}
@@ -419,7 +419,7 @@ func TestGatewayReviews(t *testing.T) {
 	if a := ParseAudit([]byte(gw), "agent-pp"); len(a.Reviews) != 3 {
 		t.Errorf("audit %+v", a)
 	}
-	m := Measure("patch-errata", perms, nil, Audit{Reviews: rv}, Defaults, t0.Add(24*time.Hour))
+	m := Measure("patch-errata", Now(perms), nil, Audit{Reviews: rv}, Defaults, t0.Add(24*time.Hour))
 	if m.Reviewed != 2 || m.ReviewOverrides != 1 || m.Overrides != 1 || m.OverrideRate != 0.5 {
 		t.Errorf("%+v", m)
 	}
@@ -445,7 +445,7 @@ func TestAutonomousActionsFromTheGateway(t *testing.T) {
 		{Tool: "zypp__list_updates", Outcome: "ok", DecisionID: "d-6", At: t0.Add(time.Hour)},                            // read-only
 		{Tool: "zypp__patch", Outcome: "ok", DecisionID: "d-7", Invocation: "e-0", CallID: "c1", At: t0.Add(-time.Hour)}, // before
 	}
-	acts := AutonomousActions("patch-errata", perms, l.recs, results, since)
+	acts := AutonomousActions("patch-errata", Now(perms), l.recs, results, since)
 	var got []string
 	for _, a := range acts {
 		got = append(got, a.Activity+"/"+a.Decision+"/"+a.Outcome+"/"+a.Args)
@@ -454,7 +454,7 @@ func TestAutonomousActionsFromTheGateway(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 	// Reviewed: root's by activity and call, the gateway's by decision id.
-	reviews := ReviewMap("patch-errata", perms, nil, []Review{{Item: "r-1", Tool: "zypp__patch", Decision: "d-3", Verdict: "ok"}})
+	reviews := ReviewMap("patch-errata", Now(perms), nil, []Review{{Item: "r-1", Tool: "zypp__patch", Decision: "d-3", Verdict: "ok"}})
 	reviews["e-1 c1"] = Review{Verdict: "ok"}
 	var open []string
 	for _, a := range Pending(acts, reviews, t0.Add(24*time.Hour)) {
@@ -473,8 +473,75 @@ func TestOneReviewPerCall(t *testing.T) {
 		{Item: "r-1", Tool: "zypp__patch", Decision: "d-1", Verdict: "incident", Reason: "x", At: t0.Add(time.Hour)},
 		{Item: "r-2", Tool: "zypp__patch", Decision: "d-2", Verdict: "ok", At: t0},
 	}
-	all := AllReviews("patch-errata", perms, l.recs, gw)
+	all := AllReviews("patch-errata", Now(perms), l.recs, gw)
 	if len(all) != 2 || all[1].Item != "r-1" || all[1].Verdict != "incident" {
 		t.Errorf("%+v", all)
+	}
+}
+
+// An emergency stop during an approved call's activity is an incident,
+// when root recorded it (O11).
+func TestEmergencyStopIsAnIncident(t *testing.T) {
+	var l log
+	inv, _ := l.proposal(t0, "zypp__patch", "a", true, true)
+	stop := Record{"AGENT_EVENT": AgentsStopped, "_UID": "0", "__REALTIME_TIMESTAMP": strconv.FormatInt(t0.Add(90*time.Second).UnixMicro(), 10)}
+	l.recs = append(l.recs, stop)
+	l.result(t0.Add(3*time.Minute), inv, "ok")
+	// After its activity ended: none.
+	inv, _ = l.proposal(t0.Add(time.Hour), "zypp__patch", "b", true, true)
+	l.result(t0.Add(time.Hour+2*time.Minute), inv, "ok")
+	late := Record{"AGENT_EVENT": AgentsStopped, "_UID": "0", "__REALTIME_TIMESTAMP": strconv.FormatInt(t0.Add(2*time.Hour).UnixMicro(), 10)}
+	l.recs = append(l.recs, late)
+	// The agent's own record of a stop: none.
+	inv, _ = l.proposal(t0.Add(3*time.Hour), "zypp__patch", "c", true, true)
+	forged := Record{"AGENT_EVENT": AgentsStopped, "_UID": "981", "__REALTIME_TIMESTAMP": strconv.FormatInt(t0.Add(3*time.Hour+90*time.Second).UnixMicro(), 10)}
+	l.recs = append(l.recs, forged)
+	l.result(t0.Add(3*time.Hour+3*time.Minute), inv, "ok")
+	m := Measure("patch-errata", Now(perms), l.recs, Audit{Decisions: l.decisions}, Defaults, t0.Add(24*time.Hour))
+	if m.Approved != 3 || m.Incidents != 1 {
+		t.Errorf("approved %d, incidents %d; want 3, 1", m.Approved, m.Incidents)
+	}
+}
+
+// changed: root's record of a change of the permissions.
+func changed(at time.Time, from, to []map[string]any, uid string) Record {
+	f, _ := json.Marshal(from)
+	t, _ := json.Marshal(to)
+	return Record{"AGENT_EVENT": PermissionsChanged, "_UID": uid, "AGENT_PERMISSIONS_FROM": string(f), "AGENT_PERMISSIONS_TO": string(t),
+		"__REALTIME_TIMESTAMP": strconv.FormatInt(at.UnixMicro(), 10)}
+}
+
+// A call counts for the category its permissions had at the call's time,
+// not the current ones (O11).
+func TestPermissionsAtTheCallsTime(t *testing.T) {
+	patchIn := []map[string]any{{"server": "zypp", "tool": "patch", "category": "patch-errata"}}
+	patchOut := []map[string]any{{"server": "zypp", "tool": "patch", "category": "config-lifecycle"}}
+	var l log
+	// zypp__patch was config-lifecycle's until a day in; patch-errata's
+	// since; config-lifecycle's again since day 3 (the current data).
+	l.proposal(t0, "zypp__patch", "a", true, false)                   // config-lifecycle
+	l.proposal(t0.Add(36*time.Hour), "zypp__patch", "b", true, false) // patch-errata
+	l.proposal(t0.Add(80*time.Hour), "zypp__patch", "c", true, false) // config-lifecycle
+	l.recs = append(l.recs, changed(t0.Add(24*time.Hour), patchOut, patchIn, "0"), changed(t0.Add(72*time.Hour), patchIn, patchOut, "0"))
+	// The agent's own record of a change: none.
+	l.recs = append(l.recs, changed(t0.Add(79*time.Hour), patchOut, patchIn, "981"))
+	h := NewHistory(patchOut, l.recs)
+	if len(h.Changes) != 2 {
+		t.Fatalf("changes: %d", len(h.Changes))
+	}
+	now := t0.Add(5 * 24 * time.Hour)
+	if m := Measure("patch-errata", h, l.recs, Audit{Decisions: l.decisions}, Defaults, now); m.Proposals != 1 || m.Declined != 1 {
+		t.Errorf("patch-errata: %d proposals, %d declined; want 1, 1", m.Proposals, m.Declined)
+	}
+	if m := Measure("config-lifecycle", h, l.recs, Audit{Decisions: l.decisions}, Defaults, now); m.Proposals != 2 {
+		t.Errorf("config-lifecycle: %d proposals; want 2", m.Proposals)
+	}
+	// With the current data only, all three were config-lifecycle's.
+	if m := Measure("config-lifecycle", Now(patchOut), l.recs, Audit{Decisions: l.decisions}, Defaults, now); m.Proposals != 3 {
+		t.Errorf("current data: %d proposals; want 3", m.Proposals)
+	}
+	// Before the first change read: what it changed from.
+	if got := h.At(t0); len(got) != 1 || got[0]["category"] != "config-lifecycle" {
+		t.Errorf("at t0: %v", got)
 	}
 }

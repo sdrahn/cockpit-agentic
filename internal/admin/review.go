@@ -59,8 +59,9 @@ func (a *Admin) ReviewQueue(name string, only ...string) (*Queue, error) {
 		if st == nil || st.PromotedBy == "" || (len(only) > 0 && !contains(only, c)) {
 			continue
 		}
-		acts := readiness.AutonomousActions(c, d.Permissions, recs, gw.Results, promotedAt(st))
-		reviews := readiness.ReviewMap(c, d.Permissions, recs, gw.Reviews)
+		perms := readiness.NewHistory(d.Permissions, recs)
+		acts := readiness.AutonomousActions(c, perms, recs, gw.Results, promotedAt(st))
+		reviews := readiness.ReviewMap(c, perms, recs, gw.Reviews)
 		cq := CategoryQueue{Mode: st.Mode, Pending: readiness.Pending(acts, reviews, now)}
 		if cq.Pending == nil {
 			cq.Pending = []readiness.Action{}
@@ -110,7 +111,7 @@ func (a *Admin) Review(name, cat, activity, call, verdict, by, reason string) er
 		return fmt.Errorf("agent %s: category %s has not been promoted: its calls all had approvals", name, cat)
 	}
 	var act *readiness.Action
-	for _, x := range readiness.AutonomousActions(cat, d.Permissions, recs, gw.Results, promotedAt(st)) {
+	for _, x := range readiness.AutonomousActions(cat, readiness.NewHistory(d.Permissions, recs), recs, gw.Results, promotedAt(st)) {
 		if activity != "" && x.Activity == activity && x.Call == call {
 			x := x
 			act = &x
@@ -134,7 +135,7 @@ func (a *Admin) Review(name, cat, activity, call, verdict, by, reason string) er
 
 // reviewIncident is a review since the promotion that found an action
 // should not have run, for the evaluator; "" if none.
-func reviewIncident(cat string, st *CategoryState, perms []map[string]any, recs []readiness.Record, gateway []readiness.Review) string {
+func reviewIncident(cat string, st *CategoryState, perms readiness.History, recs []readiness.Record, gateway []readiness.Review) string {
 	var found []readiness.Review
 	for _, rv := range readiness.AllReviews(cat, perms, recs, gateway) {
 		if rv.Verdict == readiness.VerdictIncident && !rv.At.Before(promotedAt(st)) {

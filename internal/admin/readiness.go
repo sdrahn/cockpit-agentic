@@ -89,8 +89,9 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 		return nil, err
 	}
 	r.DiagnosticsApply = e != nil
+	perms := readiness.NewHistory(d.Permissions, recs)
 	for _, c := range cats {
-		m := readiness.Measure(c, d.Permissions, recs, gw, th, now)
+		m := readiness.Measure(c, perms, recs, gw, th, now)
 		if r.DiagnosticsApply && c != Diagnostics {
 			m.Unmet = append(m.Unmet, r.Diagnostics.Unmet(th)...)
 			m.Ready = len(m.Unmet) == 0
@@ -114,9 +115,21 @@ func (a *Admin) journalRecords(name string, since time.Time) ([]readiness.Record
 	if err != nil {
 		return nil, readiness.Audit{}, fmt.Errorf("reading agent %s's journal: %w", name, err)
 	}
+	// The emergency stops (every agent's, so no AGENT_NAME): an approved
+	// call whose activity one stopped is an incident (O11).
+	stops, err := read("_UID=0", "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT="+readiness.AgentsStopped)
+	if err != nil {
+		return nil, readiness.Audit{}, fmt.Errorf("reading the emergency stops' records: %w", err)
+	}
 	gwLog, err := read("-u", "mcp-gateway.service")
 	if err != nil {
 		return nil, readiness.Audit{}, fmt.Errorf("reading mcp-gateway's journal: %w", err)
 	}
-	return readiness.ParseRecords(agentLog), readiness.ParseAudit(gwLog, "agent-"+name), nil
+	recs := readiness.ParseRecords(agentLog)
+	for _, s := range readiness.ParseRecords(stops) {
+		if s["AGENT_EVENT"] == readiness.AgentsStopped && readiness.ByRoot(s) {
+			recs = append(recs, s)
+		}
+	}
+	return recs, readiness.ParseAudit(gwLog, "agent-"+name), nil
 }
