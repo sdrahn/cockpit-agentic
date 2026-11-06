@@ -244,6 +244,25 @@
         return fail(404, null, "not found\n");
     }
 
+    // The gateway's OPA (?opa; through the root bridge only): its decision
+    // on one call, with the reasons the agents module gives (§6).
+    function opaRoute(method, path, body, superuser) {
+        if (!query.has("opa") || !superuser) return fail(0, "access-denied");
+        if (method !== "POST" || path !== "/v1/data/mcp/authz/decision") return fail(404, null, "{}");
+        const { input } = JSON.parse(body);
+        const agent = input.principal.sub.replace(/^agent-/, "");
+        const name = input.resource.server + "__" + input.resource.name;
+        const decide = () => {
+            if (agent === "triage" && name === "zypp__install_patches") return { effect: "deny", reason: "the agent is advisory: it only reads (agent-admin mode)" };
+            if (name === "zypp__list_updates") return { effect: "allow" };
+            if (name === "systemd__restart_unit") return input.args.unit === "nginx.service" ? { effect: "allow", obligations: { review: true } }
+                : { effect: "deny", reason: "no matching permission: the arguments are outside what your roles allow (unit: ^nginx\\.service$)" };
+            if (name === "zypp__install_patches") return { effect: "ask", ask: { channel: "oob" } };
+            return { effect: "deny", reason: "no matching permission" };
+        };
+        return ok({ result: decide() });
+    }
+
     function gatewayRoute(method, path, body) {
         if (method === "GET" && path === "/v1/approvals") return ok(pending);
         // The gateway's review items (R4): ?reviews has one, else a gateway
@@ -277,6 +296,7 @@
                 const m = sock.match(/^\/run\/agents\/([^/]+)\/api\.sock$/);
                 if (m) return agentRoute(m[1], method, path, opts.superuser, body);
                 if (sock === "/run/mcp-gateway/control.sock") return gatewayRoute(method, path, body);
+                if (sock === "/run/mcp-gateway/opa.sock") return opaRoute(method, path, body, opts.superuser);
                 return fail(0, "not-found");
             };
             return {

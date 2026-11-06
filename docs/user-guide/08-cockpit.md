@@ -208,7 +208,11 @@ keeps the conversation's history. An agent shows chat only with
 run, need an approval, or run without one, with the approvers of its
 servers (the rule `self` left out, as it never applies to agents).
 **What would the gateway decide?** answers for one agent and one
-`server__tool` ([chapter 6](06-permissions-and-modes.md#posture)).
+`server__tool`, with optional arguments: the gateway's policy decides it
+and gives its reason, read through the root bridge from the gateway's
+OPA (`/run/mcp-gateway/opa.sock`); without administrative access the
+page works it out from the agent's permissions
+([chapter 6](06-permissions-and-modes.md#posture)).
 
 ## Audit tab {#audit}
 

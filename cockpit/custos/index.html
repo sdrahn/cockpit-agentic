@@ -176,13 +176,15 @@
             </section>
             <section class="card">
                 <h2>What would the gateway decide?</h2>
-                <p class="muted">The rules the gateway applies to agents (agents.rego), for one call. The
-                gateway's own decision is the one that counts.</p>
+                <p class="muted">For one call of an agent: the gateway's policy decides it, with its reason, when
+                Cockpit has administrative access; otherwise the page works it out from the agents' rules
+                (agents.rego), without argument limits.</p>
                 <form id="whatif" class="inline">
                     <select aria-label="Agent"></select>
-                    <input placeholder="server__tool, e.g. zypp__install_patches" aria-label="Tool" class="mono">
-                    <span id="whatif-result"></span>
+                    <input id="whatif-tool" placeholder="server__tool, e.g. zypp__install_patches" aria-label="Tool" class="mono">
+                    <input id="whatif-args" placeholder='arguments (JSON), e.g. {"unit": "nginx.service"}' aria-label="Arguments" class="mono">
                 </form>
+                <p id="whatif-result"></p>
             </section>
         </div>
 

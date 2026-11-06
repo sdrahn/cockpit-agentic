@@ -110,9 +110,14 @@ In Cockpit:
 - *Policy*, **Posture**: per agent, how many permissions run, wait or run
   autonomously, and who may approve them.
 - *Policy*, **What would the gateway decide?**: pick an agent, type
-  `server__tool`, and see the decision and which permission makes it.
-  It does not check `args`. The gateway's own decision is the one that
-  counts.
+  `server__tool` and, if you like, the call's arguments as JSON. With
+  Cockpit's administrative access, the gateway's policy decides it: the
+  answer is its decision with its reason (such as `task category
+  patch-errata is not enabled on this host`, [chapter
+  12](12-troubleshooting.md#tool-denied)), the arguments' limits
+  included. Without it, the page works the decision out from the agent's
+  permissions and says which permission makes it, without the
+  arguments' limits.
 
 ## Task categories {#categories}
 

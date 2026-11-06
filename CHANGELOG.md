@@ -9,6 +9,10 @@ removed.
 
 ### Added
 
+- Cockpit's *What would the gateway decide?* asks the gateway's policy
+  (its OPA, through the root bridge) and shows its decision with its
+  reason, for a call with the arguments given; without administrative
+  access the page works the decision out itself, as before.
 - `agent-admin review` (and Cockpit's *To review* in the agent view)
   lists a promoted category's autonomous actions from the gateway's
   record of the calls it let through (`mcp-result`), each with its

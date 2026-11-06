@@ -214,8 +214,15 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
         await go("/policy");
         await frame().locator("#posture-patch-pilot").waitFor({ timeout: 60000 });
         await frame().locator("#whatif select").selectOption("patch-pilot");
-        await frame().locator("#whatif input").fill("custos-test__change");
-        check((await frame().locator("#whatif-result").textContent()).startsWith("needs approval"), "what would the gateway decide");
+        await frame().locator("#whatif-tool").fill("custos-test__change");
+        await frame().locator("#whatif-result[data-for='patch-pilot custos-test__change ']").waitFor({ timeout: 30000 });
+        const wi = await frame().locator("#whatif-result").textContent();
+        check(wi.startsWith("needs approval") && wi.includes("the gateway's policy decided this"),
+              "what would the gateway decide: the gateway's own policy, through the root bridge");
+        await frame().locator("#whatif-tool").fill("custos-test__wipe");
+        await frame().locator("#whatif-result[data-for='patch-pilot custos-test__wipe ']").waitFor({ timeout: 30000 });
+        check((await frame().locator("#whatif-result").textContent()).includes("“no matching permission”"),
+              "a tool no permission names: the gateway's reason");
         await shot("policy");
     });
 

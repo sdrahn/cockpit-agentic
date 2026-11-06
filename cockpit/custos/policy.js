@@ -1,6 +1,7 @@
 /* Policy tab: every agent's posture at a glance (§6), who may decide its
  * approvals (the gateway's approver rules, §7), and what the gateway would
- * decide for one call, by the agents module's rules.
+ * decide for one call: its policy's own decision and reason, or, without
+ * access to it, the agents module's rules worked out in the page.
  */
 "use strict";
 
@@ -50,6 +51,38 @@ function renderPosture(rules) {
     }
 }
 
+/* OPA_SOCKET is the gateway's OPA (mcp-opa.service), for its decision on
+ * one call: through the root bridge, since the socket is the gateway's. */
+const OPA_SOCKET = "/run/mcp-gateway/opa.sock";
+const opa = cockpit.http({ unix: OPA_SOCKET, superuser: "try" });
+let whatIfSeq = 0;
+
+/* gatewayDecision asks the gateway's policy (data.mcp.authz.decision) what
+ * it decides for the agent's call, with the input the gateway gives it:
+ * the agent's principal over the unix socket, the tool, the arguments.
+ * The decision carries the gateway's reason (its deny_reasons and
+ * unmatched_reasons, CONTRACT.md §6). Rejects when OPA cannot be asked. */
+async function gatewayDecision(agent, server, tool, args) {
+    const sub = "agent-" + agent;
+    const input = {
+        principal: { sub, groups: [sub], transport: "unix", session_id: "cockpit-whatif" },
+        action: "tools.call", resource: { server, kind: "tool", name: tool }, args, grants: [],
+    };
+    const out = JSON.parse(await keepBody(opa.post("/v1/data/mcp/authz/decision", JSON.stringify({ input }),
+                                                   { "Content-Type": "application/json" }), GET_TIMEOUT_MS));
+    if (!out || !out.result || !out.result.effect) throw new Error("no decision");
+    return out.result;
+}
+
+function decisionView(d) {
+    const how = { allow: ["allowed", "badge-ok"], ask: ["needs approval", "badge-waiting"], deny: ["denied", "badge-bad"] }[d.effect] ||
+        [d.effect, "badge"];
+    const review = d.obligations && d.obligations.review ? "; the gateway's approvers review it after it ran" : "";
+    return [el("span", { class: "badge " + how[1] }, how[0]), " ",
+        el("span", null, d.reason ? "“" + d.reason + "”" : ""),
+        el("span", { class: "muted" }, " — the gateway's policy decided this" + review + ".")];
+}
+
 function renderWhatIf() {
     const select = document.querySelector("#whatif select");
     const names = state.posture ? Object.keys(state.posture.agents) : [];
@@ -60,20 +93,43 @@ function renderWhatIf() {
     }
     const out = document.getElementById("whatif-result");
     const data = state.posture && state.posture.agents[select.value];
-    const [server, tool] = document.querySelector("#whatif input").value.trim().split("__");
+    const [server, tool] = document.getElementById("whatif-tool").value.trim().split("__");
     if (!data || !server || !tool) {
         out.replaceChildren(el("span", { class: "muted" }, "Name a tool as server__tool."));
         return;
     }
-    const d = decideTool(data, state.posture.control, server, tool);
-    out.replaceChildren(el("span", { class: "badge " + d.cls }, d.text), " ", el("span", { class: "muted" }, d.why));
+    let args = {};
+    const argText = document.getElementById("whatif-args").value.trim();
+    if (argText) {
+        try {
+            args = JSON.parse(argText);
+        } catch {
+            whatIfSeq++;
+            out.replaceChildren(el("span", { class: "error-text" }, "The arguments are not JSON."));
+            out.dataset.for = select.value + " " + server + "__" + tool + " " + argText;
+            return;
+        }
+    }
+    const local = () => {
+        const d = decideTool(data, state.posture.control, server, tool);
+        return [el("span", { class: "badge " + d.cls }, d.text), " ", el("span", { class: "muted" }, d.why),
+            el("span", { class: "muted" }, " — worked out in the page; the gateway's policy could not be asked (it needs administrative access).")];
+    };
+    const seq = ++whatIfSeq;
+    const done = view => {
+        if (seq !== whatIfSeq) return; // a newer question is under way
+        out.replaceChildren(...nodes(view));
+        out.dataset.for = select.value + " " + server + "__" + tool + " " + argText;
+    };
+    gatewayDecision(select.value, server, tool, args).then(d => done(decisionView(d))).catch(() => done(local()));
 }
 
 tabs.policy = {
     intervalMs: 10000,
     init() {
         document.querySelector("#whatif select").addEventListener("change", renderWhatIf);
-        document.querySelector("#whatif input").addEventListener("input", renderWhatIf);
+        document.getElementById("whatif-tool").addEventListener("input", renderWhatIf);
+        document.getElementById("whatif-args").addEventListener("input", renderWhatIf);
         document.getElementById("whatif").addEventListener("submit", ev => ev.preventDefault());
     },
     async refresh() {
