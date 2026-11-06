@@ -195,3 +195,62 @@ category's approvals over its rate (`over_rate` in `mcp-approval`, or
 in the decision record) for "rate cap reached repeatedly" (three times
 in a day); `CONTRACT.md` §6a says again that a call over the rate needs
 an approval, and O12 closes but for a counter across a category's tools.
+
+## R7. A server that sees the host's network, without network access
+
+**Need.** Custos's diagnostic playbook `network-config` reads the host's
+interfaces, routes and listening ports with three commands of the exec
+server (`exec.d-diagnostics.yaml`: `ip -brief address`, `ip route show`,
+`ss -tulnH`). In the exec server they cannot see them: without
+`network: true` an instance has a private network namespace and only
+`AF_UNIX` sockets. `ip` fails (no `AF_NETLINK`), and `ss` falls back to
+`/proc/net` of the empty namespace and reports **no** listening sockets,
+a wrong answer that looks right. Custos's functional tests found it
+(custos#96). `network: true` would let the commands reach the network,
+which a read-only diagnostic must not.
+
+**Today** (mcp-gateway `main`). `internal/supervisor/systemd.go`
+`sandboxProperties`: `PrivateNetwork=!network`, and without network
+`RestrictAddressFamilies=AF_UNIX`. User guide chapter 4, "Definition
+keys" (`network`) and "The sandbox".
+
+**Requirement.**
+
+1. A definition key that lets an instance **see** the host's network
+   without **using** it, for instance `network_view: host` (default
+   `none`, today's behaviour), valid only with `network: false`:
+   - no private network namespace: the instance shares the host's, so
+     interfaces, addresses, routes and sockets are the host's;
+   - sockets of `AF_UNIX` and `AF_NETLINK` only (netlink reads the
+     interfaces, routes and sockets; without capabilities it changes
+     none of them);
+   - `IPAddressDeny=any`, so that no IP traffic goes in or out, should
+     a socket family be added later;
+   - everything else of the sandbox as with `network: false`.
+2. A definition with `network_view: host` and `network: true` is
+   refused (`mcp-gateway --check`, the reload), as is an unknown value.
+3. `mcp-gateway-admin doctor` and `GET /v1/servers` show the setting
+   (`network_view`), and the user guide says what it opens: what the
+   host's network looks like to the server, never a connection.
+4. An instance's SELinux domain still decides what it may do with
+   netlink; the gateway's shipped domains gain nothing.
+
+**Done when:**
+
+- an exec instance of a definition with `network_view: host` runs
+  `ip -brief address`, `ip route show` and `ss -tulnH` and sees the
+  host's interfaces, routes and listening sockets;
+- the same instance cannot open an `AF_INET` or `AF_INET6` socket, nor
+  send IP traffic;
+- without the key, nothing changes;
+- `network_view: host` with `network: true`, or an unknown value, is
+  refused.
+
+**Then Custos** ships a server definition of its own for the network
+diagnostics, running `mcp-server-exec` with those three commands (in
+`mcpsrv_exec_t`, its module adding the netlink rules and `ip`'s label,
+`ifconfig_exec_t`), with `network_view: host`; the playbook
+`network-config` and the template `health-check` use its tools; the
+package requires the gateway release that has R7; and the functional
+tests check that the commands report the host's interfaces, routes and
+sockets.
