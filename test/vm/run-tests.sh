@@ -484,6 +484,10 @@ asks_and_deny() {
 }
 check "the catalog has patch-errata" bash -c "agent-admin categories | jq -e '.\"patch-errata\".title' >/dev/null"
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change, category: patch-errata}' | agent-admin permissions t1
+# Readiness judges a call by the permissions at its time (O11), from
+# root's record of each change.
+check "journal: permissions.changed by root, with the permissions after" eventually 10 journal_has t1 permissions.changed \
+	'._UID == "0" and (.AGENT_PERMISSIONS_TO | fromjson | any(.category == "patch-errata" and .tool == "change"))'
 check "a category starts supervised: its change waits for an approval" asks_and_deny
 # Readiness (§6a) from the agent's records and the gateway's decision.
 check "readiness counts the declined proposal, from the gateway's decision" eventually 30 bash -c \
@@ -787,6 +791,12 @@ done
 systemctl start agent@t1.socket
 check "an agent started by hand is still denied by the gateway" not runs_with t1 PROBE 'probe ok'
 check "agent-admin release-all" agent-admin release-all
+# Root's records of both: readiness counts an approved call whose
+# activity the stop ended as an incident (O11).
+for e in agents.stopped agents.released; do
+	check "journal: $e, root's" eventually 10 bash -c \
+		"journalctl -o json --no-pager --since '@$t0' _UID=0 SYSLOG_IDENTIFIER=custos-promotion AGENT_EVENT=$e | jq -e 'select(.AGENT_BY | length > 0)' >/dev/null"
+done
 check "sockets are back" systemctl is-active -q agent@t1.socket agent@t2.socket
 check "and calls are allowed again" eventually 30 runs_with t1 PROBE 'probe ok'
 # What an administrator disabled stays so: release-all starts what is

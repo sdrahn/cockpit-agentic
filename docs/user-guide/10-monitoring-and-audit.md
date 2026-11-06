@@ -100,7 +100,7 @@ with `SYSLOG_IDENTIFIER=custos-promotion`:
 
 | Field | Value |
 |---|---|
-| `AGENT_EVENT` | `category.promoted`, `category.demoted`, `category.review` (a verdict on an action, [chapter 6](06-permissions-and-modes.md#review)) |
+| `AGENT_EVENT` | `category.promoted`, `category.demoted`, `category.review` (a verdict on an action, [chapter 6](06-permissions-and-modes.md#review)); and those below |
 | `AGENT_NAME`, `AGENT_CATEGORY` | the agent, the category |
 | `AGENT_MODE_FROM`, `AGENT_MODE_TO` | `supervised`, `bounded` |
 | `AGENT_BY`, `AGENT_REASON` | who (the person behind `sudo`, or `custos-demote` for an automatic demotion) and why (for `custos-demote`, the condition that fired) |
@@ -108,6 +108,18 @@ with `SYSLOG_IDENTIFIER=custos-promotion`:
 | `AGENT_PROMOTION` | the promotion's id (`p-…`), also in the agent's gateway data |
 | `AGENT_ENVELOPE_SHA256` | the envelope's digest |
 | `AGENT_VERDICT`, `AGENT_INVOCATION`, `AGENT_CALL_ID`, `AGENT_TOOL` | a review: `ok` or `incident`, and the action |
+
+It also records, with the same identifier, what readiness needs to judge
+the past ([chapter 6](06-permissions-and-modes.md#readiness)):
+
+| `AGENT_EVENT` | When, and its fields |
+|---|---|
+| `permissions.changed` | each change of an agent's permissions (`agent-admin permissions`, `create --template`): `AGENT_PERMISSIONS_FROM`, `AGENT_PERMISSIONS_TO` (JSON), `AGENT_BY` |
+| `agents.stopped`, `agents.released` | `stop-all` and `release-all`: `AGENT_BY`, with no `AGENT_NAME` (they concern every agent) |
+
+Readiness takes these, as the reviews, only as root wrote them
+(journald's `_UID=0`): an agent can write records of its own, never
+root's.
 
 ```bash
 journalctl -t custos-promotion -o json | jq -r '[.__REALTIME_TIMESTAMP, .AGENT_EVENT, .AGENT_NAME, .AGENT_CATEGORY, .AGENT_BY, .AGENT_REASON] | @tsv'

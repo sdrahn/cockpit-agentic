@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sdrahn/custos/internal/journal"
 )
 
 type rec struct {
@@ -17,6 +19,8 @@ type rec struct {
 	fail func(cmd string) bool
 	// gone answers the probes (openshell sandbox get): nil when the sandbox is there.
 	gone func(cmd string) error
+	// journal holds agent-admin's records.
+	journal journal.Memory
 }
 
 func newAdmin(t *testing.T) (*Admin, *rec) {
@@ -61,6 +65,7 @@ func newAdmin(t *testing.T) (*Admin, *rec) {
 		// No records: nothing observed yet.
 		JournalJSON: func(...string) ([]byte, error) { return nil, nil },
 	}
+	a.Journal = func(string) journal.Logger { return &r.journal }
 	return a, r
 }
 
@@ -146,6 +151,11 @@ func TestCreateModePauseDelete(t *testing.T) {
 	}
 	if s := read(GatewayStop); !strings.Contains(s, "stopped: false") || !strings.Contains(s, `by: "bob"`) {
 		t.Errorf("after release-all: %q", s)
+	}
+	// Root's records of both (O11: an emergency stop is an incident).
+	if s, rl := r.journal.Events(journal.AgentsStopped), r.journal.Events(journal.AgentsReleased); len(s) != 1 || s[0].Fields["BY"] != "alice" ||
+		len(rl) != 1 || rl[0].Fields["BY"] != "bob" {
+		t.Errorf("stop records %v, release records %v", s, rl)
 	}
 	os.MkdirAll(a.p(filepath.Join(SocketDir, "patch-pilot")), 0o755)
 	if err := a.Delete("patch-pilot", false); err != nil {
