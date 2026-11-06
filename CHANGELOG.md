@@ -21,6 +21,13 @@ removed.
   warnings), shown with the approval on the gateway's page, in mails and
   notifications, marked as the client's claim (CONTRACT.md O6).
 
+### Fixed
+
+- Cockpit: in an agent's chat, the messages jumped back to their start
+  every few seconds, when the agent view refreshed, which hid the latest
+  messages and the input (0.3.0). The view now keeps the scroll position
+  of the chat's messages and of the page when it refreshes.
+
 ## v0.3.0 — 2026-11-06
 
 The bundled health-check and diagnostics agent, and trust that does not
