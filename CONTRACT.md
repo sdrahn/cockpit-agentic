@@ -169,6 +169,7 @@ started them.
 | `calls[].approval` | `pending`, `approved`, `declined` |
 | `calls[].rationale` | the model's text that came with the call: its stated reason and expected impact. **Self-asserted by the agent**; the control plane labels it so |
 | `calls[].suspected_injection` | signs of a prompt injection (O14) in the outputs of the activity's last 3 calls before this one, which the model read: `[{"call_id", "tool", "sign", "quote"?}]`. Signs: an instruction to ignore its instructions, a chat template's role marker, a claimed approval, a new role or policy, a request for its instructions, an instruction to use this call's tool, one of this call's argument values on a line that tells the model to use it (a value merely present, as a unit name in a listing, is the ordinary flow of a diagnosis and no sign). `quote` is the text found (at most 120 characters), never for an argument value. Found by the host in the agent's process: **self-asserted** and advisory; the approval and the gateway's offer are what hold |
+| `calls[].playbook_step` | the number (from 1) of the playbook step (§14c) this call is: the host made it, not the model; absent for the model's calls |
 | `calls[].preceding` | for a call that waits for an approval: those outputs, `[{"call_id", "tool", "excerpt"}]`, each up to 1200 characters around the first sign in it. Outputs of the agent's own tools, shown to whoever may read the activity |
 | `summary` | the agent's last text, at most 500 characters |
 | `playbook` | the diagnostic playbook the activity runs (§14c), if any |
@@ -813,6 +814,7 @@ and without the `AGENT_` prefix):
 | `AGENT_PARENT_AGENT`, `AGENT_PARENT_ACTIVITY`, `AGENT_ROOT_AGENT`, `AGENT_ROOT_ACTIVITY` | §9 (`invocation.start`, `invocation.end`) |
 | `AGENT_TOOL`, `AGENT_SERVER`, `AGENT_CALL_ID`, `AGENT_ARGS_SHA256` | tool events. SHA-256 of the arguments' JSON with sorted keys. Arguments are never logged |
 | `AGENT_RATIONALE` | `tool.call`: the model's stated reason (self-asserted) |
+| `AGENT_PLAYBOOK_STEP` | `tool.call`: the playbook step (§14c) the call is, from 1, when the host made it; absent for the model's calls |
 | `AGENT_SUSPECTED_INJECTION` | `tool.call`, `approval.pending`: the signs of a prompt injection (§4 `calls[].suspected_injection`), as `<tool> (<call id>) <sign>; …`, without quotes; absent when there are none |
 | `AGENT_APPROVAL_ID` | approval events, and `tool.result` of an approved or declined call |
 | `AGENT_OUTCOME`, `AGENT_REASON` | `ok`, `error`, `denied`, `approved`, `declined`, `cancelled`, `limit`; why |
@@ -1152,6 +1154,19 @@ request for a report, records the playbook in the activity (`playbook`,
 for an unknown playbook, `400` for one that does not parse, and `422`
 when a step's tool is not offered, naming the tools; nothing runs then.
 An OpenShell agent reads the playbooks of its sandbox's image.
+
+The host makes the steps' calls itself, in order and without
+arguments, before the model's first turn: the steps are fixed and read
+only, and a model that has to issue them may fail to (a call it cuts
+off). Each goes through the gateway like a call of the model's, with
+the same decision, approvals and records; its rationale is
+`Playbook <name>, step <n> of <m>: <why>`, it is marked
+`calls[].playbook_step` (§4) and `AGENT_PLAYBOOK_STEP` (§10), and it is
+not searched for signs of a prompt injection (the model chose nothing).
+The host's turns are no model calls: no `model.call` record, and they
+do not count toward `max_llm_calls`; they count toward `max_tool_calls`
+and the activity's time. The model is told the steps were run and gets
+their outputs; it may call further tools it is offered, and it reports.
 
 The set GA ships: `failed-units`, `service-health`, `disk-pressure`,
 `memory-pressure` (including OOM kills), `journal-errors`,
