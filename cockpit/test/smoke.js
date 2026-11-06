@@ -715,14 +715,25 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(fb.length === 1 && fb[0][4] === "require", "feedback is recorded with agent-admin feedback through the root bridge, as filled in");
 
     // Running a playbook from an agent's view (§14c), as the person.
-    await page.goto(url + "?playbooks#/agents/patch-pilot");
+    // An agent from before 0.4.1 (no GET /v1/playbooks): every playbook on
+    // the host is offered, and the agent refuses one it lacks the tools of.
+    await page.goto(url + "?playbooks&oldplaybooks#/agents/patch-pilot");
     await page.waitForFunction(() => document.querySelector("#playbook-run option[value=disk-pressure]"));
-    const pbOpts = await page.$$eval("#playbook-run option", os => os.map(o => o.value));
-    check(pbOpts.includes("selinux-denials") && !pbOpts.includes("broken"), "the playbooks are offered, not a broken one");
+    let pbOpts = await page.$$eval("#playbook-run option", os => os.map(o => o.value));
+    check(pbOpts.includes("selinux-denials") && !pbOpts.includes("broken"), "an older agent: the host's playbooks are offered, not a broken one");
     await page.selectOption("#playbook-run select[name=playbook]", "selinux-denials");
     await page.click("#playbook-run button[type=submit]");
     await page.waitForFunction(() => document.querySelector("#playbook-run").textContent.includes("does not offer"));
     check(true, "a playbook the gateway does not offer the tools of is refused, with the agent's reason");
+    // The agent says which playbooks it can run: only those are offered;
+    // the others are listed apart, with the tools they need.
+    await page.goto(url + "?playbooks#/agents/patch-pilot");
+    await page.waitForFunction(() => document.querySelector("#playbook-run option[value=disk-pressure]"));
+    pbOpts = await page.$$eval("#playbook-run option", os => os.map(o => o.value));
+    const unavailable = await page.$eval("#playbook-run .playbooks-unavailable", d => d.hidden ? "" : d.textContent);
+    check(pbOpts.length === 1 && pbOpts[0] === "disk-pressure", "only the playbooks the agent can run are offered");
+    check(unavailable.includes("1 more on this host") && unavailable.includes("selinux-denials") && unavailable.includes("exec__selinux_status") &&
+          !unavailable.includes("broken"), "the others are listed apart, with the tools they need");
     await page.selectOption("#playbook-run select[name=playbook]", "disk-pressure");
     await page.fill("#playbook-run input[name=request]", "/var");
     await page.click("#playbook-run button[type=submit]");

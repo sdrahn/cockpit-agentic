@@ -30,6 +30,11 @@ removed.
   there when someone looked. The agent keeps its ended activities in
   its state directory (`/var/lib/agents/<name>/activities.json`, at
   most 200 of the last 30 days).
+- Cockpit offered every playbook on the host for every agent, though
+  only an agent the gateway offers a playbook's tools (as health-check)
+  can run it. It now offers only those the agent can run and lists the
+  others apart with the tools they need, from the agent's new
+  `GET /v1/playbooks`.
 
 ## v0.4.0 — 2026-11-06
 

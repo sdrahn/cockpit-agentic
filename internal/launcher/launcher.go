@@ -166,6 +166,7 @@ func New(ctx context.Context, o Options) (*Launcher, error) {
 		mux.Handle("/agui", l.track(&agui.Handler{App: cfg.Name, Config: cfg, Runner: l.Runner, Sessions: l.Sessions, Governor: l.Governor, ClientTools: ct, Log: o.Log}))
 	}
 	mux.HandleFunc("GET /v1/status", l.status)
+	mux.HandleFunc("GET /v1/playbooks", l.playbooks)
 	mux.HandleFunc("GET /v1/activities", l.activities)
 	mux.HandleFunc("GET /v1/activities/{id}", l.activity)
 	mux.HandleFunc("POST /v1/activities", l.startActivity)
@@ -657,6 +658,45 @@ func (l *Launcher) playbookPrompt(ctx context.Context, name, extra string) (stri
 		steps = append(steps, governance.Step{Tool: s.Tool, Why: s.Why})
 	}
 	return p.Prompt(offered, extra), steps, 0, nil
+}
+
+// PlaybookOffer is a playbook as GET /v1/playbooks shows it to this
+// agent: whether it can run it, and if not, why (CONTRACT.md §5, §14c).
+type PlaybookOffer struct {
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+	Runnable    bool   `json:"runnable"`
+	// Missing are the tools of steps that are not optional which the
+	// gateway does not offer this agent; Error why the file cannot be
+	// used.
+	Missing []string `json:"missing,omitempty"`
+	Error   string   `json:"error,omitempty"`
+}
+
+// playbooks answers which of the host's playbooks this agent can run
+// now: those whose every step that is not optional has a tool the
+// gateway offers it. The others are listed with the tools they lack.
+func (l *Launcher) playbooks(w http.ResponseWriter, r *http.Request) {
+	all, err := playbook.Load(l.playbookRoot)
+	if err != nil {
+		http.Error(w, "reading the playbooks: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	offered, err := l.offeredTools(r.Context())
+	if err != nil {
+		http.Error(w, "listing the gateway's tools: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	out := map[string]PlaybookOffer{}
+	for name, p := range all {
+		o := PlaybookOffer{Title: p.Title, Description: p.Description, Error: p.Error}
+		if p.Error == "" {
+			o.Missing = p.Missing(offered)
+			o.Runnable = len(o.Missing) == 0
+		}
+		out[name] = o
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"playbooks": out})
 }
 
 // offeredTools are the gateway's tools the model is shown now: what the

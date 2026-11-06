@@ -128,6 +128,31 @@ func TestPlaybookRefused(t *testing.T) {
 	}
 }
 
+// GET /v1/playbooks says which playbooks this agent can run: those whose
+// steps that are not optional all have tools the gateway offers it; the
+// others with the tools they lack, a broken one with its error.
+func TestPlaybooksOffered(t *testing.T) {
+	e := newEnvPlaybooks(t, playbooks(t))
+	res, b := e.do("GET", "/v1/playbooks", "", nil)
+	if res.StatusCode != 200 {
+		t.Fatalf("%d %s", res.StatusCode, b)
+	}
+	var got struct {
+		Playbooks map[string]PlaybookOffer `json:"playbooks"`
+	}
+	json.Unmarshal(b, &got)
+	pb := got.Playbooks
+	if u := pb["updates"]; !u.Runnable || u.Title != "Updates" || len(u.Missing) != 0 {
+		t.Errorf("updates (its optional step not offered): %+v", u)
+	}
+	if f := pb["files"]; f.Runnable || len(f.Missing) != 1 || f.Missing[0] != "fs__read_file" {
+		t.Errorf("files: %+v", f)
+	}
+	if br := pb["broken"]; br.Runnable || br.Error == "" {
+		t.Errorf("broken: %+v", br)
+	}
+}
+
 // An activity outlives the launcher: after an idle exit, the next one
 // started on the same state directory lists it, with its report.
 func TestActivityAfterRestart(t *testing.T) {
