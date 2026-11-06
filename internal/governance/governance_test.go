@@ -120,3 +120,16 @@ func TestNoticeNamesCall(t *testing.T) {
 		}
 	}
 }
+
+func TestClipBytes(t *testing.T) {
+	if got := clipBytes("short", 10); got != "short" {
+		t.Errorf("%q", got)
+	}
+	// "ä" is two bytes: a cut inside it backs off to before it.
+	if got := clipBytes("aaää", 3); got != "aa…" {
+		t.Errorf("%q", got)
+	}
+	if got := clipBytes("aaää", 4); got != "aaä…" {
+		t.Errorf("%q", got)
+	}
+}

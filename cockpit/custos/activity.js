@@ -121,7 +121,7 @@ function renderList(acts) {
         },
         el("div", { class: "head" }, depth > 0 ? el("span", { class: "muted" }, "└") : null,
            el("span", { class: "agent" }, a.agent), stateBadge(a.state), el("span", { class: "badge" }, originText(a))),
-        a.summary ? el("div", null, a.summary) : null,
+        a.summary ? el("div", { class: "summary" }, a.summary) : null,
         el("div", { class: "muted" }, shortId(a.id) + " · started " + when(a.started) + " · " +
            calls + (calls === 1 ? " tool call" : " tool calls"))));
     }
@@ -143,6 +143,51 @@ async function cancelActivity(a, button) {
                   (ex && ex.status === 403 ? "only its user, who started it, or an administrator may" : describeAgentFailure(ex)));
     }
     tabs.activity.refresh();
+}
+
+/* showResponse opens the agent's full response (§4 response, from
+ * GET /v1/activities/{id}), rendered from its Markdown, in a dialog. */
+async function showResponse(a, button) {
+    button.disabled = true;
+    let full;
+    try {
+        full = await agentApi(a.agent).get("/v1/activities/" + encodeURIComponent(a.id));
+    } catch (ex) {
+        showError("Reading the response of " + a.agent + " " + shortId(a.id) + " failed: " + describeAgentFailure(ex));
+        button.disabled = false;
+        return;
+    }
+    button.disabled = false;
+    // An agent from before the response was kept has only the summary.
+    const text = full.response || full.summary || "";
+    const copy = el("button", { type: "button" }, "Copy as text");
+    const close = el("button", { type: "button" }, "Close");
+    const dlg = el("dialog", { class: "response-dialog", id: "response-dialog", "aria-labelledby": "response-title" },
+        el("div", { class: "toolbar" },
+           el("div", null, el("div", { class: "muted" }, "Activity " + shortId(a.id) + (a.playbook ? " · playbook " + a.playbook : "")),
+              el("h2", { id: "response-title" }, "Response of " + a.agent)),
+           el("span", { class: "actions" }, copy, close)),
+        el("p", { class: "muted" }, "The agent's own words, as its model wrote them: not checked by the host."),
+        el("div", { class: "md" }, markdown(text)));
+    copy.addEventListener("click", () => {
+        navigator.clipboard.writeText(text).then(() => { copy.textContent = "Copied"; }, () => { copy.textContent = "Copy failed"; });
+    });
+    close.addEventListener("click", () => dlg.close());
+    dlg.addEventListener("close", () => dlg.remove());
+    document.body.append(dlg);
+    dlg.showModal();
+}
+
+/* responseView is the start of the agent's response, with a button for
+ * all of it. */
+function responseView(a) {
+    if (!a.summary) return null;
+    const more = el("button", { type: "button", id: "show-response" }, "Show the full response");
+    more.addEventListener("click", () => showResponse(a, more));
+    return el("div", { class: "response" },
+        el("h3", null, "Response"),
+        el("p", { class: "response-start" }, a.summary),
+        el("div", null, more));
 }
 
 function renderDetail(acts) {
@@ -169,6 +214,7 @@ function renderDetail(acts) {
                  "and the gateway logged its agents__delegate call.")
             : null,
         a.reason ? el("p", null, el("span", { class: "muted" }, "Reason: "), a.reason) : null,
+        responseView(a),
         reportView(a),
         el("h3", null, "Tool calls"),
         (a.calls || []).length ? null : el("p", { class: "muted" }, "None yet."),
