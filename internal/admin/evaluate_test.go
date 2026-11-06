@@ -324,7 +324,8 @@ func (j *fakeJournal) capped(at time.Time, f map[string]any) {
 	j.gw = append(j.gw, string(b))
 }
 
-// The gateway capped the envelope's rate three times within a day (O12).
+// Calls reached the envelope's rate three times within a day (O12): asked
+// for an approval (over_rate) or denied by a rate_limit.
 func TestDemotesOnRepeatedRateCaps(t *testing.T) {
 	a, mem, j, _ := promoted(t, "rate: {calls: 2, per: 1m}\n")
 	now := a.Now()
@@ -341,9 +342,11 @@ func TestDemotesOnRepeatedRateCaps(t *testing.T) {
 	if d := evaluate(t, a); len(d) != 0 {
 		t.Fatalf("demoted on two caps: %v", d)
 	}
-	j.capped(now.Add(-10*time.Minute), nil)
+	// The third: over the envelope's rate, the gateway asked for an
+	// approval (approval_over_rate, its R6), which was given.
+	j.capped(now.Add(-10*time.Minute), map[string]any{"effect": "allow", "reason": "", "over_rate": "2/m"})
 	d := evaluate(t, a)
-	if len(d) != 1 || !strings.Contains(d[0].Reason, "rate cap (2 calls per 1m per tool) reached 3 times within a day: zypp__install_patches at ") {
+	if len(d) != 1 || !strings.Contains(d[0].Reason, "rate (2 calls per 1m per tool) reached 3 times within a day: zypp__install_patches at ") {
 		t.Fatalf("demotions %v", d)
 	}
 	if mode(a, "patch-errata") != "supervised" {

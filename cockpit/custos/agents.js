@@ -248,7 +248,8 @@ function windowsText(c) {
         (w.days ? w.days.join(",") : "every day") + " " + w.from + "–" + w.to + " " + (w.tz || "UTC")).join("; ");
 }
 
-/* The envelope's rate (O12): the gateway's cap per tool. */
+/* The envelope's rate (O12): per tool; over it a call asks (the
+ * gateway's approval_over_rate). */
 function rateText(c) {
     const r = c && c.envelope && c.envelope.rate;
     return r ? "at most " + r.calls + " calls per tool per " + ({ "1s": "second", "1m": "minute", "1h": "hour" }[r.per] || r.per) : "";
@@ -353,7 +354,7 @@ function categoriesSection(a, data) {
     });
     const form = el("details", { id: "promote-form" }, el("summary", null, "Promote a category"),
         el("p", { class: "muted" }, "The envelope: its windows (days mon…sun, from and to as HH:MM, tz); optionally a rate (calls: N, per: 1s, 1m or 1h: " +
-           "the gateway denies a tool's calls beyond it, and three such denials in a day demote the category) and rollback " +
+           "beyond it, each of a tool's calls waits for an approval, and reaching it three times in a day demotes the category) and rollback " +
            "(on: tool_error, limit_exceeded, health_check_failed; health_check: a command). agent-admin checks it and refuses a " +
            "category that is not ready, unless you promote it despite its readiness, with a reason."),
         el("div", { class: "toolbar" }, which), env,

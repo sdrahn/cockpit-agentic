@@ -6,7 +6,7 @@
 # a limit, or the system is degraded.
 windows:
   - {days: [mon, tue, wed, thu, fri], from: '08:00', to: '18:00', tz: Europe/Berlin}
-# rate: {calls: 20, per: 1h}       # optional: at most 20 calls per tool per hour, beyond it denied
+# rate: {calls: 20, per: 1h}       # optional: 20 calls per tool per hour; beyond, each asks
 rollback:
   on: [tool_error, limit_exceeded, health_check_failed]
   health_check: 'systemctl is-system-running --quiet'

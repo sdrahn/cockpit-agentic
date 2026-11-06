@@ -208,7 +208,7 @@ test_window_without_days_or_tz if {
 	cat_effect("supervised", utc, "zypp", "install_patches", sat_0500_berlin) == "ask"
 }
 
-# The envelope's rate (O12): the gateway's rate_limit obligation on the
+# The envelope's rate (O12): the gateway's approval_over_rate obligation on the
 # category's calls without an approval, and only on those.
 rated := {"patch-errata": {"mode": "bounded", "envelope": object.union(window, {"rate": {"calls": 20, "per": "1h"}})}}
 
@@ -219,23 +219,26 @@ cat_decision(mode, categories, server, tool, now) := d if {
 		with time.now_ns as now
 }
 
-test_rate_is_the_gateways_rate_limit if {
+test_rate_is_the_gateways_approval_over_rate if {
 	d := cat_decision("supervised", rated, "zypp", "install_patches", sat_0300_berlin)
 	d.effect == "allow"
-	d.obligations.rate_limit == ["20/h"]
+	d.obligations.approval_over_rate == ["20/h"]
+
+	# Not the hard cap: over the rate the call asks, it is not denied.
+	not d.obligations.rate_limit
 }
 
 test_rate_not_on_calls_that_need_an_approval if {
 	# Outside the window a person decides each call: no rate.
 	d := cat_decision("supervised", rated, "zypp", "install_patches", sat_0500_berlin)
 	d.effect == "ask"
-	not d.obligations.rate_limit
+	not d.obligations.approval_over_rate
 }
 
 test_rate_units if {
 	every per, want in {"1s": "5/s", "1m": "5/m", "1h": "5/h"} {
 		c := {"patch-errata": {"mode": "bounded", "envelope": object.union(window, {"rate": {"calls": 5, "per": per}})}}
-		cat_decision("supervised", c, "zypp", "install_patches", sat_0300_berlin).obligations.rate_limit == [want]
+		cat_decision("supervised", c, "zypp", "install_patches", sat_0300_berlin).obligations.approval_over_rate == [want]
 	}
 }
 

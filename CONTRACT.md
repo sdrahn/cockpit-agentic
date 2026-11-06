@@ -30,7 +30,7 @@ the version it implements in `GET /v1/status` (`contract`).
 
 | Part | Role | Enforces |
 |---|---|---|
-| **mcp-gateway** (≥ 1.14) | the agents' only tools; OPA policy (autonomy modes, §6); approvals and grants (§7) | *may this agent call this tool with these arguments now* |
+| **mcp-gateway** (≥ 1.15) | the agents' only tools; OPA policy (autonomy modes, §6); approvals and grants (§7) | *may this agent call this tool with these arguments now* |
 | **systemd** | runs, schedules and stops agents; sandboxes them with the `systemd` backend | what an agent process can touch; that a stopped agent stays stopped |
 | **SELinux** | confines agents (`systemd` backend: `agent_t`; `openshell` backend: the container runtime's domain) | that an agent reaches the gateway's MCP socket, never its control socket nor another agent's socket |
 | **sandbox backend** (§3a) | `systemd` (the default) or `openshell` (NVIDIA OpenShell) | files, processes and network egress of the agent process |
@@ -429,7 +429,7 @@ envelope:
 | Part | Enforced by | Outside it |
 |---|---|---|
 | `windows` | the gateway's policy (`time.now_ns()` in the agents module); at least one is required. Each has `days` (`mon` … `sun`; every day if absent), `from` and `to` (`HH:MM`, `from` before `to`: a window across midnight is two windows) and `tz` (an IANA zone; `UTC` if absent) | the call needs an approval, as supervised |
-| `rate` | the gateway: its `rate_limit` obligation (`"20/h"`) on each of the category's permissions while they act without an approval, a sliding-window counter per agent and tool that it keeps in memory. `calls` is 1 or more; `per` is `1s`, `1m` or `1h` (the gateway counts per second, minute or hour); calls that need an approval are not counted. A rate the policy cannot read makes the category supervised | the call is denied ("rate limit exceeded"); three such denials within a day demote the category (below) |
+| `rate` | the gateway: its `approval_over_rate` obligation (`"20/h"`; its requirement R6, mcp-gateway 1.15) on each of the category's permissions while they act without an approval, a sliding-window counter per agent and tool that it keeps in memory. `calls` is 1 or more; `per` is `1s`, `1m` or `1h` (the gateway counts per second, minute or hour); calls that need an approval anyway are not counted, nor is a call approved over the rate. A rate the policy cannot read makes the category supervised | the call needs an approval, for that call only (scope `once`), which names the rate reached (`over_rate`); reaching it three times within a day demotes the category (below) |
 | `rollback` | the demotion evaluator (below), outside the agent. `tool_error`: a call of the category made without an approval since the promotion failed: the gateway's `mcp-result` for it is `tool_error`, `error` or `timeout` (its requirement R2; a call allowed by a grant is approved), or its `tool.result` is an error; `limit_exceeded`: an activity with such a call reached a limit; `health_check_failed`: `health_check` exited non-zero. `on` names at least one; `health_check` is given exactly when `health_check_failed` is | the category is demoted |
 
 Everything that relaxes an approval is enforced by the gateway or by
@@ -558,10 +558,11 @@ holds for a bounded category:
   exceeds the threshold. Outside its windows the category is
   supervised, so it still has proposals an approver can decline;
 - a `rollback` condition fires;
-- the gateway denied calls of the category over the envelope's `rate`
-  three times within the last 24 hours since the promotion (its audit's
-  decisions with `"effect": "deny"` and `"reason": "rate limit
-  exceeded"`, for the agent's principal and the category's tools);
+- calls of the category reached the envelope's `rate` three times within
+  the last 24 hours since the promotion (the gateway's decision records
+  with `over_rate`, for the agent's principal and the category's tools;
+  a denial by a permission's own `rate_limit`, `"reason": "rate limit
+  exceeded"`, counts too);
 - an approver marks an autonomous action as an `incident` (`review`
   demotes at once; the evaluator also does, should that have failed;
   a verdict on the gateway is the evaluator's to act on).
@@ -1367,7 +1368,7 @@ may connect to `agent_sock_t`, and so may Cockpit's bridge
 ## 19. Packaging
 
 OBS packages for SLES 16.0/16.1 and openSUSE Leap 16.0/16.1
-(`packaging/suse`): `custos` (requires `mcp-gateway` ≥ 1.14: the reasons for denials, call outcomes, notices and reviews of §6, §6a)
+(`packaging/suse`): `custos` (requires `mcp-gateway` ≥ 1.15: the reasons for denials, call outcomes, notices and reviews of §6, §6a, and approvals over an envelope's rate)
 and `custos-selinux` (required where `selinux-policy-targeted`
 is installed), `custos-cockpit` (the Cockpit page, in
 `/usr/share/cockpit/custos`), `custos-tests` (the functional
@@ -1569,13 +1570,12 @@ inherited, not specified again.
   stops as incidents, the envelope's size, and the proposals behind each
   number.
 - **O12 — envelope limits in the gateway.** Done, per tool: `rate` is
-  the gateway's `rate_limit` obligation on each of the category's
-  permissions while they act without an approval, so it is enforced
-  where the approvals are, and the evaluator demotes on repeated caps.
-  Open: a counter across all of a category's tools together, which
-  needs a new mcp-gateway feature; and a call over the rate that asks
-  for an approval instead of being denied (the gateway counts after its
-  policy has decided).
+  the gateway's `approval_over_rate` obligation (its R6) on each of the
+  category's permissions while they act without an approval, so it is
+  enforced where the approvals are: over it a call asks, as if the
+  category were supervised, and the evaluator demotes when the rate is
+  reached repeatedly. Open: a counter across all of a category's tools
+  together, which needs a new mcp-gateway feature.
 - **O13 — fleet control plane (parked).** The requirement in §20a also
   asks for a control plane for on-premises deployments above a defined
   fleet size `N`: inventory, policy distribution through the site's
