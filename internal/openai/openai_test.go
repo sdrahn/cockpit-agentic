@@ -111,3 +111,26 @@ func TestTimeouts(t *testing.T) {
 		t.Errorf("the activity's deadline: %v", err)
 	}
 }
+
+// A tool without arguments goes to the model with the plain schema of an
+// empty object, whatever extras the MCP server's schema has; one with
+// arguments is passed on as it is.
+func TestNoArgumentSchema(t *testing.T) {
+	strict := map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false}
+	withArgs := map[string]any{"type": "object", "properties": map[string]any{"unit": map[string]any{"type": "string"}}, "required": []any{"unit"}, "additionalProperties": false}
+	for _, c := range []struct {
+		in   any
+		want string
+	}{
+		{strict, `{"properties":{},"type":"object"}`},
+		{map[string]any{"type": "object"}, `{"properties":{},"type":"object"}`},
+		{map[string]any{"type": "object", "required": []any{}}, `{"properties":{},"type":"object"}`},
+		{withArgs, `{"additionalProperties":false,"properties":{"unit":{"type":"string"}},"required":["unit"],"type":"object"}`},
+		{map[string]any{"anyOf": []any{map[string]any{"type": "object"}}}, `{"anyOf":[{"type":"object"}]}`},
+	} {
+		b, _ := json.Marshal(plainIfNoArgs(c.in))
+		if string(b) != c.want {
+			t.Errorf("%v: %s, want %s", c.in, b, c.want)
+		}
+	}
+}

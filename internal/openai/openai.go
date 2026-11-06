@@ -185,11 +185,11 @@ func (m *Model) request(req *model.LLMRequest) request {
 				td.Function.Name, td.Function.Description = d.Name, d.Description
 				switch {
 				case d.ParametersJsonSchema != nil:
-					td.Function.Parameters = d.ParametersJsonSchema
+					td.Function.Parameters = plainIfNoArgs(d.ParametersJsonSchema)
 				case d.Parameters != nil:
-					td.Function.Parameters = lowerTypes(d.Parameters)
+					td.Function.Parameters = plainIfNoArgs(lowerTypes(d.Parameters))
 				default:
-					td.Function.Parameters = map[string]any{"type": "object", "properties": map[string]any{}}
+					td.Function.Parameters = noArgs()
 				}
 				out.Tools = append(out.Tools, td)
 			}
@@ -243,6 +243,39 @@ func text(c *genai.Content) string {
 
 // lowerTypes turns a genai.Schema into JSON Schema (genai's type names
 // are upper case).
+// noArgs is the schema of a tool without arguments as models are used to
+// it.
+func noArgs() map[string]any { return map[string]any{"type": "object", "properties": map[string]any{}} }
+
+// plainIfNoArgs gives a tool that takes no arguments the plain schema
+// noArgs. An MCP server may describe such a tool as an object with no
+// properties and "additionalProperties": false (mcp-gateway's exec
+// server does); some models and their tool-call parsers (gpt-oss-20b in
+// LM Studio) then write a truncated argument object, and the call is
+// lost. A schema with properties is passed on unchanged.
+func plainIfNoArgs(schema any) any {
+	b, err := json.Marshal(schema)
+	if err != nil {
+		return schema
+	}
+	var m map[string]any
+	if json.Unmarshal(b, &m) != nil {
+		return schema
+	}
+	if t, _ := m["type"].(string); t != "" && t != "object" {
+		return schema
+	}
+	if p, ok := m["properties"].(map[string]any); ok && len(p) > 0 {
+		return schema
+	}
+	for _, k := range []string{"anyOf", "oneOf", "allOf", "$ref", "patternProperties"} {
+		if _, ok := m[k]; ok {
+			return schema
+		}
+	}
+	return noArgs()
+}
+
 func lowerTypes(s *genai.Schema) any {
 	b, _ := json.Marshal(s)
 	var v any
