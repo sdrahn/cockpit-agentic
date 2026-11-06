@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
@@ -73,5 +75,39 @@ func TestError(t *testing.T) {
 		if err == nil || err.Error() != "model endpoint: model not loaded" {
 			t.Errorf("err %v", err)
 		}
+	}
+}
+
+// A model server slow to answer: without model.timeout_seconds the call
+// waits (the caller's context bounds it), with it the call ends, saying
+// which limit ended it.
+func TestTimeouts(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(300 * time.Millisecond):
+		case <-r.Context().Done():
+			return
+		}
+		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"slow but fine"},"finish_reason":"stop"}]}`))
+	}))
+	defer srv.Close()
+	first := func(m *Model, ctx context.Context) error {
+		for _, err := range m.LLM().GenerateContent(ctx, &model.LLMRequest{}, false) {
+			return err
+		}
+		return nil
+	}
+	if err := first(&Model{Endpoint: srv.URL, Name: "x"}, context.Background()); err != nil {
+		t.Errorf("no timeout of its own: %v", err)
+	}
+	err := first(&Model{Endpoint: srv.URL, Name: "x", Timeout: 50 * time.Millisecond}, context.Background())
+	if err == nil || !strings.Contains(err.Error(), "no answer within model.timeout_seconds (50ms)") {
+		t.Errorf("timeout_seconds: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	err = first(&Model{Endpoint: srv.URL, Name: "x"}, ctx)
+	if err == nil || !strings.Contains(err.Error(), "the activity's time limit (limits.max_invocation_seconds) ran out") {
+		t.Errorf("the activity's deadline: %v", err)
 	}
 }

@@ -163,6 +163,7 @@ function credentialForm(n, cred) {
 function initDefaults() {
     const form = document.getElementById("model-defaults");
     const f = form.elements;
+    let timeoutSeconds; // model.timeout_seconds of the defaults read
     const note = text => { const n = document.getElementById("defaults-note"); n.className = (text && text.cls) || "muted"; n.textContent = (text && text.msg) || "" };
     const provider = () => form.querySelector(".for-openai").hidden = f.provider.value !== "openai";
     f.provider.addEventListener("change", provider);
@@ -181,6 +182,8 @@ function initDefaults() {
             f.endpoint.value = m.endpoint || "";
             f.credential.value = m.credential || "";
             f.temperature.value = m.temperature === undefined ? "" : String(m.temperature);
+            // Set with agent-admin defaults, not here: kept as it is.
+            timeoutSeconds = m.timeout_seconds;
             note({ msg: d.model ? "" : "No defaults yet: new agents get the template's model." });
         } catch (ex) {
             note({ msg: ((ex && ex.message) || String(ex)).replace(/^agent-admin: /, ""), cls: "error-text" });
@@ -202,6 +205,7 @@ function initDefaults() {
             }
             y += "  temperature: " + f.temperature.value.trim() + "\n";
         }
+        if (Number.isInteger(timeoutSeconds) && timeoutSeconds > 0) y += "  timeout_seconds: " + timeoutSeconds + "\n";
         note({ msg: "Saving…" });
         try {
             await admin(["defaults", "--from", "-"], y);

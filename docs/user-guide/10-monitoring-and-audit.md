@@ -51,7 +51,8 @@ fields named `AGENT_*`:
 | `AGENT_RATIONALE` | the model's stated reason with a call (self-asserted) |
 | `AGENT_SUSPECTED_INJECTION` | signs of a prompt injection in what the model read before a call (`tool.call`, `approval.pending`; [chapter 7](07-approvals.md#cockpit)) |
 | `AGENT_APPROVAL_ID`, `AGENT_OUTCOME`, `AGENT_REASON` | approvals, results and why |
-| `AGENT_MODEL`, `AGENT_TOKENS_IN`, `AGENT_TOKENS_OUT` | a model call: the model, and the tokens it reports |
+| `AGENT_MODEL`, `AGENT_TOKENS_IN`, `AGENT_TOKENS_OUT`, `AGENT_DURATION_MS` | a model call: the model, the tokens it reports, how long it took |
+| `AGENT_PROMPT_BYTES` | a model call that failed (`AGENT_OUTCOME=error`, the error as `AGENT_REASON`): the size of what was sent |
 | `AGENT_DURATION_MS`, `AGENT_LLM_CALLS`, `AGENT_TOOL_CALLS` | at the end of an activity: how long it took and how many calls it made |
 
 Events: `agent.start`, `agent.stop`, `config.invalid`, `agent.paused`,

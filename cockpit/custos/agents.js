@@ -210,7 +210,16 @@ async function renderAgentDetail() {
             toggle), el("div", { class: "muted" }, "“" + s.prompt + "”")));
     }
 
+    // Rebuilding the view takes the chat out and puts it back, which resets
+    // the scroll position of its messages (and can move the page): keep
+    // both, so that a refresh every few seconds does not scroll them away.
+    const chatLogs = [...box.querySelectorAll(".chat-log")].map(l => [l, l.scrollTop]);
+    const pageY = window.scrollY;
     box.replaceChildren(head, mode, bounds, categoriesSection(a, data), schedules, playbookSection(a), credentialsSection(a), configEditor(a), chatSection(a));
+    for (const [l, top] of chatLogs) {
+        if (l.isConnected) l.scrollTop = top;
+    }
+    if (window.scrollY !== pageY) window.scrollTo(window.scrollX, pageY);
 }
 
 tabs.agents = {

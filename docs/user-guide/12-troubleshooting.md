@@ -159,6 +159,26 @@ anyway. Check in this order:
   sandbox reaches it (`host.openshell.internal`).
 - **`401` or `403` from the model's API**: the key is wrong or missing
   (`model.credential`).
+- **`no answer within model.timeout_seconds`** or **`no answer after …,
+  when the activity's time limit (limits.max_invocation_seconds) ran
+  out`**: the model took longer than the limit named. Each model call of
+  an activity sends the whole conversation so far, so the prompt grows
+  with every tool result, and a local model on a CPU or a small GPU takes
+  longer for each. The agent's `model.call` records show it: tokens in
+  (`AGENT_TOKENS_IN`) and how long each call took (`AGENT_DURATION_MS`);
+  the failed call's record has `AGENT_OUTCOME=error` and the size it
+  sent (`AGENT_PROMPT_BYTES`):
+
+  ```bash
+  journalctl -o json -t agent-health-check AGENT_EVENT=model.call --since today |
+    jq -r '[.AGENT_TOKENS_IN, .AGENT_DURATION_MS, .AGENT_OUTCOME, .AGENT_PROMPT_BYTES] | @tsv'
+  ```
+
+  Raise the limit (`model.timeout_seconds`, or remove it;
+  `limits.max_invocation_seconds`), let the model server keep the prompt's
+  common start between calls (prompt caching, such as llama.cpp's
+  `--cache-reuse`, or vLLM's prefix caching), or give the model a faster
+  machine.
 
 ## Approvals {#approvals}
 

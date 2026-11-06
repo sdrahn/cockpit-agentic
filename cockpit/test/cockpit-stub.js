@@ -7,7 +7,7 @@
 (function () {
     // agent-admin templates (§14a) on a system with a writable root: one
     // template for it, one for transactional systems, one that cannot be used.
-    const defaults = {}; // /etc/custos/defaults.yaml
+    const defaults = window.__defaults = {}; // /etc/custos/defaults.yaml
     // The credential store (agent-admin set-credential): disk-watch has
     // its model's, patch-pilot an old one but not its model's.
     const credentials = window.__credentials = { "disk-watch.model-key": "sk-stored-value", "patch-pilot.old-key": "sk-old-value" };
@@ -348,7 +348,7 @@
                 }
             }
         },
-        spawn(args, opts) { return cockpitPromise(spawnStub(args, opts)); },
+        spawn(args, opts) { return cockpitPromise(spawnStub(args, opts), slowCommand(args)); },
     };
 
     function spawnStub(args, opts) {
@@ -433,7 +433,7 @@
                                  if (!v("name")) return Promise.reject(new Error("agent-admin: defaults: model.name: missing")).then(ok, bad);
                                  if (/^sk-/.test(v("credential") || "")) return Promise.reject(new Error("agent-admin: defaults: model.credential looks like a key, " +
                                      "not a name: it takes the name the key is stored under with agent-admin set-credential, such as model-key")).then(ok, bad);
-                                 defaults.model = { provider: v("provider"), name: v("name"), endpoint: v("endpoint"), credential: v("credential") };
+                                 defaults.model = { provider: v("provider"), name: v("name"), endpoint: v("endpoint"), credential: v("credential"), timeout_seconds: v("timeout_seconds") };
                              }
                              if (cmd === "set-credential") credentials[name + "." + arg] = input;
                              if (cmd === "owners") {
@@ -577,7 +577,13 @@
     // ones, a handler that throws does not reject the promise then returns.
     // The exception escapes as uncaught and the chain never settles, so a
     // page must not throw in their handlers.
-    function cockpitPromise(r) {
+    // ?slow: what fills the agent view's sections after it is drawn
+    // (agent-admin's journal reads) answers after 1.5 s, as on a host.
+    function slowCommand(args) {
+        return query.has("slow") && args[0] === "agent-admin" && ["readiness", "review", "credentials", "playbooks"].includes(args[1]);
+    }
+
+    function cockpitPromise(r, slow) {
         const wrap = h => h && (v => {
             try {
                 return h(v);
@@ -592,7 +598,8 @@
         });
         // Run when first asked for its result: after input().
         let p = null;
-        const c = chain({ then: (ok, bad) => (p || (p = Promise.resolve(r))).then(ok, bad) });
+        const settle = () => slow ? new Promise(res => setTimeout(() => res(r), 1500)) : Promise.resolve(r);
+        const c = chain({ then: (ok, bad) => (p || (p = settle())).then(ok, bad) });
         c.input = text => { if (r && r.input) r.input(text); return c; };
         return c;
     }

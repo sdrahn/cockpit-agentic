@@ -25,6 +25,7 @@ model:
   endpoint: http://127.0.0.1:8000/v1
   credential: model-key          # optional
   temperature: 0.2               # optional
+  timeout_seconds: 1800          # optional
 instruction: |
   You keep this host patched. Look before you change anything.
 gateway:
@@ -64,7 +65,13 @@ sandbox: {kind: systemd}
 | `vertex` | `name` | none in the file: Google's Application Default Credentials and the project and location, from the environment ([below](#vertex)) |
 
 Every provider also takes `temperature` (a number; the model's own
-default if absent). `credential` is the **name** of a secret stored with
+default if absent) and `timeout_seconds`: how long one model call may
+take, from the request to the end of the answer. Absent or `0`, a call
+has no limit of its own, and only `limits.max_invocation_seconds` bounds
+it with the rest of the activity. Set it when a model server should be
+given up on sooner, or leave it out for a slow local model whose prompts
+grow with each tool result ([chapter 12](12-troubleshooting.md#model)).
+`credential` is the **name** of a secret stored with
 `agent-admin set-credential`, such as `model-key`, never the key itself
 ([below](#model-credentials)). An unknown key in `model:`, such as
 `api_key`, is refused.

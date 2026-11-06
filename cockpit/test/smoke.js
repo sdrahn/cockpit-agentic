@@ -372,6 +372,35 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(rel.length === 2 && rel[0][4] === "require" && rel[0][2] === "SUDO_USER=carol", "release-all names the person too");
     check(!(await page.$eval("#stop-all", b => b.disabled)), "Stop all agents is back");
 
+    // The page keeps its place while the agent view refreshes (every 5 s)
+    // with commands that answer slowly, as on a host: scrolled down to the
+    // chat, it stays there.
+    await page.goto(url + "?slow&chat#/agents/patch-pilot");
+    await page.waitForSelector("#chat-patch-pilot .chat-input");
+    await page.waitForTimeout(3000); // the first loads are in
+    await page.evaluate(() => { document.activeElement && document.activeElement.blur(); window.scrollTo(0, document.documentElement.scrollHeight) });
+    const y0 = await page.evaluate(() => window.scrollY);
+    await page.waitForTimeout(6500); // one refresh and its slow loads
+    const y1 = await page.evaluate(() => window.scrollY);
+    check(y0 > 200 && Math.abs(y1 - y0) < 40, "the agent view keeps its scroll position across a refresh (" + y0 + " → " + y1 + ")");
+    // So does the chat's own message area, longer than its box and
+    // scrolled to its end, while the chat is idle.
+    await page.evaluate(() => {
+        const log = document.querySelector("#chat-patch-pilot .chat-log");
+        for (let i = 0; i < 60; i++) {
+            const m = document.createElement("div");
+            m.className = "msg msg-agent";
+            m.textContent = "line " + i;
+            log.append(m);
+        }
+        log.scrollTop = log.scrollHeight;
+        document.activeElement && document.activeElement.blur();
+    });
+    const l0 = await page.$eval("#chat-patch-pilot .chat-log", l => [l.scrollTop, l.scrollHeight - l.clientHeight]);
+    await page.waitForTimeout(6500);
+    const l1 = await page.$eval("#chat-patch-pilot .chat-log", l => l.scrollTop);
+    check(l0[0] > 100 && Math.abs(l1 - l0[0]) < 5, "the chat's messages keep their scroll position across a refresh (" + l0[0] + " → " + l1 + ")");
+
     // Chat: the person's own thread over AG-UI, as the person.
     await page.goto(url + "?chat#/agents/patch-pilot");
     await page.waitForSelector("#chat-patch-pilot .chat-input");
@@ -536,6 +565,14 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     const saved = await spawned("agent-admin defaults --from -");
     check(saved.length === 3 && saved.every(c => c[4] === "require"), "the defaults are saved with agent-admin defaults --from - through the root bridge");
     if (shots) await page.screenshot({ path: path.join(shots, "model-defaults.png"), fullPage: true });
+    // A model.timeout_seconds set with agent-admin defaults survives a save here.
+    await page.evaluate(() => { window.__defaults.model.timeout_seconds = 1800 });
+    await page.click("#model-defaults button[name=cancel]");
+    await page.click("#defaults-open");
+    await page.waitForFunction(() => document.querySelector("#defaults-note").textContent === "");
+    await page.click("#model-defaults button[name=save]");
+    await page.waitForFunction(() => document.querySelector("#defaults-note").textContent.includes("Saved"));
+    check(await page.evaluate(() => window.__defaults.model.timeout_seconds) === 1800, "a timeout set with agent-admin is kept when the defaults are saved");
     await page.click("#create-open");
     await page.selectOption("#create-from", "service-doctor");
     await page.fill("#create-name", "web-doc2");

@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -24,7 +26,10 @@ type Model struct {
 	Name        string
 	APIKey      string
 	Temperature *float32
-	HTTP        *http.Client
+	// Timeout bounds one request (0: none; the caller's context, the
+	// activity's limit, does). HTTP, if set, is used as it is.
+	Timeout time.Duration
+	HTTP    *http.Client
 }
 
 // LLM adapts m to model.LLM (whose Name method would clash with the field).
@@ -108,10 +113,19 @@ func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLM
 	}
 	c := m.HTTP
 	if c == nil {
-		c = &http.Client{Timeout: 10 * time.Minute}
+		c = &http.Client{Timeout: m.Timeout}
 	}
+	start := time.Now()
 	res, err := c.Do(hr)
 	if err != nil {
+		var ne net.Error
+		switch {
+		case ctx.Err() != nil && errors.Is(ctx.Err(), context.DeadlineExceeded):
+			return nil, fmt.Errorf("model endpoint: no answer after %s, when the activity's time limit (limits.max_invocation_seconds) ran out: %w",
+				time.Since(start).Round(time.Second), err)
+		case errors.As(err, &ne) && ne.Timeout() && m.Timeout > 0:
+			return nil, fmt.Errorf("model endpoint: no answer within model.timeout_seconds (%s): %w", m.Timeout, err)
+		}
 		return nil, fmt.Errorf("model endpoint: %w", err)
 	}
 	defer res.Body.Close()
