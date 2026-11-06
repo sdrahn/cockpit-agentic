@@ -20,6 +20,13 @@ const DemoteBy = "custos-demote"
 // rate over the last 7 days since its promotion (§6a).
 const OverrideWindow = 7 * 24 * time.Hour
 
+// RateCapDemotion: a bounded category whose rate the gateway capped this
+// often within RateCapWindow since its promotion is demoted (§6a, O12).
+const (
+	RateCapDemotion = 3
+	RateCapWindow   = 24 * time.Hour
+)
+
 // HealthCheckTimeout bounds a rollback health check.
 const HealthCheckTimeout = 60 * time.Second
 
@@ -53,6 +60,8 @@ func (a *Admin) noticeOf(name, c, reason string, d *GatewayData) string {
 // custos-demote.timer as root, outside any agent; §6a). For each bounded
 // category of each agent it demotes when, since the promotion:
 //   - the override rate over the last 7 days exceeds the threshold;
+//   - the gateway capped the envelope's rate RateCapDemotion times within
+//     a day;
 //   - a rollback condition of the envelope fires: tool_error or
 //     limit_exceeded for a call of the category made without an
 //     approval, or health_check_failed.
@@ -145,6 +154,9 @@ func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record
 		return fmt.Sprintf("override rate %.1f %% above %.1f %% since %s (%d of %d proposals)",
 			m.OverrideRate*100, th.OverrideRate*100, since.UTC().Format(time.RFC3339), m.Overrides, m.Proposals)
 	}
+	if why := rateCapped(c, st, perms, gw.RateCaps, promotedAt(st), now); why != "" {
+		return why
+	}
 	if st.Envelope == nil || st.Envelope.Rollback == nil {
 		return ""
 	}
@@ -208,6 +220,31 @@ func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record
 		}
 		if err := check(rb.HealthCheck); err != nil {
 			return fmt.Sprintf("rollback health_check_failed: %q: %v", rb.HealthCheck, err)
+		}
+	}
+	return ""
+}
+
+// rateCapped says why category c is demoted for its rate: the gateway
+// denied calls of its tools over the envelope's rate RateCapDemotion
+// times within the last RateCapWindow since its promotion.
+func rateCapped(c string, st *CategoryState, perms readiness.History, caps []readiness.RateCap, since, now time.Time) string {
+	if st.Envelope == nil || st.Envelope.Rate == nil {
+		return ""
+	}
+	if from := now.Add(-RateCapWindow); since.Before(from) {
+		since = from
+	}
+	var hit []string
+	for _, rc := range caps {
+		if rc.At.Before(since) || !perms.InCategory(c, rc.Tool, rc.At) {
+			continue
+		}
+		hit = append(hit, rc.Tool+" at "+rc.At.UTC().Format(time.RFC3339))
+		if len(hit) == RateCapDemotion {
+			r := st.Envelope.Rate
+			return fmt.Sprintf("rate cap (%d calls per %s per tool) reached %d times within a day: %s",
+				r.Calls, r.Per, RateCapDemotion, strings.Join(hit, ", "))
 		}
 	}
 	return ""

@@ -344,6 +344,9 @@ type gatewayRecord struct {
 	Grant         string `json:"grant"`
 	DecisionID    string `json:"decision_id"`
 	ProgressToken string `json:"progress_token"`
+	Action        string `json:"action"`
+	Effect        string `json:"effect"`
+	Reason        string `json:"reason"`
 }
 
 // ParseDecisions reads the gateway's journal (journalctl -o json -u
@@ -507,11 +510,41 @@ type Audit struct {
 	Decisions map[string]Decision
 	Results   []Result
 	Reviews   []Review
+	RateCaps  []RateCap
 }
 
 // ParseAudit reads the gateway's journal for one principal.
 func ParseAudit(b []byte, principal string) Audit {
-	return Audit{Decisions: ParseDecisions(b, principal), Results: ParseResults(b, principal), Reviews: ParseReviews(b, principal)}
+	return Audit{Decisions: ParseDecisions(b, principal), Results: ParseResults(b, principal), Reviews: ParseReviews(b, principal),
+		RateCaps: ParseRateCaps(b, principal)}
+}
+
+// RateLimitExceeded is the gateway's reason for a call it denied over a
+// rate_limit obligation (an envelope's rate, O12).
+const RateLimitExceeded = "rate limit exceeded"
+
+// RateCap is a tool call of the principal that the gateway denied over a
+// rate limit.
+type RateCap struct {
+	Tool string // server__name
+	At   time.Time
+}
+
+// ParseRateCaps reads the gateway's decision records of one principal's
+// tool calls denied over a rate limit, oldest first. Only the gateway's
+// audit records count.
+func ParseRateCaps(b []byte, principal string) []RateCap {
+	var out []RateCap
+	for _, r := range ParseRecords(b) {
+		var msg gatewayRecord
+		if json.Unmarshal([]byte(r["MESSAGE"]), &msg) != nil || !msg.Audit || msg.Event != "" || msg.Sub != principal ||
+			msg.Action != "tools.call" || msg.Effect != "deny" || msg.Reason != RateLimitExceeded || msg.Name == "" {
+			continue
+		}
+		out = append(out, RateCap{Tool: msg.Server + "__" + msg.Name, At: At(r)})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
+	return out
 }
 
 // ParseReviews reads the gateway's mcp-review records of one principal's
