@@ -52,6 +52,9 @@ type CategoryState struct {
 // the other parts of §6a are refused until something enforces them.
 type Envelope struct {
 	Windows []Window `yaml:"windows" json:"windows"`
+	// Rate caps the category's calls without an approval, per tool (the
+	// gateway's rate_limit obligation, O12).
+	Rate *Rate `yaml:"rate,omitempty" json:"rate,omitempty"`
 	// Rollback: conditions on which the demotion evaluator demotes the
 	// category at once (agent-admin evaluate, custos-demote.timer).
 	Rollback *Rollback `yaml:"rollback,omitempty" json:"rollback,omitempty"`
@@ -64,6 +67,18 @@ type Rollback struct {
 	On          []string `yaml:"on" json:"on"`
 	HealthCheck string   `yaml:"health_check,omitempty" json:"health_check,omitempty"`
 }
+
+// Rate is the envelope's rate: at most Calls calls of each of the
+// category's tools without an approval per Per (1s, 1m or 1h), counted
+// by the gateway, which denies a call over it.
+type Rate struct {
+	Calls int    `yaml:"calls" json:"calls"`
+	Per   string `yaml:"per" json:"per"`
+}
+
+// RatePers are the windows the gateway counts in (its rate_limit
+// obligation: N/s, N/m, N/h).
+var RatePers = []string{"1s", "1m", "1h"}
 
 // RollbackConditions are the conditions the evaluator knows.
 var RollbackConditions = []string{"tool_error", "limit_exceeded", "health_check_failed"}
@@ -143,7 +158,6 @@ func ParseEnvelope(b []byte) (*Envelope, error) {
 		switch k {
 		case "windows":
 		case "rate":
-			return nil, errors.New("envelope: rate is not enforced by mcp-gateway yet (CONTRACT.md O12)")
 		case "rollback":
 		case "hosts", "blast_radius":
 			return nil, fmt.Errorf("envelope: %s needs the fleet, which is parked (CONTRACT.md O13)", k)
@@ -176,6 +190,14 @@ func ParseEnvelope(b []byte) (*Envelope, error) {
 			if _, err := time.LoadLocation(w.TZ); err != nil {
 				return nil, fmt.Errorf("envelope: windows[%d]: tz %q: %v", i, w.TZ, err)
 			}
+		}
+	}
+	if r := e.Rate; r != nil {
+		if r.Calls < 1 {
+			return nil, fmt.Errorf("envelope: rate: calls %d: want 1 or more", r.Calls)
+		}
+		if !slices.Contains(RatePers, r.Per) {
+			return nil, fmt.Errorf("envelope: rate: per %q: want 1s, 1m or 1h (the gateway counts per second, minute or hour)", r.Per)
 		}
 	}
 	if r := e.Rollback; r != nil {

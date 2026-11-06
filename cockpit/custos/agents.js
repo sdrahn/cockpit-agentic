@@ -239,6 +239,12 @@ function windowsText(c) {
         (w.days ? w.days.join(",") : "every day") + " " + w.from + "–" + w.to + " " + (w.tz || "UTC")).join("; ");
 }
 
+/* The envelope's rate (O12): the gateway's cap per tool. */
+function rateText(c) {
+    const r = c && c.envelope && c.envelope.rate;
+    return r ? "at most " + r.calls + " calls per tool per " + ({ "1s": "second", "1m": "minute", "1h": "hour" }[r.per] || r.per) : "";
+}
+
 function pctText(x) { return (x * 100).toFixed(1) + " %"; }
 
 /* diagnosticsEvidence shows the agent's diagnostics history over the
@@ -323,7 +329,7 @@ function categoriesSection(a, data) {
                     ? el("div", { class: "muted demoted-auto" }, "demoted automatically " + when(c.demoted_by.slice("custos-demote ".length)) +
                          " (see the Approvals tab)")
                     : null),
-            el("td", { class: "muted" }, bounded ? (windowsText(c) || "always") : "–"),
+            el("td", { class: "muted" }, bounded ? [windowsText(c) || "always", rateText(c)].filter(Boolean).join("; ") : "–"),
             cells[n].ready, cells[n].over, cells[n].inc, cells[n].props,
             el("td", null, el("span", { class: "actions" }, promote, demote)),
         ));
@@ -337,7 +343,8 @@ function categoriesSection(a, data) {
         act(go, "Promoting " + which.value, () => admin(args, env.value));
     });
     const form = el("details", { id: "promote-form" }, el("summary", null, "Promote a category"),
-        el("p", { class: "muted" }, "The envelope: its windows (days mon…sun, from and to as HH:MM, tz), and optionally rollback " +
+        el("p", { class: "muted" }, "The envelope: its windows (days mon…sun, from and to as HH:MM, tz); optionally a rate (calls: N, per: 1s, 1m or 1h: " +
+           "the gateway denies a tool's calls beyond it, and three such denials in a day demote the category) and rollback " +
            "(on: tool_error, limit_exceeded, health_check_failed; health_check: a command). agent-admin checks it and refuses a " +
            "category that is not ready, unless you promote it despite its readiness, with a reason."),
         el("div", { class: "toolbar" }, which), env,

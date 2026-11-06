@@ -236,7 +236,8 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     // the root bridge), and promote and demote.
     await page.waitForFunction(() => !document.querySelector("#category-patch-errata").cells[3].textContent.startsWith("…"));
     const catRow = await page.$eval("#category-patch-errata", r => [...r.cells].map(c => c.textContent));
-    check(catRow[1] === "bounded (promoted)" && catRow[2].includes("02:00–04:00 Europe/Berlin"), "the categories: mode and windows");
+    check(catRow[1] === "bounded (promoted)" && catRow[2].includes("02:00–04:00 Europe/Berlin") &&
+          catRow[2].includes("at most 20 calls per tool per hour"), "the categories: mode, windows and rate");
     check(catRow[3].startsWith("not ready") && catRow[3].includes("override rate 16.7 % above 5.0 %") &&
           catRow[4].startsWith("16.7 % (2) of max 5.0 %") && catRow[6].startsWith("12 in 3.2 days"),
           "a category's readiness: not ready, what is unmet, its override rate and proposals");

@@ -9,6 +9,14 @@ removed.
 
 ### Added
 
+- An envelope's `rate` (`{calls: 20, per: 1h}`; `per` is `1s`, `1m` or
+  `1h`) is enforced (O12): mcp-gateway's `rate_limit` obligation on each
+  of a promoted category's permissions while they act without approval,
+  per tool. A call over it is denied ("rate limit exceeded"), and three
+  such denials within a day demote the category (`agent-admin
+  evaluate`). Before, `promote` refused an envelope with a rate. Cockpit
+  shows the rate with the category's windows.
+
 - An agent's owners see it in mcp-gateway's *Clients* tab and with
   `mcp-gateway-admin clients`, and may end its session or cancel its
   tasks (`owners.rego`: `manage_session`, `manage_task`). Before, the

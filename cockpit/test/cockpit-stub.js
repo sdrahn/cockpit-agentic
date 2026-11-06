@@ -122,7 +122,7 @@
                     "config-lifecycle": { mode: "bounded", promoted_by: "carol 2026-11-03T09:00:00Z", promotion: "p-1",
                         envelope: { windows: [{ days: [today()], from: "00:00", to: "23:59" }] } },
                     "patch-errata": { mode: "bounded", promoted_by: "carol 2026-11-03T09:00:00Z", promotion: "p-2",
-                        envelope: { windows: [{ days: [otherDay()], from: "02:00", to: "04:00", tz: "Europe/Berlin" }] } },
+                        envelope: { windows: [{ days: [otherDay()], from: "02:00", to: "04:00", tz: "Europe/Berlin" }], rate: { calls: 20, per: "1h" } } },
                 } },
             "old-agent": { mode: "supervised", paused: false, permissions: [] },
             sandboxed: { mode: "supervised", paused: false, permissions: [] },
