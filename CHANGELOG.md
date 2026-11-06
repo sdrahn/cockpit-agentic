@@ -7,6 +7,52 @@ removed.
 
 ## Unreleased
 
+## v0.3.0 — 2026-11-06
+
+The bundled health-check and diagnostics agent, and trust that does not
+rest on the agent. A host can be installed diagnostics-only
+(`custos-diagnostics`, `custos-setup`): one read-only agent that runs
+published diagnostic playbooks and reports hypotheses with evidence the
+host checked against the tools' output, while every other task
+category is installed but disabled until an administrator enables it,
+which the gateway enforces. Promotion counts the diagnostics history,
+and an agent's owners approve its calls. What decides demotion and
+review now comes from mcp-gateway, not from the agent: each call's
+outcome, the actions to review, the reviews by the gateway's approvers,
+and notices of automatic demotions. A prompt-injection evaluation suite
+runs in every VM test and in the air-gapped gate against the tested
+model, and an approval item marks a suspected injection with what the
+model read before the call.
+
+Upgrading from 0.2.x needs no change to configurations or gateway data:
+contract version 1 only gained names. To know:
+
+- Upgrade mcp-gateway to 1.14 first: `custos` requires it (the reasons
+  for denials, call outcomes, notices and reviews).
+- Running agents keep the old launcher and unit until they next start
+  (idle exit, or `systemctl restart agent@NAME.service`); OpenShell
+  agents need their image rebuilt (user guide, chapter 11).
+- A host upgraded from 0.2 has no enablement state: every task category
+  stays enabled, as before. Diagnostics-only is for a fresh install
+  (`custos-setup --diagnostics-only`, user guide chapter 2).
+- A promoted category's autonomous calls now become review items for the
+  gateway's approvers and the agent's owners (Cockpit's Approvals tab,
+  the gateway's approval page), and automatic demotions are mailed to
+  them through the gateway.
+- Review verdicts count only when root recorded them: a review an agent
+  wrote into its own journal no longer counts, which can change a
+  category's readiness.
+- An owner who approves on the host needs the gateway's control socket
+  group (`socket_group`, `mcp-users` by default), like any approver.
+
+Known limits: the enablement state's tamper check detects a change by
+hand, it does not prevent one, and a host does not go back to
+diagnostics-only; an envelope's `rate`, `hosts` and `blast_radius` are
+still refused (mcp-gateway's rate limits, O12; the fleet, O13); the
+suspected-injection mark is the agent's own check, advisory; an
+autonomous call whose agent named no activity is reviewed on the gateway
+only.
+
 ### Added
 
 - Cockpit's *What would the gateway decide?* asks the gateway's policy
