@@ -297,17 +297,37 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(pp[1] === "supervised" && pp[2] === "1" && pp[3] === "2" && pp[4] === "–",
           "posture: patch-pilot has 1 read-only and 2 approval-needing permissions");
     check(pp[5].includes("role:admin") && pp[5].includes("group:agent-clients"), "posture: the approvers from the gateway's rules");
-    await page.selectOption("#whatif select", "patch-pilot");
-    await page.fill("#whatif input", "zypp__list_updates");
-    check((await page.textContent("#whatif-result")).startsWith("allowed"), "what-if: a read-only tool is allowed");
-    await page.fill("#whatif input", "zypp__install_patches");
-    check((await page.textContent("#whatif-result")).startsWith("needs approval"), "what-if: a change needs approval");
-    await page.fill("#whatif input", "fs__write_file");
-    check((await page.textContent("#whatif-result")).includes("no permission lists it"), "what-if: an unlisted tool is denied");
-    await page.selectOption("#whatif select", "triage");
-    await page.fill("#whatif input", "zypp__install_patches");
-    check((await page.textContent("#whatif-result")).startsWith("denied (advisory mode)"), "what-if: advisory denies a listed change");
+    // whatIf: the result for the agent and tool, once it came (the
+    // gateway's OPA is asked first; without it the page works it out).
+    const whatIf = async (agent, tool, args) => {
+        await page.selectOption("#whatif select", agent);
+        await page.fill("#whatif-args", args || "");
+        await page.fill("#whatif input", tool);
+        await page.waitForFunction(t => document.querySelector("#whatif-result").dataset.for === t, agent + " " + tool + " " + (args || ""));
+        return page.textContent("#whatif-result");
+    };
+    let wi = await whatIf("patch-pilot", "zypp__list_updates");
+    check(wi.startsWith("allowed") && wi.includes("worked out in the page"), "what-if without the gateway's policy: a read-only tool is allowed, worked out in the page");
+    check((await whatIf("patch-pilot", "zypp__install_patches")).startsWith("needs approval"), "what-if: a change needs approval");
+    check((await whatIf("patch-pilot", "fs__write_file")).includes("no permission lists it"), "what-if: an unlisted tool is denied");
+    check((await whatIf("triage", "zypp__install_patches")).startsWith("denied (advisory mode)"), "what-if: advisory denies a listed change");
+    check((await whatIf("triage", "zypp__install_patches", "{oops")).includes("not JSON"), "what-if: arguments that are not JSON");
     check(!pp[5].includes("self"), "posture: self is not an agent's approver");
+    // With the gateway's OPA (through the root bridge): its decision and reason.
+    await page.goto(url + "?opa#/policy");
+    await page.waitForSelector("#posture-patch-pilot");
+    wi = await whatIf("patch-pilot", "fs__write_file");
+    check(wi.startsWith("denied") && wi.includes("“no matching permission”") && wi.includes("the gateway's policy decided this"),
+          "what-if with the gateway's policy: its decision and reason");
+    check((await whatIf("triage", "zypp__install_patches")).includes("“the agent is advisory: it only reads (agent-admin mode)”"),
+          "the agents module's reason for an advisory agent");
+    wi = await whatIf("patch-pilot", "systemd__restart_unit", '{"unit": "sshd.service"}');
+    check(wi.includes("the arguments are outside"), "arguments outside a permission's limits: the gateway's reason");
+    wi = await whatIf("patch-pilot", "systemd__restart_unit", '{"unit": "nginx.service"}');
+    check(wi.startsWith("allowed") && wi.includes("review it after it ran"), "an autonomous call: allowed, reviewed afterwards");
+    const ask = (await calls()).filter(c => c[1] === "/run/mcp-gateway/opa.sock");
+    check(ask.length > 0 && ask.every(c => c[4] === "try") && JSON.parse(ask[ask.length - 1][3]).input.principal.sub === "agent-patch-pilot",
+          "OPA is asked through the root bridge, with the agent's principal");
     if (shots) await page.screenshot({ path: path.join(shots, "policy.png"), fullPage: true });
 
     // The emergency stop: confirmed, through the root bridge, naming the

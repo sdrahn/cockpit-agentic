@@ -9,6 +9,10 @@ removed.
 
 ### Added
 
+- Cockpit's *What would the gateway decide?* asks the gateway's policy
+  (its OPA, through the root bridge) and shows its decision with its
+  reason, for a call with the arguments given; without administrative
+  access the page works the decision out itself, as before.
 - The demotion evaluator tells the approvers of each automatic demotion
   through mcp-gateway's notices (its requirement R3): about the agent,
   for the servers of the category's permissions, by mail, desktop
