@@ -9,6 +9,11 @@ removed.
 
 ### Fixed
 
+- A call was marked as a suspected prompt injection whenever one of its
+  argument values was in an earlier tool's output: a diagnostic
+  playbook that reads the log of a unit `boot_blame` named was flagged.
+  The value counts only where the output tells the model to use it
+  ("please set", "call … with value").
 - Tools without arguments reach an `openai` model with the plain schema
   of an empty object. With the schema mcp-gateway's exec server sends
   (`"additionalProperties": false`), gpt-oss-20b in LM Studio now and
