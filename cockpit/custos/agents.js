@@ -362,10 +362,16 @@ function categoriesSection(a, data) {
                         });
                         return b;
                     };
-                    items.push(el("div", { class: "call", id: "review-" + x.activity + "-" + x.call },
-                        el("div", { class: "head" }, el("strong", { class: "mono" }, x.tool), el("span", { class: "muted" }, cat + " · " + x.activity),
+                    // An action the gateway recorded without an activity of
+                    // the agent's (no progress token) is reviewed on the gateway.
+                    const id = x.activity ? "review-" + x.activity + "-" + x.call : "review-decision-" + x.decision_id;
+                    items.push(el("div", { class: "call", id },
+                        el("div", { class: "head" }, el("strong", { class: "mono" }, x.tool),
+                            el("span", { class: "muted" }, cat + " · " + (x.activity || "no activity named")),
                             el("span", { class: "muted", style: "margin-left:auto" }, when(x.at) + (x.outcome === "error" ? " · failed" : "")),
-                            verdict("ok", "Fine", "secondary"), verdict("incident", "Should not have run", "danger"))));
+                            ...(x.activity
+                                ? [verdict("ok", "Fine", "secondary"), verdict("incident", "Should not have run", "danger")]
+                                : [el("button", { class: "link", onclick: () => cockpit.location.go(["approvals"]) }, "Review on the Approvals tab")]))));
                 }
             }
             const counts = Object.entries(q.categories || {}).map(([cat, cq]) => cat + ": " + cq.reviewed + " of " + cq.actions + " reviewed this week");

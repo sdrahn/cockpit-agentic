@@ -312,9 +312,12 @@ agent-admin review patch-pilot patch-errata e-41b7… c1 incident --reason "patc
 ```
 
 The list holds the calls of the category that ran without an approval
-since its promotion, in the last week: all of them while there are at
-most 20 in the week, otherwise the newest unreviewed ones up to 20
-reviews. `ok` says it was fine. `incident` says it should not have run:
+since its promotion, in the last week, as the gateway recorded them
+(each with its `decision_id`), so an agent cannot leave one out: all of
+them while there are at most 20 in the week, otherwise the newest
+unreviewed ones up to 20 reviews. A call reviewed on the gateway (below)
+is reviewed here too. One the gateway lists without an activity (the
+agent named none) is reviewed on the gateway only. `ok` says it was fine. `incident` says it should not have run:
 it needs a reason, counts as an override in the
 [readiness](#readiness) (`reviewed`, `review_overrides`), and demotes
 the category at once. Each verdict is a `category.review` record with

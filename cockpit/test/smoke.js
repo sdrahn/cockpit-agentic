@@ -258,8 +258,12 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     // The after-the-fact review of what config-lifecycle did without an approval.
     await page.waitForSelector("#review-e-0d90-c1");
     check((await page.textContent("#review-e-0d91-c1")).includes("failed") &&
-          (await page.textContent("#category-reviews")).includes("config-lifecycle: 1 of 3 reviewed this week"),
+          (await page.textContent("#category-reviews")).includes("config-lifecycle: 1 of 4 reviewed this week"),
           "the actions to review, with their outcome and the week's count");
+    check((await page.textContent("#review-decision-d-77")).includes("no activity named") &&
+          !(await page.$("#review-decision-d-77 button:text-is('Fine')")) &&
+          !!(await page.$("#review-decision-d-77 button:text-is('Review on the Approvals tab')")),
+          "an action the gateway recorded without an activity is reviewed on the gateway");
     await page.click("#review-e-0d90-c1 button:text-is('Should not have run')");
     await page.waitForFunction(() => document.querySelector("#error").textContent.includes("needs --reason"));
     check(true, "Should not have run needs a reason");

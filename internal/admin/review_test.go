@@ -115,3 +115,40 @@ func TestEvaluatorDemotesOnAReview(t *testing.T) {
 		t.Fatalf("demotions %v", d)
 	}
 }
+
+// The queue from the gateway's records (R2): a call the agent left out of
+// its records is listed all the same, with the gateway's decision id, and
+// root's verdict names it; one reviewed on the gateway (R4) is reviewed.
+func TestReviewQueueFromTheGateway(t *testing.T) {
+	a, mem, j, _ := promoted(t, "")
+	at := a.Now().Add(-2 * time.Hour)
+	j.autonomous(at, "e-1", "ok")
+	j.result(at, map[string]any{"outcome": "ok", "decision_id": "d-1", "progress_token": "custos:e-1/c1"})
+	j.result(at.Add(time.Minute), map[string]any{"outcome": "ok", "decision_id": "d-2", "progress_token": "custos:e-2/c1"}) // the agent recorded none
+	j.result(at.Add(2*time.Minute), map[string]any{"outcome": "ok", "decision_id": "d-3"})                                  // no token
+	j.review(at.Add(3*time.Minute), "r-3", "ok", "")
+	// r-3 reviewed d-3 on the gateway.
+	j.gw[len(j.gw)-1] = strings.Replace(j.gw[len(j.gw)-1], `\"id\":\"r-3\"`, `\"id\":\"r-3\",\"decision_id\":\"d-3\"`, 1)
+	q, err := a.ReviewQueue("patch-pilot", "patch-errata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pe := q.Categories["patch-errata"]
+	var got []string
+	for _, x := range pe.Pending {
+		got = append(got, x.Activity+"/"+x.Decision)
+	}
+	if pe.Actions != 3 || pe.Reviewed != 1 || strings.Join(got, " ") != "e-1/d-1 e-2/d-2" {
+		t.Fatalf("queue %+v (%v)", pe, got)
+	}
+	if err := a.Review("patch-pilot", "patch-errata", "e-2", "c1", "ok", "alice", ""); err != nil {
+		t.Fatal(err)
+	}
+	if r := mem.Events(journal.CategoryReview); len(r) != 1 || r[0].Fields["DECISION_ID"] != "d-2" || r[0].Fields["INVOCATION"] != "e-2" {
+		t.Errorf("record %+v", r)
+	}
+	// An action without an activity is not root's to review here.
+	if err := a.Review("patch-pilot", "patch-errata", "", "", "ok", "alice", ""); err == nil || !strings.Contains(err.Error(), "reviewed on the gateway") {
+		t.Errorf("%v", err)
+	}
+}

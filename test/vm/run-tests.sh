@@ -477,6 +477,10 @@ check "journal: category.promoted by root, with the reason" eventually 10 journa
 check "review lists the change made without an approval" bash -c \
 	"agent-admin review t1 patch-errata | jq -e '.categories[\"patch-errata\"].pending | map(select(.tool == \"custos-test__change\")) | length >= 1' >/dev/null"
 act=$(agent-admin review t1 patch-errata | jq -r '.categories["patch-errata"].pending[-1] | "\(.activity) \(.call)"')
+# The list is the gateway's record of the calls it let through (mcp-result):
+# the action has the gateway's decision id, and so has root's review.
+check "the action to review is the gateway's record of it (a decision id)" bash -c \
+	"agent-admin review t1 patch-errata | jq -e '.categories[\"patch-errata\"].pending[-1].decision_id | length > 0' >/dev/null"
 # shellcheck disable=SC2086 # activity and call
 check "review: ok keeps the category bounded" bash -c "agent-admin review t1 patch-errata $act ok >/dev/null && agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"bounded\"' >/dev/null"
 # The same review by the gateway's approvers (its review items, R4), where
@@ -491,7 +495,9 @@ if gw /v1/reviews | jq -e 'type == "array"' >/dev/null 2>&1; then
 	check "the gateway audited it (mcp-review), by root" eventually 10 gw_audit_has '.event == "mcp-review" and .sub == "agent-t1" and .verdict == "ok" and .by == "root"'
 	check "evaluate keeps the category bounded after ok" bash -c \
 		"agent-admin evaluate >/dev/null && agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"bounded\"' >/dev/null"
-	check "readiness counts the gateway's review" bash -c "agent-admin readiness t1 patch-errata | jq -e '.categories[\"patch-errata\"].reviewed >= 2' >/dev/null"
+	# root and the gateway reviewed the same call (one decision id): one review.
+	check "readiness counts the call reviewed by root and on the gateway once" bash -c \
+		"agent-admin readiness t1 patch-errata | jq -e '.categories[\"patch-errata\"].reviewed == 1' >/dev/null"
 	check "a later verdict on the gateway: should not have run" bash -c \
 		"$(declare -f gw verdict); verdict $rid '{\"verdict\":\"incident\",\"reason\":\"functional test (gateway)\"}' | grep -q '^20'"
 	check "evaluate demotes it on the gateway's incident" bash -c \
@@ -507,6 +513,7 @@ fi
 # shellcheck disable=SC2086
 check "review: incident (should not have run) demotes it" bash -c "agent-admin review t1 patch-errata $act incident --reason 'functional test' >/dev/null && agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"supervised\"' >/dev/null"
 check "journal: category.review, by root, with the verdict" eventually 10 journal_has t1 category.review '.AGENT_VERDICT == "incident" and .AGENT_TOOL == "custos-test__change" and .AGENT_REASON == "functional test"'
+check "journal: root's review names the gateway's decision id" journal_has t1 category.review '.AGENT_VERDICT == "incident" and (.AGENT_DECISION_ID | length > 0)'
 check "readiness counts the review as an override" bash -c "agent-admin readiness t1 patch-errata | jq -e '.categories[\"patch-errata\"] | .reviewed >= 1 and .review_overrides >= 1' >/dev/null"
 # Only root's reviews count. A later verdict on the same action replaces
 # an earlier one, so an agent that could write a review would turn root's

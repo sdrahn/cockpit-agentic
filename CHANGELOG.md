@@ -9,6 +9,12 @@ removed.
 
 ### Added
 
+- `agent-admin review` (and Cockpit's *To review* in the agent view)
+  lists a promoted category's autonomous actions from the gateway's
+  record of the calls it let through (`mcp-result`), each with its
+  decision id: an agent can no longer leave one out of its own records
+  to escape review. A call reviewed on the gateway counts as reviewed
+  there; one reviewed by root and on the gateway counts once.
 - The demotion evaluator tells the approvers of each automatic demotion
   through mcp-gateway's notices (its requirement R3): about the agent,
   for the servers of the category's permissions, by mail, desktop
