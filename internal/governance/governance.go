@@ -157,6 +157,9 @@ type invocation struct {
 	// (§4a); resultBytes their size.
 	results     []toolResult
 	resultBytes int
+	// modelStart is when the model call in progress started, for its
+	// record's duration.
+	modelStart time.Time
 }
 
 // History is how many ended activities are kept in memory; the journal
@@ -199,14 +202,15 @@ func New(cfg *config.Config, log journal.Logger) *Governor {
 // Plugin returns the ADK plugin.
 func (g *Governor) Plugin() (*plugin.Plugin, error) {
 	return plugin.New(plugin.Config{
-		Name:                "custos-governance",
-		BeforeRunCallback:   g.beforeRun,
-		AfterRunCallback:    g.afterRun,
-		BeforeModelCallback: g.beforeModel,
-		AfterModelCallback:  g.afterModel,
-		BeforeToolCallback:  g.beforeTool,
-		AfterToolCallback:   g.afterTool,
-		OnToolErrorCallback: g.onToolError,
+		Name:                 "custos-governance",
+		BeforeRunCallback:    g.beforeRun,
+		AfterRunCallback:     g.afterRun,
+		BeforeModelCallback:  g.beforeModel,
+		AfterModelCallback:   g.afterModel,
+		BeforeToolCallback:   g.beforeTool,
+		AfterToolCallback:    g.afterTool,
+		OnToolErrorCallback:  g.onToolError,
+		OnModelErrorCallback: g.onModelError,
 	})
 }
 
@@ -511,6 +515,7 @@ func (g *Governor) beforeModel(cctx agent.CallbackContext, _ *model.LLMRequest) 
 	case g.now().Sub(in.start) > lim.MaxInvocation():
 		name, value = "max_invocation_seconds", lim.MaxInvocationSeconds
 	default:
+		in.modelStart = g.now()
 		return nil, nil
 	}
 	g.limit(in, cctx.InvocationID(), name, value)
@@ -520,11 +525,49 @@ func (g *Governor) beforeModel(cctx agent.CallbackContext, _ *model.LLMRequest) 
 	}, nil
 }
 
+// modelFields are a model.call record's fields, with the duration of the
+// call since beforeModel let it go (DURATION_MS).
+func (g *Governor) modelFields(cctx agent.CallbackContext) journal.Fields {
+	f := journal.Fields{"SESSION": cctx.SessionID(), "INVOCATION": cctx.InvocationID(), "USER": cctx.UserID(), "OUTCOME": "ok", "MODEL": g.cfg.Model.Name}
+	g.mu.Lock()
+	if in := g.inv[cctx.InvocationID()]; in != nil && !in.modelStart.IsZero() {
+		f["DURATION_MS"] = ms(g.now().Sub(in.modelStart))
+		in.modelStart = time.Time{}
+	}
+	g.mu.Unlock()
+	return f
+}
+
+// onModelError records a model call that failed (no answer in time, the
+// server unreachable or refusing): model.call with OUTCOME error, the
+// reason and the duration, and the size of what was sent (PROMPT_BYTES,
+// as the model's token count of it is not known). The error stands.
+func (g *Governor) onModelError(cctx agent.CallbackContext, req *model.LLMRequest, err error) (*model.LLMResponse, error) {
+	f := g.modelFields(cctx)
+	f["OUTCOME"], f["REASON"] = "error", err.Error()
+	if req != nil {
+		n := 0
+		for _, c := range req.Contents {
+			for _, p := range c.Parts {
+				n += len(p.Text)
+				if p.FunctionResponse != nil {
+					if b, e := json.Marshal(p.FunctionResponse.Response); e == nil {
+						n += len(b)
+					}
+				}
+			}
+		}
+		f["PROMPT_BYTES"] = strconv.Itoa(n)
+	}
+	g.log.Log(journal.ModelCall, "Model call to "+g.cfg.Model.Name+" failed: "+err.Error(), f)
+	return nil, nil
+}
+
 func (g *Governor) afterModel(cctx agent.CallbackContext, resp *model.LLMResponse, err error) (*model.LLMResponse, error) {
 	if resp != nil && resp.Partial {
 		return nil, nil
 	}
-	f := journal.Fields{"SESSION": cctx.SessionID(), "INVOCATION": cctx.InvocationID(), "USER": cctx.UserID(), "OUTCOME": "ok", "MODEL": g.cfg.Model.Name}
+	f := g.modelFields(cctx)
 	if err != nil {
 		f["OUTCOME"], f["REASON"] = "error", err.Error()
 	}

@@ -25,16 +25,17 @@ func TestDefaults(t *testing.T) {
 			t.Errorf("%q: err %v, want %q", c.in, err, c.want)
 		}
 	}
-	in := "model:\n  provider: openai\n  name: granite-4\n  endpoint: 'http://ai.example.com:8000/v1'\n  credential: model-key\n  temperature: 0.2\n"
+	in := "model:\n  provider: openai\n  name: granite-4\n  endpoint: 'http://ai.example.com:8000/v1'\n  credential: model-key\n  temperature: 0.2\n  timeout_seconds: 1800\n"
 	if err := a.SetDefaults([]byte(in)); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(a.p(DefaultsFile))
-	if !strings.HasPrefix(string(b), "# Defaults for new agents") || !strings.Contains(string(b), "  temperature: 0.2\n") {
+	if !strings.HasPrefix(string(b), "# Defaults for new agents") || !strings.Contains(string(b), "  temperature: 0.2\n") ||
+		!strings.Contains(string(b), "  timeout_seconds: 1800\n") {
 		t.Errorf("file:\n%s", b)
 	}
 	d, err = a.GetDefaults()
-	if err != nil || d.Model.Name != "granite-4" || d.Model.Credential != "model-key" || *d.Model.Temperature != 0.2 {
+	if err != nil || d.Model.Name != "granite-4" || d.Model.Credential != "model-key" || *d.Model.Temperature != 0.2 || d.Model.TimeoutSeconds != 1800 {
 		t.Fatalf("%+v %v", d.Model, err)
 	}
 

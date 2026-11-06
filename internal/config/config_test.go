@@ -30,6 +30,14 @@ func TestParse(t *testing.T) {
 	if !c.ShowsTool("zypp__list_updates") || c.ShowsTool("zypp__install") || c.ShowsTool("fs__read") {
 		t.Error("ShowsTool")
 	}
+	// No timeout of its own by default; one when given.
+	if c.Model.Timeout() != 0 {
+		t.Errorf("default timeout %s", c.Model.Timeout())
+	}
+	c2, err := Parse([]byte(strings.Replace(sample, `endpoint: "https://ai.example/v1"}`, `endpoint: "https://ai.example/v1", timeout_seconds: 1800}`, 1)))
+	if err != nil || c2.Model.Timeout().Minutes() != 30 {
+		t.Errorf("timeout_seconds: %v %v", c2, err)
+	}
 }
 
 func TestParseErrors(t *testing.T) {
@@ -41,6 +49,7 @@ func TestParseErrors(t *testing.T) {
 		"tool server":  {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a], tools: [b__x]}", "not in gateway.servers"},
 		"gemini key":   {"version: 1\nname: ab\nmodel: {provider: gemini, name: m}\ngateway: {servers: [a]}", "API key"},
 		"client tools": {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a]}\ninteraction: {client_tools: allow}", "client_tools"},
+		"timeout":      {"version: 1\nname: ab\nmodel: {provider: vertex, name: m, timeout_seconds: -1}\ngateway: {servers: [a]}", "model.timeout_seconds: -1"},
 	} {
 		_, err := Parse([]byte(tc.yaml))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

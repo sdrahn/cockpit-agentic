@@ -4,6 +4,7 @@ package testutil
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"strings"
 	"sync"
@@ -37,6 +38,10 @@ func (m *Model) GenerateContent(_ context.Context, req *model.LLMRequest, stream
 	}
 	m.mu.Unlock()
 	return func(yield func(*model.LLMResponse, error) bool) {
+		if c.Role == failRole {
+			yield(nil, errors.New(c.Parts[0].Text))
+			return
+		}
 		usage := &genai.GenerateContentResponseUsageMetadata{PromptTokenCount: 10, CandidatesTokenCount: 5}
 		if stream && len(c.Parts) == 1 && c.Parts[0].Text != "" {
 			// Stream text in two halves, then the whole as final.
@@ -48,6 +53,16 @@ func (m *Model) GenerateContent(_ context.Context, req *model.LLMRequest, stream
 			}
 		}
 		yield(&model.LLMResponse{Content: c, UsageMetadata: usage, TurnComplete: true}, nil)
+	}
+}
+
+const failRole = "custos-test-failure"
+
+// Fail makes the model call fail with the error (a model server that does
+// not answer in time, say).
+func Fail(msg string) Step {
+	return func(*model.LLMRequest) *genai.Content {
+		return &genai.Content{Role: failRole, Parts: []*genai.Part{{Text: msg}}}
 	}
 }
 
