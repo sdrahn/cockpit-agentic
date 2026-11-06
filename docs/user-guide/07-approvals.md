@@ -66,6 +66,14 @@ one item with two halves:
 
 Only the left half is trustworthy: it comes from the gateway. The right
 half is what the agent says about itself.
+
+The agent's account also reaches the gateway with each call (with
+mcp-gateway 1.15 or later): its stated reason, the activity and who
+started it, and any signs of a suspected prompt injection. So who
+decides on the gateway's own approval page, with `mcp-gateway-admin
+approvals`, from a mail or a desktop notification sees it too, marked
+there as the agent's claim. It does not change what the gateway's policy
+decides.
 If the agent is no longer waiting for the call (it ended, or the gateway
 restarted), the item says so: approving then lets its next identical
 call through.
