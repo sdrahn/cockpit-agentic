@@ -53,6 +53,7 @@ suspected-injection mark is the agent's own check, advisory; an
 autonomous call whose agent named no activity is reviewed on the gateway
 only.
 
+
 ### Added
 
 - Cockpit's *What would the gateway decide?* asks the gateway's policy
