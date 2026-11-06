@@ -7,6 +7,16 @@ removed.
 
 ## Unreleased
 
+## v0.4.2 — 2026-11-06
+
+The agent's full response. An activity keeps the model's last text in
+full, and Cockpit's activity detail opens it in a dialog that renders
+its Markdown, so a playbook's report table can be read whole.
+
+Upgrading from 0.4.1 needs no change to configurations or gateway
+data. Within contract version 1 this release adds the activity's
+`response` (in `GET /v1/activities/{id}`).
+
 ### Added
 
 - The agent's full response: an activity keeps the model's last text
