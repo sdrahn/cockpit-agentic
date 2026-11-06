@@ -32,24 +32,25 @@ type CategoryQueue struct {
 	Pending  []readiness.Action `json:"pending"`
 }
 
-// reviewData reads what a review needs for an agent.
-func (a *Admin) reviewData(name string) (*GatewayData, []readiness.Record, time.Time, error) {
+// reviewData reads what a review needs for an agent: its gateway data,
+// its records and the gateway's audit of it.
+func (a *Admin) reviewData(name string) (*GatewayData, []readiness.Record, readiness.Audit, time.Time, error) {
 	if err := checkName(name); err != nil {
-		return nil, nil, time.Time{}, err
+		return nil, nil, readiness.Audit{}, time.Time{}, err
 	}
 	d, err := a.readGateway(name)
 	if err != nil {
-		return nil, nil, time.Time{}, err
+		return nil, nil, readiness.Audit{}, time.Time{}, err
 	}
 	now := a.Now()
-	recs, _, err := a.journalRecords(name, now.Add(-ReviewWindow))
-	return d, recs, now, err
+	recs, gw, err := a.journalRecords(name, now.Add(-ReviewWindow))
+	return d, recs, gw, now, err
 }
 
 // ReviewQueue lists the sample to review of the agent's promoted
 // categories (bounded, or demoted since a promotion), or of one.
 func (a *Admin) ReviewQueue(name string, only ...string) (*Queue, error) {
-	d, recs, now, err := a.reviewData(name)
+	d, recs, gw, now, err := a.reviewData(name)
 	if err != nil {
 		return nil, err
 	}
@@ -58,8 +59,8 @@ func (a *Admin) ReviewQueue(name string, only ...string) (*Queue, error) {
 		if st == nil || st.PromotedBy == "" || (len(only) > 0 && !contains(only, c)) {
 			continue
 		}
-		acts := readiness.Autonomous(c, d.Permissions, recs, promotedAt(st))
-		reviews := readiness.Reviews(c, recs)
+		acts := readiness.AutonomousActions(c, d.Permissions, recs, gw.Results, promotedAt(st))
+		reviews := readiness.ReviewMap(c, d.Permissions, recs, gw.Reviews)
 		cq := CategoryQueue{Mode: st.Mode, Pending: readiness.Pending(acts, reviews, now)}
 		if cq.Pending == nil {
 			cq.Pending = []readiness.Action{}
@@ -69,7 +70,7 @@ func (a *Admin) ReviewQueue(name string, only ...string) (*Queue, error) {
 				continue
 			}
 			cq.Actions++
-			if _, ok := reviews[x.Activity+" "+x.Call]; ok {
+			if readiness.Reviewed(x, reviews) {
 				cq.Reviewed++
 			}
 		}
@@ -100,7 +101,7 @@ func (a *Admin) Review(name, cat, activity, call, verdict, by, reason string) er
 	default:
 		return fmt.Errorf("verdict %q: want ok or incident", verdict)
 	}
-	d, recs, _, err := a.reviewData(name)
+	d, recs, gw, _, err := a.reviewData(name)
 	if err != nil {
 		return err
 	}
@@ -109,19 +110,20 @@ func (a *Admin) Review(name, cat, activity, call, verdict, by, reason string) er
 		return fmt.Errorf("agent %s: category %s has not been promoted: its calls all had approvals", name, cat)
 	}
 	var act *readiness.Action
-	for _, x := range readiness.Autonomous(cat, d.Permissions, recs, promotedAt(st)) {
-		if x.Activity == activity && x.Call == call {
+	for _, x := range readiness.AutonomousActions(cat, d.Permissions, recs, gw.Results, promotedAt(st)) {
+		if activity != "" && x.Activity == activity && x.Call == call {
 			x := x
 			act = &x
 		}
 	}
 	if act == nil {
-		return fmt.Errorf("agent %s: no action %s of activity %s in category %s ran without an approval in the last week (agent-admin review %s %s lists them)",
+		return fmt.Errorf("agent %s: no action %s of activity %s in category %s ran without an approval in the last week (agent-admin review %s %s lists them; "+
+			"one listed without an activity is reviewed on the gateway: Cockpit's Approvals tab, mcp-gateway-admin reviews)",
 			name, call, activity, cat, name, cat)
 	}
 	a.record(journal.CategoryReview, name, fmt.Sprintf("%s reviewed %s of agent %s (%s in %s): %s", by, cat, name, act.Tool, activity, verdict), journal.Fields{
 		"CATEGORY": cat, "PROMOTION": st.Promotion, "INVOCATION": activity, "CALL_ID": call, "TOOL": act.Tool,
-		"VERDICT": verdict, "BY": by, "REASON": reason,
+		"VERDICT": verdict, "BY": by, "REASON": reason, "DECISION_ID": act.Decision,
 	})
 	fmt.Fprintf(a.Out, "agent %s: %s in activity %s reviewed: %s\n", name, act.Tool, activity, verdict)
 	if verdict == readiness.VerdictIncident && st.Mode == "bounded" {

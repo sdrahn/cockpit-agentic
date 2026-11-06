@@ -63,6 +63,7 @@ type Result struct {
 	Error      string // a short text, where the gateway's policy lets it log one
 	ApprovalID string
 	Grant      string
+	DecisionID string // the gateway's decision that let the call through
 	// Invocation and CallID are from the call's progress token
 	// (custos:<invocation>/<call id>): the agent's, for correlation only.
 	Invocation, CallID string
@@ -334,6 +335,7 @@ type gatewayRecord struct {
 	Error         string `json:"error"`
 	ApprovalID    string `json:"approval_id"`
 	Grant         string `json:"grant"`
+	DecisionID    string `json:"decision_id"`
 	ProgressToken string `json:"progress_token"`
 }
 
@@ -370,7 +372,7 @@ func ParseResults(b []byte, principal string) []Result {
 			continue
 		}
 		res := Result{Tool: msg.Server + "__" + msg.Name, Outcome: msg.Outcome, Error: msg.Error,
-			ApprovalID: msg.ApprovalID, Grant: msg.Grant, At: At(r)}
+			ApprovalID: msg.ApprovalID, Grant: msg.Grant, DecisionID: msg.DecisionID, At: At(r)}
 		if tok, ok := strings.CutPrefix(msg.ProgressToken, "custos:"); ok {
 			res.Invocation, res.CallID, _ = strings.Cut(tok, "/")
 		}
@@ -400,6 +402,84 @@ type Action struct {
 	At       time.Time `json:"-"`
 	Time     string    `json:"at"`
 	Args     string    `json:"args_sha256,omitempty"`
+	// Decision is the gateway's decision id of the call, when the gateway
+	// recorded it (mcp-result): the gateway's review of it has the same.
+	Decision string `json:"decision_id,omitempty"`
+}
+
+// key is the action's key in a reviews map (ReviewMap): its activity
+// and call, or the gateway's decision id when the call named no activity.
+func (a Action) key() string {
+	if a.Activity != "" {
+		return a.Activity + " " + a.Call
+	}
+	return "decision " + a.Decision
+}
+
+// ReviewMap is the reviews by action: root's by activity and call
+// (Reviews), and the gateway's approvers' by the decision id of the call
+// they reviewed (R4).
+func ReviewMap(category string, perms []map[string]any, recs []Record, gateway []Review) map[string]Review {
+	out := Reviews(category, recs)
+	for _, rv := range gateway {
+		if rv.Decision != "" && InCategory(category, rv.Tool, perms) {
+			out["decision "+rv.Decision] = rv
+		}
+	}
+	return out
+}
+
+// Reviewed reports whether the action has a verdict in the map: root's,
+// or the gateway's approvers' on the same call.
+func Reviewed(a Action, reviews map[string]Review) bool {
+	if _, ok := reviews[a.key()]; ok {
+		return true
+	}
+	_, ok := reviews["decision "+a.Decision]
+	return ok && a.Decision != ""
+}
+
+// AutonomousActions are the category's calls since then that ran without
+// an approval or a grant, oldest first: as the gateway recorded them
+// (mcp-result, R2), each with its decision id, the activity and call
+// from the progress token the agent sent; then those only the agent
+// recorded (Autonomous). An agent can add actions to review this way,
+// never hide one the gateway let through.
+func AutonomousActions(category string, perms []map[string]any, recs []Record, results []Result, since time.Time) []Action {
+	args := map[string]string{}
+	for _, r := range recs {
+		if r["AGENT_EVENT"] == "tool.call" {
+			args[r["AGENT_INVOCATION"]+" "+r["AGENT_CALL_ID"]] = r["AGENT_ARGS_SHA256"]
+		}
+	}
+	var out []Action
+	seen := map[string]bool{}
+	for _, res := range results {
+		if res.ApprovalID != "" || res.Grant != "" || res.At.Before(since) || !InCategory(category, res.Tool, perms) {
+			continue
+		}
+		outcome := "ok"
+		switch {
+		case Failed(res.Outcome):
+			outcome = "error"
+		case res.Outcome == "cancelled":
+			outcome = "cancelled"
+		}
+		a := Action{Activity: res.Invocation, Call: res.CallID, Tool: res.Tool, Outcome: outcome, At: res.At,
+			Time: res.At.UTC().Format(time.RFC3339), Decision: res.DecisionID}
+		if a.Activity != "" {
+			a.Args = args[a.Activity+" "+a.Call]
+			seen[a.Activity+" "+a.Call] = true
+		}
+		out = append(out, a)
+	}
+	for _, a := range Autonomous(category, perms, recs, since) {
+		if !seen[a.Activity+" "+a.Call] {
+			out = append(out, a)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
+	return out
 }
 
 // Review is an approver's verdict on an autonomous action: root's
@@ -408,8 +488,9 @@ type Action struct {
 type Review struct {
 	Activity, Call, Verdict, By, Reason string
 	At                                  time.Time
-	// Item and Tool: a review the gateway recorded (mcp-review).
-	Item, Tool string
+	// Item, Tool and Decision: a review the gateway recorded (mcp-review),
+	// with the decision id of the reviewed call.
+	Item, Tool, Decision string
 }
 
 // Audit is what the gateway's audit says about one agent: its approval
@@ -433,20 +514,21 @@ func ParseReviews(b []byte, principal string) []Review {
 	latest := map[string]Review{}
 	for _, r := range ParseRecords(b) {
 		var msg struct {
-			Audit   bool   `json:"audit"`
-			Event   string `json:"event"`
-			ID      string `json:"id"`
-			Sub     string `json:"sub"`
-			Server  string `json:"server"`
-			Name    string `json:"name"`
-			Verdict string `json:"verdict"`
-			Reason  string `json:"reason"`
-			By      string `json:"by"`
+			Audit    bool   `json:"audit"`
+			Event    string `json:"event"`
+			ID       string `json:"id"`
+			Sub      string `json:"sub"`
+			Server   string `json:"server"`
+			Name     string `json:"name"`
+			Verdict  string `json:"verdict"`
+			Reason   string `json:"reason"`
+			By       string `json:"by"`
+			Decision string `json:"decision_id"`
 		}
 		if json.Unmarshal([]byte(r["MESSAGE"]), &msg) != nil || !msg.Audit || msg.Event != "mcp-review" || msg.Sub != principal || msg.ID == "" {
 			continue
 		}
-		rv := Review{Item: msg.ID, Tool: msg.Server + "__" + msg.Name, Verdict: msg.Verdict, Reason: msg.Reason, By: msg.By, At: At(r)}
+		rv := Review{Item: msg.ID, Tool: msg.Server + "__" + msg.Name, Decision: msg.Decision, Verdict: msg.Verdict, Reason: msg.Reason, By: msg.By, At: At(r)}
 		if prev, ok := latest[msg.ID]; ok && rv.At.Before(prev.At) {
 			continue
 		}
@@ -462,14 +544,30 @@ func ParseReviews(b []byte, principal string) []Review {
 
 // AllReviews are the category's reviews: root's (Reviews) and the
 // gateway's approvers' of calls of the category.
+//
+// A call reviewed by both (root's review names the gateway's decision id
+// of the call) is one review: the later verdict.
 func AllReviews(category string, perms []map[string]any, recs []Record, gateway []Review) []Review {
 	var out []Review
-	for _, rv := range Reviews(category, recs) {
+	byDecision := map[string]int{} // decision id → index in out
+	add := func(rv Review) {
+		if rv.Decision != "" {
+			if i, ok := byDecision[rv.Decision]; ok {
+				if rv.At.After(out[i].At) {
+					out[i] = rv
+				}
+				return
+			}
+			byDecision[rv.Decision] = len(out)
+		}
 		out = append(out, rv)
+	}
+	for _, rv := range Reviews(category, recs) {
+		add(rv)
 	}
 	for _, rv := range gateway {
 		if InCategory(category, rv.Tool, perms) {
-			out = append(out, rv)
+			add(rv)
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
@@ -525,7 +623,7 @@ func Reviews(category string, recs []Record) map[string]Review {
 			continue
 		}
 		out[k] = Review{Activity: r["AGENT_INVOCATION"], Call: r["AGENT_CALL_ID"], Verdict: r["AGENT_VERDICT"],
-			By: r["AGENT_BY"], Reason: r["AGENT_REASON"], At: At(r)}
+			By: r["AGENT_BY"], Reason: r["AGENT_REASON"], At: At(r), Decision: r["AGENT_DECISION_ID"]}
 	}
 	return out
 }
@@ -542,7 +640,7 @@ func Pending(actions []Action, reviews map[string]Review, now time.Time) []Actio
 			continue
 		}
 		recent = append(recent, a)
-		if _, ok := reviews[a.Activity+" "+a.Call]; ok {
+		if Reviewed(a, reviews) {
 			done++
 		} else {
 			open = append(open, a)
