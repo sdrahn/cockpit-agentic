@@ -9,6 +9,11 @@ removed.
 
 ### Added
 
+- An agent's owners see it in mcp-gateway's *Clients* tab and with
+  `mcp-gateway-admin clients`, and may end its session or cancel its
+  tasks (`owners.rego`: `manage_session`, `manage_task`). Before, the
+  tab showed an agent only to an approver of every server the gateway
+  has, as an agent's session spans the endpoint for all servers.
 - The agent's account of each call reaches mcp-gateway with the call
   (its proposal, requirement R5; mcp-gateway 1.15): the model's reason,
   the activity and who started it, the signs of a suspected prompt
