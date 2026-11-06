@@ -610,3 +610,29 @@ func TestSuspectedInjection(t *testing.T) {
 	}
 	e.gw.Decide("a-7", false)
 }
+
+// model.call records have the call's duration; a model call that fails
+// (no answer in time) is recorded too, with the error and the size of
+// what was sent.
+func TestModelCallRecords(t *testing.T) {
+	e := newEnv(t,
+		testutil.Call("c1", "zypp__list_updates", map[string]any{}),
+		testutil.Fail("model endpoint: no answer within model.timeout_seconds (10m0s)"),
+	)
+	_, b := e.do("POST", "/v1/activities", "0:root", map[string]any{"prompt": "check updates", "wait": true})
+	if !strings.Contains(string(b), `"state":"failed"`) {
+		t.Fatalf("activity %s", b)
+	}
+	mc := e.log.Events(journal.ModelCall)
+	if len(mc) != 2 {
+		t.Fatalf("model.call %+v", mc)
+	}
+	if mc[0].Fields["OUTCOME"] != "ok" || mc[0].Fields["DURATION_MS"] == "" || mc[0].Fields["TOKENS_IN"] != "10" {
+		t.Errorf("first %+v", mc[0].Fields)
+	}
+	f := mc[1].Fields
+	if f["OUTCOME"] != "error" || !strings.Contains(f["REASON"], "model.timeout_seconds") || f["DURATION_MS"] == "" ||
+		f["PROMPT_BYTES"] == "" || f["PROMPT_BYTES"] == "0" || !strings.Contains(mc[1].Message, "failed") {
+		t.Errorf("failed call %+v %q", f, mc[1].Message)
+	}
+}

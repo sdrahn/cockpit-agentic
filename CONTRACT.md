@@ -811,7 +811,8 @@ and without the `AGENT_` prefix):
 | `AGENT_SUSPECTED_INJECTION` | `tool.call`, `approval.pending`: the signs of a prompt injection (§4 `calls[].suspected_injection`), as `<tool> (<call id>) <sign>; …`, without quotes; absent when there are none |
 | `AGENT_APPROVAL_ID` | approval events, and `tool.result` of an approved or declined call |
 | `AGENT_OUTCOME`, `AGENT_REASON` | `ok`, `error`, `denied`, `approved`, `declined`, `cancelled`, `limit`; why |
-| `AGENT_DURATION_MS`, `AGENT_LLM_CALLS`, `AGENT_TOOL_CALLS`, `AGENT_MODEL`, `AGENT_TOKENS_IN`, `AGENT_TOKENS_OUT` | end events, `model.call` |
+| `AGENT_DURATION_MS`, `AGENT_LLM_CALLS`, `AGENT_TOOL_CALLS`, `AGENT_MODEL`, `AGENT_TOKENS_IN`, `AGENT_TOKENS_OUT` | end events, `model.call` (`DURATION_MS`: how long the call took, also when it failed) |
+| `AGENT_PROMPT_BYTES` | `model.call` with `OUTCOME=error`: the size of the conversation sent (text and tool results), as the failed call reports no tokens. A failed call's record has `OUTCOME=error` and the error as `REASON`; an answered one has no `OUTCOME` |
 
 | `AGENT_EVENT` | `MESSAGE_ID` |
 |---|---|
@@ -1010,6 +1011,7 @@ model:
   endpoint: http://127.0.0.1:8000/v1  # openai only
   credential: model-key               # optional: $CREDENTIALS_DIRECTORY/agent-<name>.model-key
   temperature: 0.2
+  timeout_seconds: 1800               # optional: one model call's limit; absent or 0: none
 instruction: "…"                      # or instruction_file: instruction.md
 gateway:
   socket: /run/mcp-gateway/mcp.sock   # default
@@ -1038,7 +1040,12 @@ repeats it. After `create` and `edit` it says when the named credential
 is not stored yet. An agent whose credential is not stored does not
 start; the launcher's error names the `set-credential` command.
 `servers` and `tools` only decide what the
-model is *shown*; what the agent *may* do is §6. With `provider: openai`
+model is *shown*; what the agent *may* do is §6. `model.timeout_seconds`
+bounds one model call, from the request to the end of the answer; without
+it (or with `0`) a call has no limit of its own, and
+`limits.max_invocation_seconds` bounds it with the rest of the activity.
+A call that runs out of either fails with an error naming the limit.
+With `provider: openai`
 and a local model server, an agent needs nothing outside the host, so
 it works air-gapped.
 
@@ -1244,7 +1251,7 @@ standard error:
 | `edit NAME --from FILE` | validates, replaces `agent.yaml`, syncs schedules (a new schedule's timer is enabled and started, a removed one's disabled; one that stays keeps its state, and restarts for its calendar if it runs); systemd agents: `try-restart agent@<name>.service`; OpenShell agents: the policy, the profile and the sandbox as in §16a (at least `try-restart agent-openshell@<name>.service`). `sandbox.kind` (and `sandbox.openshell_gateway`) stay as created |
 | `create NAME --template TEMPLATE [--from FILE]` | `create` from a template (§14a): its configuration as `draft` gives it (named `NAME`, with the model defaults), or `FILE`'s; then the template's permissions and mode in the gateway agent data |
 | `draft NAME [--template TEMPLATE]` | a new agent's starting configuration on standard output: the template's, or a blank one, named `NAME`, with the model defaults (§14b). Needs no root |
-| `defaults [--from FILE \| --clear]` | the model defaults (§14b), as JSON: `{"model"?: {"provider", "name", "endpoint"?, "credential"?, "temperature"?}}`, needing no root; `--from` checks and replaces them (`FILE` `-` is stdin), `--clear` removes them |
+| `defaults [--from FILE \| --clear]` | the model defaults (§14b), as JSON: `{"model"?: {"provider", "name", "endpoint"?, "credential"?, "temperature"?, "timeout_seconds"?}}`, needing no root; `--from` checks and replaces them (`FILE` `-` is stdin), `--clear` removes them |
 | `templates` | the templates (§14a), as JSON: `{"transactional", "templates": {"<template>": {"title", "description", "system", "mode", "needs"?, "dir", "servers", "categories"?, "envelopes"?, "error"?}}}`, where `error` says why one cannot be used (a category not in the catalog, say). Needs no root |
 | `check NAME\|FILE` | validates only; needs no root for a FILE |
 | `mode NAME MODE`, `permissions NAME < list.yaml` | the gateway agent data (§6). Like `pause`, `resume`, `stop-all` and `release-all`, it returns once the gateway's OPA has loaded the change (it reads it back on `/run/mcp-gateway/opa.sock`, for up to 20 s), so the change is in force when the command returns |

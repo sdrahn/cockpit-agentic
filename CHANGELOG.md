@@ -9,6 +9,10 @@ removed.
 
 ### Added
 
+- `model.timeout_seconds`: how long one model call may take. Without it,
+  a call has no limit of its own and `limits.max_invocation_seconds`
+  bounds it with the rest of the activity; a call that runs out says
+  which limit it was. Also in the model defaults (`agent-admin defaults`).
 - An agent's owners see it in mcp-gateway's *Clients* tab and with
   `mcp-gateway-admin clients`, and may end its session or cancel its
   tasks (`owners.rego`: `manage_session`, `manage_task`). Before, the
@@ -28,6 +32,12 @@ removed.
 
 ### Fixed
 
+- A call to an `openai` model was cut off after 10 minutes, whatever the
+  activity's limit, which a slow local model with a growing prompt
+  reached ("Client.Timeout exceeded while awaiting headers").
+- `model.call` records had no `AGENT_DURATION_MS`, and a model call that
+  failed left no record. It now has one with `AGENT_OUTCOME=error`, the
+  error, how long it took and the size sent (`AGENT_PROMPT_BYTES`).
 - Cockpit: in an agent's chat, the messages jumped back to their start
   every few seconds, when the agent view refreshed, which hid the latest
   messages and the input (0.3.0). The view now keeps the scroll position

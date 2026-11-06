@@ -564,6 +564,14 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     const saved = await spawned("agent-admin defaults --from -");
     check(saved.length === 3 && saved.every(c => c[4] === "require"), "the defaults are saved with agent-admin defaults --from - through the root bridge");
     if (shots) await page.screenshot({ path: path.join(shots, "model-defaults.png"), fullPage: true });
+    // A model.timeout_seconds set with agent-admin defaults survives a save here.
+    await page.evaluate(() => { window.__defaults.model.timeout_seconds = 1800 });
+    await page.click("#model-defaults button[name=cancel]");
+    await page.click("#defaults-open");
+    await page.waitForFunction(() => document.querySelector("#defaults-note").textContent === "");
+    await page.click("#model-defaults button[name=save]");
+    await page.waitForFunction(() => document.querySelector("#defaults-note").textContent.includes("Saved"));
+    check(await page.evaluate(() => window.__defaults.model.timeout_seconds) === 1800, "a timeout set with agent-admin is kept when the defaults are saved");
     await page.click("#create-open");
     await page.selectOption("#create-from", "service-doctor");
     await page.fill("#create-name", "web-doc2");

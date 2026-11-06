@@ -401,6 +401,7 @@ check "without permissions, the gateway shows the agent no tools" summary_has "$
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' | agent-admin permissions t1
 check "with probe read-only, PROBE runs without an approval" eventually 30 runs_with t1 PROBE 'probe ok'
 check "journal: tool.result ok for custos-test__probe" eventually 10 journal_has t1 tool.result '.AGENT_TOOL == "custos-test__probe" and .AGENT_OUTCOME == "ok"'
+check "journal: model.call says how long the call took" eventually 10 journal_has t1 model.call '(.AGENT_DURATION_MS // "" | test("^[0-9]+$"))'
 check "journal: arguments are a digest only" journal_has t1 tool.call '.AGENT_ARGS_SHA256 != null'
 
 for decision in approve deny; do

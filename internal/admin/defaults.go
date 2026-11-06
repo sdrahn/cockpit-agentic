@@ -34,10 +34,13 @@ type ModelDefaults struct {
 	Endpoint    string   `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
 	Credential  string   `yaml:"credential,omitempty" json:"credential,omitempty"`
 	Temperature *float32 `yaml:"temperature,omitempty" json:"temperature,omitempty"`
+	// TimeoutSeconds: model.timeout_seconds (0: none).
+	TimeoutSeconds int `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
 }
 
 func (m *ModelDefaults) config() config.Model {
-	return config.Model{Provider: m.Provider, Name: m.Name, Endpoint: m.Endpoint, Credential: m.Credential, Temperature: m.Temperature}
+	return config.Model{Provider: m.Provider, Name: m.Name, Endpoint: m.Endpoint, Credential: m.Credential, Temperature: m.Temperature,
+		TimeoutSeconds: m.TimeoutSeconds}
 }
 
 // ParseDefaults reads and checks a defaults file.
@@ -119,6 +122,9 @@ func renderModel(m *ModelDefaults, comment string) []byte {
 	kv("credential", m.Credential)
 	if m.Temperature != nil {
 		b.WriteString("  temperature: " + strconv.FormatFloat(float64(*m.Temperature), 'f', -1, 32) + "\n")
+	}
+	if m.TimeoutSeconds > 0 {
+		b.WriteString("  timeout_seconds: " + strconv.Itoa(m.TimeoutSeconds) + "\n")
 	}
 	return []byte(b.String())
 }

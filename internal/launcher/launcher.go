@@ -204,14 +204,21 @@ func newModel(ctx context.Context, cfg *config.Config, creds string) (model.LLM,
 		}
 		key = strings.TrimSpace(string(b))
 	}
+	// model.timeout_seconds bounds one request; without it, the
+	// activity's max_invocation_seconds does.
+	var httpOpts genai.HTTPOptions
+	if t := cfg.Model.Timeout(); t > 0 {
+		httpOpts.Timeout = &t
+	}
 	switch cfg.Model.Provider {
 	case "gemini":
-		return gemini.NewModel(ctx, cfg.Model.Name, &genai.ClientConfig{APIKey: key, Backend: genai.BackendGeminiAPI})
+		return gemini.NewModel(ctx, cfg.Model.Name, &genai.ClientConfig{APIKey: key, Backend: genai.BackendGeminiAPI, HTTPOptions: httpOpts})
 	case "vertex":
 		return gemini.NewModel(ctx, cfg.Model.Name, &genai.ClientConfig{Backend: genai.BackendVertexAI,
-			Project: os.Getenv("GOOGLE_CLOUD_PROJECT"), Location: os.Getenv("GOOGLE_CLOUD_LOCATION")})
+			Project: os.Getenv("GOOGLE_CLOUD_PROJECT"), Location: os.Getenv("GOOGLE_CLOUD_LOCATION"), HTTPOptions: httpOpts})
 	case "openai":
-		return (&openai.Model{Endpoint: cfg.Model.Endpoint, Name: cfg.Model.Name, APIKey: key, Temperature: cfg.Model.Temperature}).LLM(), nil
+		return (&openai.Model{Endpoint: cfg.Model.Endpoint, Name: cfg.Model.Name, APIKey: key, Temperature: cfg.Model.Temperature,
+			Timeout: cfg.Model.Timeout()}).LLM(), nil
 	}
 	return nil, fmt.Errorf("model.provider %q", cfg.Model.Provider)
 }
