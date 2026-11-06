@@ -38,6 +38,10 @@ removed.
 - `model.call` records had no `AGENT_DURATION_MS`, and a model call that
   failed left no record. It now has one with `AGENT_OUTCOME=error`, the
   error, how long it took and the size sent (`AGENT_PROMPT_BYTES`).
+- Cockpit: in an agent's chat, the messages jumped back to their start
+  every few seconds, when the agent view refreshed, which hid the latest
+  messages and the input (0.3.0). The view now keeps the scroll position
+  of the chat's messages and of the page when it refreshes.
 
 ## v0.3.0 — 2026-11-06
 
