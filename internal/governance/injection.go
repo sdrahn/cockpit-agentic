@@ -82,7 +82,7 @@ func suspect(tool string, argText []string, before []toolResult) []Suspicion {
 			add("tells the model to use "+tool, loc)
 		}
 		for _, a := range argText {
-			if i := strings.Index(r.text, a); i >= 0 {
+			if i := directedValue(r.text, a); i >= 0 {
 				// No quote: it would show an argument (§4); the excerpt
 				// is around it.
 				out = append(out, Suspicion{CallID: r.callID, Tool: r.tool, Sign: "has one of the call's argument values", at: i})
@@ -91,6 +91,30 @@ func suspect(tool string, argText []string, before []toolResult) []Suspicion {
 		}
 	}
 	return out
+}
+
+// directive is text that tells the model to use a value: "please set",
+// "call ... with value", "pass the ids".
+var directive = regexp.MustCompile(`(?i)\b(please|set|put|pass|use|call|invoke|execute|enter|type|fill|send|provide|give|value|ids?|argument|parameter)\b`)
+
+// directedValue is where an output tells the model to use the value v:
+// v on a line that has a directive before it; -1 if nowhere. A value that
+// is merely there, as a unit name in a list or a log line, is the
+// ordinary flow of a diagnosis (one tool's output, the next call's
+// argument), not a sign.
+func directedValue(text, v string) int {
+	for from := 0; ; {
+		j := strings.Index(text[from:], v)
+		if j < 0 {
+			return -1
+		}
+		i := from + j
+		line := text[strings.LastIndex(text[:i], "\n")+1 : i]
+		if directive.MatchString(line) {
+			return i
+		}
+		from = i + len(v)
+	}
 }
 
 // lastResults are the activity's newest outputs before the call, oldest

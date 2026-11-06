@@ -9,6 +9,11 @@ removed.
 
 ### Fixed
 
+- A call was marked as a suspected prompt injection whenever one of its
+  argument values was in an earlier tool's output: a diagnostic
+  playbook that reads the log of a unit `boot_blame` named was flagged.
+  The value counts only where the output tells the model to use it
+  ("please set", "call … with value").
 - A playbook's steps are called by the host, in order, before the
   model's first turn, through the gateway with the same decision,
   approvals and records (`calls[].playbook_step`,
