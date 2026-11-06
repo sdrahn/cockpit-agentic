@@ -289,9 +289,14 @@ curl --unix-socket /run/agents/NAME/api.sock http://agent/v1/activities \
 ```
 
 Or from a schedule, with `playbook:` instead of (or with) `prompt:`
-([chapter 5](05-configuration.md#schedules)). The agent calls each step's
-tool through the gateway, which decides it as any other call: a playbook
-grants nothing. When the gateway does not offer the agent a step's tool,
+([chapter 5](05-configuration.md#schedules)). The agent's host calls each
+step's tool itself, in order, before the model's first turn, so a model
+that is unreliable at issuing tool calls still gets every output. Each
+call goes through the gateway, which decides it as any other call: a
+playbook grants nothing. The activity marks these calls as playbook
+steps (`playbook_step`), with the step's *why* as their reason; the
+model reads their outputs, may call further tools it is offered, and
+reports. When the gateway does not offer the agent a step's tool,
 the playbook is refused before anything runs (`422`, naming the tools);
 steps marked `optional` are left out instead. The agent then reports
 what it found, its hypotheses and a remediation plan for you; it changes
