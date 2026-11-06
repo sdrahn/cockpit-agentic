@@ -1211,7 +1211,9 @@ if command -v custos-setup >/dev/null; then
 				{ echo "    | the activity: $(jq -c '{state, summary}' <<<"$a" 2>/dev/null || echo "$a")"; return 1; }
 		}
 		check "custos-net__network_addresses sees the host's interfaces (one up), not an empty namespace" net_has network_addresses UP
-		check "custos-net__network_routes sees the host's default route" net_has network_routes default
+		# The host's routes name its interfaces (a private namespace has
+		# none); an air-gapped host has no default route.
+		check "custos-net__network_routes sees the host's routes (one via an interface)" net_has network_routes " dev "
 		check "custos-net__listening_sockets sees the host's listening sockets (the fake model's 8008)" net_has listening_sockets :8008
 		if enforcing; then
 			exec_avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$exec_t0" '+%x %T')" 2>/dev/null | grep 'mcpsrv_exec_t' || true)
