@@ -24,6 +24,12 @@ removed.
   of an empty object. With the schema mcp-gateway's exec server sends
   (`"additionalProperties": false`), gpt-oss-20b in LM Studio now and
   then wrote a truncated argument object, and the call was lost.
+- An ended activity, and its diagnosis report, was gone from Cockpit's
+  Activity tab and `GET /v1/activities` once the agent exited when idle
+  (10 minutes without requests): a scheduled playbook's run was not
+  there when someone looked. The agent keeps its ended activities in
+  its state directory (`/var/lib/agents/<name>/activities.json`, at
+  most 200 of the last 30 days).
 
 ## v0.4.0 — 2026-11-06
 

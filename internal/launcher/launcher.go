@@ -102,6 +102,12 @@ func New(ctx context.Context, o Options) (*Launcher, error) {
 	if l.Sessions, l.db, err = openSessions(o.StateDir); err != nil {
 		return nil, err
 	}
+	// The ended activities outlive an idle exit, next to the sessions.
+	if o.StateDir != "" {
+		if err := l.Governor.Keep(filepath.Join(o.StateDir, governance.HistoryFile)); err != nil {
+			return nil, err
+		}
+	}
 
 	gw, err := mcptoolset.New(mcptoolset.Config{
 		Client:    gateway.NewClient(cfg.Name, Version, l.Governor.OnGatewayLog, l.Governor.Proposal),
