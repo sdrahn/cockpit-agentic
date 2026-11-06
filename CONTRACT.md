@@ -720,6 +720,20 @@ approval id:
 Only the gateway's half is trustworthy. The page shows the agent's half
 as the agent's claims.
 
+The host also sends the agent's account with each gateway call, as a
+proposal in the call's `_meta` (`io.github.sdrahn.mcp-gateway/proposal`,
+mcp-gateway's requirement R5, from 1.15): the summary is the rationale
+(the whole of it as the impact when longer than a line), the context the
+agent, the activity, who started it (and, for a delegated activity, the
+caller and the first activity of the chain; the playbook it runs), the
+warnings the suspected-injection signs, each with the text found. Plain
+text within the gateway's limits. The gateway shows it with the approval
+on its own page, with `mcp-gateway-admin approvals`, in mails and
+desktop notifications, and with a review item, marked as the client's
+claim; it is never forwarded to the server, policy never sees it, and
+the gateway's `mcp-approval` record has its digest. An older gateway
+ignores it.
+
 Hosts must not use any confirmation mechanism of their own in place of
 the gateway's (such as ADK's tool confirmation). Those ask the session
 user, who is not necessarily allowed to approve.
@@ -1458,6 +1472,10 @@ inherited, not specified again.
   (planned actions, expected impact) that the gateway shows with the
   approval would need a gateway field, e.g. in the call's `_meta`:
   requirement R5 in `docs/requirements/mcp-gateway-for-custos-0.4.md`.
+  Done with mcp-gateway 1.15: the host sends the rationale, the
+  activity's context and the suspected-injection signs as the call's
+  proposal (§7). Open: planned steps and impact as the model states them
+  (a convention for the model's text, or a tool for it).
 - **O7 — fleet.** A cross-host delegation transport, a host part in the
   trace, and an aggregated view.
 - **O8 — second host.** Demonstrating host independence: a mock host

@@ -32,8 +32,10 @@ type Gateway struct {
 	Executed  []string // tools actually run, in order
 	Initializ []map[string]any
 	tokens    []string
-	// callTokens are the calls' progress tokens, in order.
+	// callTokens are the calls' progress tokens, in order; proposals the
+	// calls' proposals (mcp-gateway's R5), by progress token.
 	callTokens []string
+	proposals  map[string]json.RawMessage
 }
 
 // StartGateway listens on dir/mcp.sock.
@@ -130,10 +132,19 @@ func (g *Gateway) serve(c net.Conn) {
 				Name      string         `json:"name"`
 				Arguments map[string]any `json:"arguments"`
 				Meta      struct {
-					ProgressToken any `json:"progressToken"`
+					ProgressToken any             `json:"progressToken"`
+					Proposal      json.RawMessage `json:"io.github.sdrahn.mcp-gateway/proposal"`
 				} `json:"_meta"`
 			}
 			json.Unmarshal(m.Params, &p)
+			if tok, ok := p.Meta.ProgressToken.(string); ok && p.Meta.Proposal != nil {
+				g.mu.Lock()
+				if g.proposals == nil {
+					g.proposals = map[string]json.RawMessage{}
+				}
+				g.proposals[tok] = p.Meta.Proposal
+				g.mu.Unlock()
+			}
 			go g.call(m.ID, p.Name, p.Arguments, p.Meta.ProgressToken, write)
 		default:
 			write(map[string]any{"jsonrpc": "2.0", "id": m.ID, "error": map[string]any{"code": -32601, "message": "method not found"}})
@@ -219,6 +230,14 @@ func (g *Gateway) CallTokens() []string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return append([]string(nil), g.callTokens...)
+}
+
+// Proposal is the proposal the call with the progress token sent, as JSON
+// (nil: none).
+func (g *Gateway) Proposal(token string) json.RawMessage {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.proposals[token]
 }
 
 // Tokens returns the bearer tokens the HTTP gateway saw.

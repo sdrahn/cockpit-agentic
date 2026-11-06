@@ -177,6 +177,8 @@ journal() { journalctl -o json --no-pager --since "@$t0" "AGENT_NAME=$1" "AGENT_
 journal_has() { journal "$1" "$2" | jq -e "select($3)" >/dev/null 2>&1; }
 gw_audit_has() { journalctl -u mcp-gateway.service -o cat --no-pager --since "@$t0" | grep '"audit":true' | jq -e "select($1)" >/dev/null 2>&1; }
 enforcing() { [ "$(getenforce 2>/dev/null)" = Enforcing ]; }
+# gateway_at_least <version>: the installed mcp-gateway is that or newer.
+gateway_at_least() { [ "$(printf '%s\n' "$1" "$(rpm -q --qf '%{VERSION}' mcp-gateway 2>/dev/null)" | sort -V | head -1)" = "$1" ]; }
 label() { ps -o label= -p "$1" 2>/dev/null | tr -d ' '; }
 main_pid() { systemctl show -p MainPID --value "agent@$1.service"; }
 summary_has() { grep -qF -- "$2" <<<"$(jq -r .summary <<<"$1")"; }
@@ -410,6 +412,13 @@ for decision in approve deny; do
 	check "the gateway lists the approval for agent-t1" json_ok "$(gw /v1/approvals)" ".[] | select(.id == \"$aid\" and .principal.sub == \"agent-t1\")"
 	check "journal: approval.pending with the id" eventually 10 journal_has t1 approval.pending ".AGENT_APPROVAL_ID == \"$aid\""
 	check "journal: the call's rationale" journal_has t1 tool.call '.AGENT_RATIONALE == "Writing the test marker; no other impact."'
+	# The agent's account of the call, with the approval on the gateway's
+	# side too (mcp-gateway's proposal, its R5; from 1.15).
+	if gateway_at_least 1.15; then
+		check "the gateway shows the agent's proposal with the approval, as the client's claim" json_ok "$(gw /v1/approvals)" \
+			".[] | select(.id == \"$aid\") | .proposal.client_supplied == true and .proposal.summary == \"Writing the test marker; no other impact.\" and
+			 .proposal.context.agent == \"t1\" and .proposal.context.activity == \"$id\""
+	fi
 	check "the call is still waiting before the decision" json_ok "$(activity t1 "$id")" '.calls[-1].state == "waiting_approval"'
 	gw "/v1/approvals/$aid" -X POST -d "{\"decision\":\"$decision\",\"scope\":\"once\"}" >/dev/null
 	check "the activity finishes" eventually 30 activity_state_is t1 "$id" finished
@@ -422,6 +431,11 @@ for decision in approve deny; do
 	check "the gateway's audit: mcp-approval for $aid, $want" eventually 10 \
 		gw_audit_has ".event == \"mcp-approval\" and .id == \"$aid\" and .principal == \"agent-t1\" and .ok == $ok and .by != null"
 	check "journal: tool.result names approval $aid" eventually 10 journal_has t1 tool.result ".AGENT_APPROVAL_ID == \"$aid\""
+	if gateway_at_least 1.15; then
+		check "the gateway's audit ties the decision to the proposal shown (its digest)" gw_audit_has \
+			".event == \"mcp-approval\" and .id == \"$aid\" and (.proposal_digest | startswith(\"sha256:\"))"
+		check "the gateway dropped none of the agent's proposals" not gw_audit_has '.event == "mcp-proposal-dropped"'
+	fi
 	if [ "$decision" = approve ]; then
 		check "the change ran" summary_has "$(activity t1 "$id")" 'changed test'
 	else

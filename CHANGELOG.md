@@ -14,6 +14,12 @@ removed.
   tasks (`owners.rego`: `manage_session`, `manage_task`). Before, the
   tab showed an agent only to an approver of every server the gateway
   has, as an agent's session spans the endpoint for all servers.
+- The agent's account of each call reaches mcp-gateway with the call
+  (its proposal, requirement R5; mcp-gateway 1.15): the model's reason,
+  the activity and who started it, the signs of a suspected prompt
+  injection. The gateway shows it with the approval on its own page, in
+  `mcp-gateway-admin approvals`, mails and desktop notifications, marked
+  as the agent's claim (CONTRACT.md §7, O6).
 - Requirements for mcp-gateway from Custos 0.4
   (`docs/requirements/mcp-gateway-for-custos-0.4.md`): R5, a proposal
   the client sends with a call (summary, impact, steps, context,

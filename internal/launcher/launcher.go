@@ -104,7 +104,7 @@ func New(ctx context.Context, o Options) (*Launcher, error) {
 	}
 
 	gw, err := mcptoolset.New(mcptoolset.Config{
-		Client:    gateway.NewClient(cfg.Name, Version, l.Governor.OnGatewayLog),
+		Client:    gateway.NewClient(cfg.Name, Version, l.Governor.OnGatewayLog, l.Governor.Proposal),
 		Transport: gatewayTransport(cfg),
 	})
 	if err != nil {

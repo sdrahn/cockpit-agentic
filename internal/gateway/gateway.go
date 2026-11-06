@@ -232,8 +232,10 @@ func cutPrefix(s, p string) (string, bool) {
 //
 // Every tools/call made from an ADK tool carries the call's progress
 // token (CallToken), so that the gateway's approval notice names the
-// call it is for, not only the tool.
-func NewClient(agentName, version string, onLog func(context.Context, *mcp.LoggingMessageParams)) *mcp.Client {
+// call it is for, not only the tool, and the agent's account of the call
+// (propose, if not nil; ProposalKey), which the gateway shows with the
+// approval.
+func NewClient(agentName, version string, onLog func(context.Context, *mcp.LoggingMessageParams), propose func(invocation, callID string) *Proposal) *mcp.Client {
 	c := mcp.NewClient(&mcp.Implementation{Name: "custos/" + agentName, Version: version}, &mcp.ClientOptions{
 		LoggingMessageHandler: func(ctx context.Context, r *mcp.LoggingMessageRequest) {
 			if onLog != nil {
@@ -241,7 +243,7 @@ func NewClient(agentName, version string, onLog func(context.Context, *mcp.Loggi
 			}
 		},
 	})
-	c.AddSendingMiddleware(tagCalls)
+	c.AddSendingMiddleware(tagCalls(propose))
 	return c
 }
 
@@ -253,20 +255,30 @@ type adkCall interface {
 }
 
 // tagCalls sets a tools/call's progress token to its ADK call's
-// CallToken, unless it has one.
-func tagCalls(next mcp.MethodHandler) mcp.MethodHandler {
-	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
-		if method == "tools/call" {
-			if ids, ok := ctx.(adkCall); ok && ids.FunctionCallID() != "" {
-				if p, ok := req.GetParams().(*mcp.CallToolParams); ok && p.GetProgressToken() == nil {
-					// go-sdk's SetProgressToken drops a _meta it creates.
-					if p.Meta == nil {
-						p.Meta = mcp.Meta{}
+// CallToken, unless it has one, and its proposal (ProposalKey) to what
+// propose gives for the call.
+func tagCalls(propose func(invocation, callID string) *Proposal) mcp.Middleware {
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if method == "tools/call" {
+				if ids, ok := ctx.(adkCall); ok && ids.FunctionCallID() != "" {
+					if p, ok := req.GetParams().(*mcp.CallToolParams); ok {
+						// go-sdk's SetProgressToken drops a _meta it creates.
+						if p.Meta == nil {
+							p.Meta = mcp.Meta{}
+						}
+						if p.GetProgressToken() == nil {
+							p.SetProgressToken(CallToken(ids.InvocationID(), ids.FunctionCallID()))
+						}
+						if propose != nil {
+							if pr := propose(ids.InvocationID(), ids.FunctionCallID()); pr != nil {
+								p.Meta[ProposalKey] = pr.Clean()
+							}
+						}
 					}
-					p.SetProgressToken(CallToken(ids.InvocationID(), ids.FunctionCallID()))
 				}
 			}
+			return next(ctx, method, req)
 		}
-		return next(ctx, method, req)
 	}
 }
