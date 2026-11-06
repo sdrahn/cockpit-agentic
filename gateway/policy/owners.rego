@@ -13,7 +13,11 @@
 # remote-user:, remote-group: ("self" would be the agent itself and
 # grants nothing here). An owner may decide on the agent's pending calls
 # whatever the server's own rules say, and is told of them by mail as
-# they are; the server's approvers keep deciding too.
+# they are; the server's approvers keep deciding too. An owner also sees
+# and may end the agent's sessions (the gateway's Clients tab,
+# mcp-gateway-admin clients) and its tasks: the server's approver rules
+# alone would ask an approver for every server of the agent's endpoint,
+# which for the aggregated one is every server registered.
 package mcp.approvals
 
 import rego.v1
@@ -47,3 +51,30 @@ notify contains rule if {
 	some rule in custos_owners
 	startswith(rule, "group:")
 }
+
+# The agent of a session's or task's subject: its user agent-<name> on
+# the unix socket, or the subject agent-<name> from an issuer trusted for
+# agents (agents/_http.yaml); an agent-* subject from any other issuer
+# is no agent (agents.rego), and nobody owns it.
+owned_agent(subject) := substring(subject.sub, 6, -1) if {
+	startswith(subject.sub, "agent-")
+	subject.transport == "unix"
+}
+
+owned_agent(subject) := substring(subject.sub, 6, -1) if {
+	startswith(subject.sub, "agent-")
+	subject.transport == "http"
+	subject.iss in object.get(object.get(data.mcp.agents, "_http", {}), "issuers", [])
+}
+
+owner_of(subject) if {
+	name := owned_agent(subject)
+	some rule in object.get(object.get(data.mcp.agents, name, {}), "owners", [])
+	is_string(rule)
+	rule != "self"
+	grants(rule, subject)
+}
+
+manage_session if owner_of(input.session)
+
+manage_task if owner_of(input.task)

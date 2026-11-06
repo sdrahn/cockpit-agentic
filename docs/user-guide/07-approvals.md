@@ -55,6 +55,14 @@ an owner who decides on this host needs access to the gateway's control
 socket: membership of its `socket_group` (gateway.yaml, `mcp-users` by
 default). Being an owner does not grant it.
 
+Owners also see their agent in mcp-gateway's *Clients* tab (and with
+`mcp-gateway-admin clients`), and may end its session or cancel its
+tasks there. Without them, the tab shows an agent only to someone the
+approver rules name for every server the gateway has, since an agent
+connects to the gateway's endpoint for all servers. An agent is listed
+while it runs: it exits after ten idle minutes (`--idle-exit` of the
+launcher) and starts again with its next activity.
+
 ## Deciding in Cockpit {#cockpit}
 
 The *Approvals* tab of the Custos page lists the pending calls, each as

@@ -65,3 +65,45 @@ test_no_owners if {
 		with data.mcp.rbac as rbac
 		with data.mcp.agents as agents
 }
+
+# Owners see and may end their agent's sessions and tasks (the gateway's
+# Clients tab), though the servers' rules name only the admins and an
+# agent's session spans every server of the aggregated endpoint.
+session(sub, transport, iss) := {
+	"sub": sub, "uid": 981, "transport": transport, "iss": iss, "endpoint": "all",
+	"servers": ["zypp", "systemd", "fs"], "client": {"name": "custos/patch-pilot"},
+}
+
+may(rule, approver, key, target) if {
+	approvals[rule] with input as {"approver": approver, key: target}
+		with data.mcp.rbac as rbac
+		with data.mcp.agents as object.union(agents, {"_http": {"issuers": ["https://agents.example"]}})
+}
+
+test_owners_manage_their_agents_sessions if {
+	s := session("agent-patch-pilot", "unix", "")
+	may("manage_session", alice, "session", s)
+	may("manage_session", bob, "session", s)
+	not may("manage_session", carol, "session", s)
+
+	# Another agent's, a person's, and an agent-* subject from an issuer not
+	# trusted for agents: not theirs.
+	not may("manage_session", alice, "session", session("agent-triage", "unix", ""))
+	not may("manage_session", alice, "session", session("patch-pilot", "unix", ""))
+	not may("manage_session", alice, "session", session("agent-patch-pilot", "http", "https://idp.example"))
+
+	# Over HTTPS from the agents' issuer (OpenShell): theirs.
+	may("manage_session", alice, "session", session("agent-patch-pilot", "http", "https://agents.example"))
+}
+
+test_owners_manage_their_agents_tasks if {
+	t := {"server": "zypp", "tool": "patch", "sub": "agent-patch-pilot", "uid": 981, "transport": "unix"}
+	may("manage_task", alice, "task", t)
+	not may("manage_task", carol, "task", t)
+	not may("manage_task", alice, "task", object.union(t, {"sub": "agent-triage"}))
+}
+
+# The agent itself is no owner of its session ("self" grants nothing).
+test_agent_does_not_manage_its_session_as_owner if {
+	not may("manage_session", {"name": "agent-patch-pilot", "uid": 981, "groups": []}, "session", session("agent-patch-pilot", "unix", ""))
+}

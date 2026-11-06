@@ -13,7 +13,11 @@ removed.
   a call has no limit of its own and `limits.max_invocation_seconds`
   bounds it with the rest of the activity; a call that runs out says
   which limit it was. Also in the model defaults (`agent-admin defaults`).
-
+- An agent's owners see it in mcp-gateway's *Clients* tab and with
+  `mcp-gateway-admin clients`, and may end its session or cancel its
+  tasks (`owners.rego`: `manage_session`, `manage_task`). Before, the
+  tab showed an agent only to an approver of every server the gateway
+  has, as an agent's session spans the endpoint for all servers.
 - The agent's account of each call reaches mcp-gateway with the call
   (its proposal, requirement R5; mcp-gateway 1.15): the model's reason,
   the activity and who started it, the signs of a suspected prompt
