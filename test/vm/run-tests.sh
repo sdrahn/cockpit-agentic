@@ -1128,6 +1128,14 @@ if command -v custos-setup >/dev/null; then
 		exec_t0=$(date +%s)
 		exec_failed=
 		for tool in $(sed -n 's/^  \([a-z_]*\):$/\1/p' /usr/share/custos/templates/exec.d-diagnostics.yaml /usr/share/custos/templates/exec.d-disk-usage.yaml); do
+			case $tool in
+			network_addresses | network_routes | listening_sockets)
+				# The exec server's instances have a private network namespace:
+				# they see none of the host's network (mcp-gateway R7).
+				skip "health-check runs exec__$tool (the exec server sees none of the host's network: needs mcp-gateway R7)"
+				continue
+				;;
+			esac
 			answer=$(run_activity health-check "CALL exec__$tool")
 			# rpm -Va exits 1 when it finds something: here opa, which the
 			# test host has as a binary, not as the package mcp-gateway
