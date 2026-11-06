@@ -696,7 +696,13 @@ the agent nor its host can grant or forge one.
    `remote-group:`; never `self`, nor an agent's own account), which the
    policy module `owners.rego` adds to the gateway's approver rules
    (`mcp.approvals`: `allow`, `allow_without_self`, and `notify`, so they
-   are mailed as the server's approvers are).
+   are mailed as the server's approvers are). They also see and may end
+   the agent's sessions and tasks (`manage_session`, `manage_task`: the
+   gateway's Clients tab, `mcp-gateway-admin clients`), which the
+   servers' rules alone would give only to an approver of every server of
+   the agent's endpoint: for the aggregated endpoint, of every server
+   registered. An agent's session is its user `agent-<name>` on the unix
+   socket, or that subject from an issuer trusted for agents.
 4. The call returns. The host writes `approval.resolved`
    (`approved`/`declined`), then `tool.result`. The gateway's own audit
    records the decision and the approver.
@@ -961,7 +967,7 @@ aggregation, policy distribution and approvals across hosts) is parked
 | `/usr/sbin/custos-setup` | root 0755 | the bundled diagnostics install's setup (§17a; package `custos-diagnostics`) |
 | `/usr/lib/systemd/system/agent@.{service,socket}`, `agent-schedule@.{service,timer}` | root 0644 | unit templates |
 | `/usr/share/mcp-gateway/policy/custos/agents.rego` | root 0644 | the autonomy modes (§6) |
-| `/usr/share/mcp-gateway/policy/custos/owners.rego` | root 0644 | owners approve their agents' calls (§7) |
+| `/usr/share/mcp-gateway/policy/custos/owners.rego` | root 0644 | owners approve their agents' calls, and see their sessions and tasks (§7) |
 | `/usr/share/custos/gateway/servers.d/agents.yaml` | root 0644 | the `agents` server definition; copy to `/etc/mcp-gateway/servers.d/` to allow delegation |
 | `/usr/share/custos/categories.d/*.yaml` | root 0644 | the task categories' catalog (§6a) |
 | `/etc/custos/categories.d/*.yaml` | root 0644 | the administrator's categories: a file of a shipped name replaces it, an empty one disables it |

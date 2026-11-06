@@ -606,10 +606,13 @@ aid=$(approval_of t1 "$id")
 lists() { tester_gw /v1/approvals | jq -e --arg a "$aid" 'map(.id) | index($a)' >/dev/null; }
 check "custos-tester reaches the control socket ($sock_group)" bash -c "$(declare -f tester_gw); tester_gw /v1/approvals | jq -e 'type == \"array\"' >/dev/null"
 check "without owners, custos-tester does not see the approval" not lists
+sessions_t1() { tester_gw /v1/sessions | jq -e 'any(.[]; .sub == "agent-t1")' >/dev/null; }
+check "without owners, custos-tester does not see t1's session (the gateway's Clients tab)" not sessions_t1
 check "agent-admin refuses the agent itself as owner" not agent-admin owners t1 user:agent-t1
 check "agent-admin owners t1 user:custos-tester" agent-admin owners t1 user:custos-tester
 check "show: t1's owners" bash -c "agent-admin show t1 | jq -e '.agents.t1.owners == [\"user:custos-tester\"]' >/dev/null"
 check "as t1's owner, custos-tester sees the approval" eventually 10 lists
+check "as t1's owner, custos-tester sees t1's session in the gateway's clients" eventually 10 sessions_t1
 check "and decides it, as custos-tester" bash -c \
 	"$(declare -f tester_gw); tester_gw /v1/approvals/$aid -X POST -d '{\"decision\":\"approve\",\"scope\":\"once\"}' -o /dev/null -w '%{http_code}' | grep -q '^20'"
 check "the change ran" eventually 30 activity_state_is t1 "$id" finished

@@ -9,6 +9,11 @@ removed.
 
 ### Added
 
+- An agent's owners see it in mcp-gateway's *Clients* tab and with
+  `mcp-gateway-admin clients`, and may end its session or cancel its
+  tasks (`owners.rego`: `manage_session`, `manage_task`). Before, the
+  tab showed an agent only to an approver of every server the gateway
+  has, as an agent's session spans the endpoint for all servers.
 - Requirements for mcp-gateway from Custos 0.4
   (`docs/requirements/mcp-gateway-for-custos-0.4.md`): R5, a proposal
   the client sends with a call (summary, impact, steps, context,
