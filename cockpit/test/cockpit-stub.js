@@ -134,6 +134,8 @@
     let toReview = [
         { activity: "e-0d90", call: "c1", tool: "snapper__delete_snapshots", outcome: "ok", at: new Date(Date.now() - 3600e3).toISOString() },
         { activity: "e-0d91", call: "c1", tool: "snapper__delete_snapshots", outcome: "error", at: new Date(Date.now() - 1800e3).toISOString() },
+        // The gateway's record of a call that named no activity (no progress token).
+        { activity: "", call: "", tool: "snapper__delete_snapshots", outcome: "ok", at: new Date(Date.now() - 900e3).toISOString(), decision_id: "d-77" },
     ];
     // The agents' agent.yaml (root:agent-<name> 0640: root only).
     const configs = { triage: "version: 1\nname: triage\nmodel: {provider: openai, name: m, endpoint: \"http://x\"}\n" +
@@ -482,7 +484,7 @@
                              };
                              if (cmd === "review" && args.length === 3) {
                                  return Promise.resolve(JSON.stringify({ agent: name, categories: {
-                                     "config-lifecycle": { mode: d.categories["config-lifecycle"].mode, actions: 3, reviewed: 3 - toReview.length, pending: toReview },
+                                     "config-lifecycle": { mode: d.categories["config-lifecycle"].mode, actions: 4, reviewed: 4 - toReview.length, pending: toReview },
                                      "patch-errata": { mode: "bounded", actions: 0, reviewed: 0, pending: [] } } })).then(ok, bad);
                              }
                              if (cmd === "review") {

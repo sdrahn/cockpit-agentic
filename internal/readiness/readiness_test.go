@@ -424,3 +424,57 @@ func TestGatewayReviews(t *testing.T) {
 		t.Errorf("%+v", m)
 	}
 }
+
+// The actions to review from the gateway's records (R2): every call it
+// let through without an approval or a grant, though the agent recorded
+// none, with the decision id; the agent's own records only add.
+func TestAutonomousActionsFromTheGateway(t *testing.T) {
+	var l log
+	since := t0
+	// The agent recorded one action (e-1) and left out e-2.
+	l.rec(t0.Add(time.Hour), "tool.call", map[string]string{"INVOCATION": "e-1", "CALL_ID": "c1", "TOOL": "zypp__patch", "ARGS_SHA256": "aa"})
+	l.rec(t0.Add(time.Hour), "tool.result", map[string]string{"INVOCATION": "e-1", "CALL_ID": "c1", "TOOL": "zypp__patch", "OUTCOME": "ok"})
+	l.rec(t0.Add(3*time.Hour), "tool.call", map[string]string{"INVOCATION": "e-9", "CALL_ID": "c1", "TOOL": "zypp__patch"})
+	l.rec(t0.Add(3*time.Hour), "tool.result", map[string]string{"INVOCATION": "e-9", "CALL_ID": "c1", "TOOL": "zypp__patch", "OUTCOME": "ok"})
+	results := []Result{
+		{Tool: "zypp__patch", Outcome: "ok", DecisionID: "d-1", Invocation: "e-1", CallID: "c1", At: t0.Add(time.Hour)},
+		{Tool: "zypp__patch", Outcome: "tool_error", DecisionID: "d-2", Invocation: "e-2", CallID: "c1", At: t0.Add(2 * time.Hour)},
+		{Tool: "zypp__patch", Outcome: "ok", DecisionID: "d-3", At: t0.Add(150 * time.Minute)},                           // no token
+		{Tool: "zypp__patch", Outcome: "ok", DecisionID: "d-4", ApprovalID: "a-1", At: t0.Add(time.Hour)},                // approved
+		{Tool: "zypp__patch", Outcome: "ok", DecisionID: "d-5", Grant: "g-1", At: t0.Add(time.Hour)},                     // a grant
+		{Tool: "zypp__list_updates", Outcome: "ok", DecisionID: "d-6", At: t0.Add(time.Hour)},                            // read-only
+		{Tool: "zypp__patch", Outcome: "ok", DecisionID: "d-7", Invocation: "e-0", CallID: "c1", At: t0.Add(-time.Hour)}, // before
+	}
+	acts := AutonomousActions("patch-errata", perms, l.recs, results, since)
+	var got []string
+	for _, a := range acts {
+		got = append(got, a.Activity+"/"+a.Decision+"/"+a.Outcome+"/"+a.Args)
+	}
+	if strings.Join(got, " ") != "e-1/d-1/ok/aa e-2/d-2/error/ /d-3/ok/ e-9//ok/" {
+		t.Fatalf("%v", got)
+	}
+	// Reviewed: root's by activity and call, the gateway's by decision id.
+	reviews := ReviewMap("patch-errata", perms, nil, []Review{{Item: "r-1", Tool: "zypp__patch", Decision: "d-3", Verdict: "ok"}})
+	reviews["e-1 c1"] = Review{Verdict: "ok"}
+	var open []string
+	for _, a := range Pending(acts, reviews, t0.Add(24*time.Hour)) {
+		open = append(open, a.Activity+a.Decision)
+	}
+	if strings.Join(open, " ") != "e-2d-2 e-9" {
+		t.Errorf("pending %v", open)
+	}
+}
+
+// A call reviewed by root and on the gateway is one review: the later.
+func TestOneReviewPerCall(t *testing.T) {
+	var l log
+	l.rec(t0, "category.review", map[string]string{"CATEGORY": "patch-errata", "INVOCATION": "e-1", "CALL_ID": "c1", "VERDICT": "ok", "DECISION_ID": "d-1"})
+	gw := []Review{
+		{Item: "r-1", Tool: "zypp__patch", Decision: "d-1", Verdict: "incident", Reason: "x", At: t0.Add(time.Hour)},
+		{Item: "r-2", Tool: "zypp__patch", Decision: "d-2", Verdict: "ok", At: t0},
+	}
+	all := AllReviews("patch-errata", perms, l.recs, gw)
+	if len(all) != 2 || all[1].Item != "r-1" || all[1].Verdict != "incident" {
+		t.Errorf("%+v", all)
+	}
+}

@@ -494,8 +494,12 @@ listing the proposals behind each number.
 In a `bounded` category, nothing is approved beforehand. Its override
 rate is measured **afterwards**: the approvers review a sample of its
 **autonomous actions**, the calls of the category since its promotion
-that ran without an approval (`tool.result` without an approval id, and
-no `approval.pending` for the call). Of a week's actions all are
+that ran without an approval: those the gateway let through without an
+approval or a grant (its `mcp-result`, with the decision id; the
+activity and call from the agent's progress token, for correlation),
+and any more the agent recorded (`tool.result` without an approval id,
+and no `approval.pending` for the call). The agent can add actions to
+review, never hide one. Of a week's actions all are
 offered while there are at most 20, otherwise the newest unreviewed ones
 up to 20 reviews in the week. A verdict is `ok`, or `incident`: the
 action should not have run, which needs a reason. It is recorded as
@@ -840,6 +844,7 @@ did, and readiness reads them as such, next to the gateway's decisions.
 | `AGENT_BY` | the person, or `custos-demote` for an automatic demotion |
 | `AGENT_VERDICT` | `category.review`: `ok` or `incident` |
 | `AGENT_INVOCATION`, `AGENT_CALL_ID`, `AGENT_TOOL` | `category.review`: the reviewed action |
+| `AGENT_DECISION_ID` | `category.review`: the gateway's decision id of the reviewed call, when the gateway recorded it; a call reviewed by root and on the gateway counts once, with the later verdict |
 | `AGENT_REASON` | the reason given, or the trigger (`override rate 7.1 % above 5.0 % since …`, `rollback tool_error: …`, `rollback health_check_failed: …`) |
 | `AGENT_ENVELOPE_SHA256` | SHA-256 of the envelope's JSON with sorted keys |
 | `AGENT_READINESS` | the readiness measures at the time, as JSON |
@@ -1240,7 +1245,7 @@ standard error:
 | `categories` | the catalog (§6a), as JSON: `{"<category>": {"title", "description"?}}`. Needs no root |
 | `promote NAME CATEGORY --envelope FILE [--despite-readiness --reason TEXT]`, `demote NAME CATEGORY [--reason TEXT]` | a category's promotion with its envelope (`FILE` `-` is stdin), and its demotion (§6a). They write `categories.<category>` in the gateway data and a promotion record (§10), and return once the gateway has loaded the change, as `mode` does. `promote` refuses a category that is not ready, naming what is not met, unless it is given `--despite-readiness` with a reason; its record's `AGENT_READINESS` is the category's measures |
 | `evaluate` | the demotion evaluator (§6a), which `custos-demote.service` runs: demotes every bounded category whose override rate or rollback conditions say so, printing one line per demotion, and posts a notice of each to the gateway's approvers (mcp-gateway's `POST /v1/notices` on its control socket, as root: about `agent-<name>`, for the servers of the category's permissions, severity `warning`), printing how that went. A notice the gateway refuses leaves the demotion as it is. An agent whose journal it cannot read is reported, and the others are still evaluated |
-| `review NAME [CATEGORY…]`, `review NAME CATEGORY ACTIVITY CALL ok\|incident [--reason TEXT]` | the review (§6a). Without a verdict: per category promoted since (bounded, or demoted after a promotion) the week's autonomous actions still to review, as JSON: `{"agent", "categories": {"<category>": {"mode", "actions", "reviewed", "pending": [{"activity", "call", "tool", "outcome", "at", "args_sha256"?}]}}}`. With one: records `category.review` (the person behind `sudo` as `AGENT_BY`) for an action that ran without an approval in the last week; `incident` needs a reason and demotes a bounded category. Reads the journal: root or `systemd-journal`; a verdict needs root |
+| `review NAME [CATEGORY…]`, `review NAME CATEGORY ACTIVITY CALL ok\|incident [--reason TEXT]` | the review (§6a). Without a verdict: per category promoted since (bounded, or demoted after a promotion) the week's autonomous actions still to review, as JSON: `{"agent", "categories": {"<category>": {"mode", "actions", "reviewed", "pending": [{"activity", "call", "tool", "outcome", "at", "args_sha256"?, "decision_id"?}]}}}`. With one: records `category.review` (the person behind `sudo` as `AGENT_BY`) for an action that ran without an approval in the last week; `incident` needs a reason and demotes a bounded category. Reads the journal: root or `systemd-journal`; a verdict needs root |
 | `readiness NAME [CATEGORY…]` | the readiness of the agent's categories (those its permissions name), or of the given ones, as JSON: `{"agent", "thresholds": {"observation_days", "proposals", "override_rate", "incident_rate", "window_days"}, "categories": {"<category>": {"proposals", "approved", "declined", "cancelled", "reviewed", "review_overrides", "overrides", "override_rate", "incidents", "incident_rate", "tools", "distinct_calls", "observed_days", "first_proposal"?, "ready", "unmet"?}}, "diagnostics": {"reports", "hypotheses", "quotes", "verified_quotes", "with_feedback", "confirmed", "rejected", "unsure", "plans_useful", "plans_not_useful", "plans_executed", "confirmed_rate"}, "diagnostics_apply"}` (§6a; `diagnostics` §6b; `diagnostics_apply`: they count in the readiness, the host started diagnostics-only). Reads the agent's journal and mcp-gateway's, so it needs root or the `systemd-journal` group |
 
 ## 17a. `custos-setup` (draft, O16)
@@ -1526,8 +1531,8 @@ inherited, not specified again.
   requirement R3), which tells the agent's approvers and owners by
   mail, on its event stream and its approval page; and the gateway's
   approvers review autonomous actions on the gateway (its review items,
-  R4), their verdicts counting as root's do. Still from the agent's
-  records: the actions `agent-admin review` offers to root. Open in Custos: in the measures: the agent data in force at a call's time, emergency
+  R4), their verdicts counting as root's do; the actions `agent-admin
+  review` offers to root are the gateway's record of the calls too. Open in Custos: in the measures: the agent data in force at a call's time, emergency
   stops as incidents, the envelope's size, and the proposals behind each
   number.
 - **O12 — envelope limits in the gateway.** A per-agent, per-category
