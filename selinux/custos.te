@@ -121,6 +121,16 @@ optional_policy(`
 	')
 	allow mcpsrv_exec_t systemd_unit_file_type:service status;
 ')
+# time_status (timedatectl show) asks timedated over D-Bus; dbus-broker
+# refuses the message without this ("A security policy denied ...").
+optional_policy(`
+	gen_require(`
+		type systemd_timedated_t;
+		class dbus send_msg;
+	')
+	allow mcpsrv_exec_t systemd_timedated_t:dbus send_msg;
+	allow systemd_timedated_t mcpsrv_exec_t:dbus send_msg;
+')
 optional_policy(`
 	gen_require(`
 		type proc_psi_t;
