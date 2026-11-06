@@ -9,6 +9,11 @@ removed.
 
 ### Fixed
 
+- A call was marked as a suspected prompt injection whenever one of its
+  argument values was in an earlier tool's output: a diagnostic
+  playbook that reads the log of a unit `boot_blame` named was flagged.
+  The value counts only where the output tells the model to use it
+  ("please set", "call … with value").
 - An ended activity, and its diagnosis report, was gone from Cockpit's
   Activity tab and `GET /v1/activities` once the agent exited when idle
   (10 minutes without requests): a scheduled playbook's run was not
