@@ -1450,7 +1450,8 @@ inherited, not specified again.
 - **O6 — proposals.** The approval item's rationale and impact come
   from the model's text and are self-asserted. A structured proposal
   (planned actions, expected impact) that the gateway shows with the
-  approval would need a gateway field, e.g. in the call's `_meta`.
+  approval would need a gateway field, e.g. in the call's `_meta`:
+  requirement R5 in `docs/requirements/mcp-gateway-for-custos-0.4.md`.
 - **O7 — fleet.** A cross-host delegation transport, a host part in the
   trace, and an aggregated view.
 - **O8 — second host.** Demonstrating host independence: a mock host

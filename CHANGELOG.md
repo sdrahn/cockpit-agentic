@@ -7,6 +7,14 @@ removed.
 
 ## Unreleased
 
+### Added
+
+- Requirements for mcp-gateway from Custos 0.4
+  (`docs/requirements/mcp-gateway-for-custos-0.4.md`): R5, a proposal
+  the client sends with a call (summary, impact, steps, context,
+  warnings), shown with the approval on the gateway's page, in mails and
+  notifications, marked as the client's claim (CONTRACT.md O6).
+
 ## v0.3.0 — 2026-11-06
 
 The bundled health-check and diagnostics agent, and trust that does not
