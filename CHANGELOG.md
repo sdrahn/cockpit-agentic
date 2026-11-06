@@ -7,6 +7,47 @@ removed.
 
 ## Unreleased
 
+## v0.4.0 — 2026-11-06
+
+Autonomy within limits the gateway enforces, and the agent's account of
+each call where it is decided. A promoted category's envelope can now
+have a rate: within it the category acts on its own, beyond it each call
+waits for an approval again (mcp-gateway's `approval_over_rate`).
+Approvers see the agent's reason, its activity and the signs of a
+suspected prompt injection with the approval itself, on the gateway's
+page, in mails and in notifications. Readiness judges each call by the
+permissions in force when it was made and counts an emergency stop as an
+incident. An agent's owners see and manage its sessions in the gateway.
+Model calls have a timeout of their own and are all recorded, failed
+ones included. The bundled diagnostics work under SELinux, and the
+network diagnostics see the host's network through Custos's own server
+`custos-net`.
+
+Upgrading from 0.3.x needs no change to configurations or gateway data:
+contract version 1 only gained names. To know:
+
+- Upgrade mcp-gateway to 1.15 first: `custos` requires it (the agent's
+  proposal with each call, `approval_over_rate`, `network_view`). Update
+  `custos-selinux` in the same transaction: it has the rules for the
+  diagnostic commands.
+- On a host set up with 0.3.0 (`custos-setup --diagnostics-only`), run
+  `custos-setup` again with the same options: it replaces 0.3.0's exec
+  commands (unchanged copies only), installs the server `custos-net`,
+  and restarts the exec server's instances and the agent. Give the
+  `health-check` agent the template's new permissions for `custos-net`:
+  `agent-admin permissions health-check <
+  /usr/share/custos/templates/health-check/permissions.yaml`.
+- A model call is no longer cut off after 10 minutes: without
+  `model.timeout_seconds`, `limits.max_invocation_seconds` bounds it with
+  the rest of the activity.
+- The records readiness now reads (`permissions.changed`,
+  `agents.stopped`) start with this version: calls made before the first
+  `permissions.changed` count by the permissions it changed from, or the
+  current ones, as before.
+- Running agents keep the old launcher until they next start (idle exit,
+  or `systemctl restart agent@NAME.service`); OpenShell agents need their
+  image rebuilt (user guide, chapter 11).
+
 ### Added
 
 - Readiness judges each call by the agent's permissions at the call's
