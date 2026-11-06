@@ -7,6 +7,14 @@ removed.
 
 ## Unreleased
 
+### Fixed
+
+- Cockpit offered every playbook on the host for every agent, though
+  only an agent the gateway offers a playbook's tools (as health-check)
+  can run it. It now offers only those the agent can run and lists the
+  others apart with the tools they need, from the agent's new
+  `GET /v1/playbooks`.
+
 ## v0.4.0 — 2026-11-06
 
 Autonomy within limits the gateway enforces, and the agent's account of

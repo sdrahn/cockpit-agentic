@@ -263,6 +263,7 @@ by `SO_PEERCRED`.
 |---|---|---|
 | `GET /v1/status` | supervisors, root | `{"contract":1, "implementation", "lifecycle":{"kind",…} (§3a), "units":{"service","socket"} (systemd only), "name", "version", "model", "paused", "gateway":{"socket","reachable"}, "running", "in_flight":[call…], "started", "limits", "interaction":{"agui","client_tools"}, "schedules":[{"name","on_calendar","prompt"}]}` |
 | `GET /v1/activities` | supervisors, root | `{"activities": [activity…]}`, running first, then ended, newest first |
+| `GET /v1/playbooks` | supervisors, root | the host's playbooks (§14c) as this agent may run them now: `{"playbooks": {"<name>": {"title", "description"?, "runnable", "missing"?, "error"?}}}`; `runnable` when the gateway offers it the tool of every step that is not `optional`, else `missing` names the tools it lacks; `error` for a file that does not parse. `502` when the gateway's tools cannot be listed |
 | `GET /v1/activities/{id}` | supervisors, root; an agent only for activities it delegated | one activity |
 | `POST /v1/activities` | root (schedules, events, api); supervisors (`api`); agents (`delegation`, §9) | `{"prompt", "session"?, "user"? (root only), "origin"? (root only), "trace"? (agents only), "wait"?, "playbook"? (§14c; draft, O16)}`: `202 {"id","session"}`, or with `wait` the ended activity; `409` while paused |
 | `POST /v1/activities/{id}/cancel` | root; the activity's user or originator | ends a running activity: `204`, `409` if not running |
@@ -1151,7 +1152,9 @@ request for a report, records the playbook in the activity (`playbook`,
 §4) and in `invocation.start` (`AGENT_PLAYBOOK`, §10), and answers `404`
 for an unknown playbook, `400` for one that does not parse, and `422`
 when a step's tool is not offered, naming the tools; nothing runs then.
-An OpenShell agent reads the playbooks of its sandbox's image.
+`GET /v1/playbooks` (§5) answers which playbooks the agent can run, so
+that a console offers only those. An OpenShell agent reads the
+playbooks of its sandbox's image.
 
 The set GA ships: `failed-units`, `service-health`, `disk-pressure`,
 `memory-pressure` (including OOM kills), `journal-errors`,

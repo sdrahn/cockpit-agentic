@@ -1026,6 +1026,8 @@ agent-admin delete pb >/dev/null 2>&1
 check "agent-admin create pb, with a schedule that runs a playbook" agent-admin create pb --from \
 	"$(config pb custos-test 'schedules: [{name: probe, on_calendar: "*-*-* 03:30", playbook: probe-check}]')"
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' | agent-admin permissions pb
+check "GET /v1/playbooks: pb can run probe-check, not change-check (its tool is not offered)" bash -c \
+	"$(declare -f api); api pb /v1/playbooks | jq -e '.playbooks | .\"probe-check\".runnable and (.\"change-check\" | (.runnable | not) and .missing == [\"custos-test__change\"])' >/dev/null"
 pb_run() { api pb /v1/activities -X POST -d "$(jq -nc --arg p "$1" '{playbook: $p, wait: true}')"; }
 check "an activity runs the playbook: its probe is called" eventually 30 bash -c \
 	"$(declare -f api pb_run); pb_run probe-check | jq -e '.playbook == \"probe-check\" and .state == \"finished\" and (.calls | map(.tool) | index(\"custos-test__probe\"))' >/dev/null"
