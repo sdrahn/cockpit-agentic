@@ -7,6 +7,13 @@ removed.
 
 ## Unreleased
 
+### Fixed
+
+- Tools without arguments reach an `openai` model with the plain schema
+  of an empty object. With the schema mcp-gateway's exec server sends
+  (`"additionalProperties": false`), gpt-oss-20b in LM Studio now and
+  then wrote a truncated argument object, and the call was lost.
+
 ## v0.4.0 — 2026-11-06
 
 Autonomy within limits the gateway enforces, and the agent's account of
