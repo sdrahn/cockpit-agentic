@@ -1,0 +1,23 @@
+# mcp-gateway server definition: the network diagnostics of Custos's
+# playbook network-config (CONTRACT.md §14c): the host's interfaces,
+# routes and listening sockets. Installed as
+# /usr/share/custos/gateway/servers.d/custos-net.yaml; custos-setup copies
+# it to /etc/mcp-gateway/servers.d/ on the diagnostics-only install, or
+# copy it there yourself.
+#
+# Its instances see the host's network without using it (network_view:
+# host, mcp-gateway 1.15): the host's network namespace, unix and netlink
+# sockets only, no IP traffic. The exec server's own instances have a
+# private network namespace, in which these commands see nothing. The
+# commands are in /usr/share/custos/gateway/custos-net.d and change with
+# the package. Give an agent read_only permissions for them, e.g.
+#   - {server: custos-net, tool: network_addresses, read_only: true, category: diagnostics}
+version: 1
+name: custos-net
+command: ["/usr/libexec/mcp-servers/mcp-server-exec", "--commands", "/usr/share/custos/gateway/custos-net.d",
+  "--instructions", "Read-only views of this host's network: its interfaces and addresses, routes and listening sockets. The commands see the host's network but cannot use it: no connection, no traffic. They run as you, confined by SELinux (mcpsrv_exec_t)."]
+selinux_type: mcpsrv_exec_t
+network: false
+network_view: host
+landlock:
+  read: ["/var", "/run"]

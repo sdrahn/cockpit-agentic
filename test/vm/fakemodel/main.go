@@ -137,8 +137,8 @@ func (m *Model) Respond(req *request) message {
 		if last.Content != nil {
 			c = *last.Content
 		}
-		if len(c) > 300 {
-			c = c[:300]
+		if len(c) > 2000 {
+			c = c[:2000]
 		}
 		return text("done: " + c)
 	}

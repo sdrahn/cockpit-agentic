@@ -2,11 +2,14 @@ package admin
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/sdrahn/custos/internal/config"
@@ -31,6 +34,23 @@ const SetupCredential = "model-key"
 
 // ExecDir is mcp-gateway's exec server's command directory.
 const ExecDir = "/etc/mcp-gateway/exec.d"
+
+// GatewayServersDir is mcp-gateway's directory of server definitions;
+// NetServerVendor is Custos's server custos-net (network_view: host),
+// which custos-setup copies there.
+const (
+	GatewayServersDir = "/etc/mcp-gateway/servers.d"
+	NetServerVendor   = "/usr/share/custos/gateway/servers.d/custos-net.yaml"
+)
+
+// shippedBefore are the SHA-256 digests of the exec command files earlier
+// releases shipped (0.3.0): a copy that is one of them is no
+// administrator's change, and custos-setup replaces it with the current
+// one.
+var shippedBefore = map[string][]string{
+	"exec.d-diagnostics.yaml": {"971bf1d0e0ad1d7203cda0aefbb16fe1e76bf829d4bca39c8669d8367adb14fa"},
+	"exec.d-disk-usage.yaml":  {"7e7f23fe449a005adf26de9b12d02287f37b2f742c294c60a860aa102b6d4f33"},
+}
 
 // SetupOptions are custos-setup's arguments.
 type SetupOptions struct {
@@ -185,6 +205,13 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 		}
 	}
 
+	// Custos's server custos-net, for the network commands: its instances
+	// see the host's network (network_view: host), which the exec server's
+	// do not.
+	netStep := a.setupNetServer()
+	steps = append(steps, netStep)
+	execAdded = execAdded || netStep.Result == "done"
+
 	// 4. The health-check agent, from its template with the defaults.
 	if _, err := os.Stat(filepath.Join(a.agentDir(HealthCheck), "agent.yaml")); err == nil {
 		add("agent "+HealthCheck, "already", "its configuration is kept; change it with agent-admin edit")
@@ -240,6 +267,13 @@ func (a *Admin) setupExec() []Step {
 		switch {
 		case err == nil && bytes.Equal(have, want):
 			out = append(out, Step{name, "already", ""})
+		case err == nil && slices.Contains(shippedBefore[f], sha256Hex(have)):
+			// An earlier release's copy, unchanged: the current one replaces it.
+			if err := writeFile(dst, want, 0o644); err != nil {
+				out = append(out, Step{name, "failed", err.Error()})
+				continue
+			}
+			out = append(out, Step{name, "done", dst + " (an earlier release's, replaced)"})
 		case err == nil:
 			out = append(out, Step{name, "skipped", dst + " differs from the shipped one: kept"})
 		default:
@@ -271,4 +305,36 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// setupNetServer copies Custos's server definition custos-net into the
+// gateway's servers.d, where the gateway picks it up; one there already
+// that differs is the administrator's and stays.
+func (a *Admin) setupNetServer() Step {
+	const name = "server custos-net"
+	if _, err := os.Stat(a.p(GatewayServersDir)); err != nil {
+		return Step{name, "skipped", GatewayServersDir + " does not exist"}
+	}
+	src := a.p(NetServerVendor)
+	dst := a.p(filepath.Join(GatewayServersDir, "custos-net.yaml"))
+	want, err := os.ReadFile(src)
+	if err != nil {
+		return Step{name, "skipped", err.Error()}
+	}
+	have, err := os.ReadFile(dst)
+	switch {
+	case err == nil && bytes.Equal(have, want):
+		return Step{name, "already", ""}
+	case err == nil:
+		return Step{name, "skipped", dst + " differs from the shipped one: kept"}
+	}
+	if err := copyFile(src, dst); err != nil {
+		return Step{name, "failed", err.Error()}
+	}
+	return Step{name, "done", dst}
+}
+
+func sha256Hex(b []byte) string {
+	s := sha256.Sum256(b)
+	return hex.EncodeToString(s[:])
 }

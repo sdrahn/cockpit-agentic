@@ -5,9 +5,10 @@
 # /usr/libexec/mcp-servers/mcp-server-exec --check. They run as the calling
 # agent's user, without network, and take no arguments. Each is a tool
 # exec__<name>; give an agent read_only permissions with category
-# diagnostics for the ones it uses. ip, ss, sestatus and getenforce are
-# found on the server's PATH (/usr/sbin:/usr/bin), wherever the
-# distribution puts them.
+# diagnostics for the ones it uses. sestatus is found on the server's
+# PATH (/usr/sbin:/usr/bin), wherever the distribution puts it. The
+# network commands are not here: the exec server sees none of the host's
+# network; Custos's server custos-net has them (/usr/share/custos/gateway).
 version: 1
 commands:
   memory_usage:
@@ -26,18 +27,6 @@ commands:
   time_status:
     description: The clock, time zone and whether NTP has synchronized it (timedatectl show)
     argv: [/usr/bin/timedatectl, show]
-    read_only: true
-  network_addresses:
-    description: The network interfaces, their state and addresses (ip -brief address)
-    argv: [/usr/bin/env, ip, -brief, address]
-    read_only: true
-  network_routes:
-    description: The routing table (ip route show)
-    argv: [/usr/bin/env, ip, route, show]
-    read_only: true
-  listening_sockets:
-    description: TCP and UDP sockets listening on this host (ss -tulnH)
-    argv: [/usr/bin/env, ss, -tulnH]
     read_only: true
   boot_time:
     description: How long the last boot took, by phase (systemd-analyze time)

@@ -998,6 +998,7 @@ aggregation, policy distribution and approvals across hosts) is parked
 | `/usr/share/mcp-gateway/policy/custos/agents.rego` | root 0644 | the autonomy modes (§6) |
 | `/usr/share/mcp-gateway/policy/custos/owners.rego` | root 0644 | owners approve their agents' calls, and see their sessions and tasks (§7) |
 | `/usr/share/custos/gateway/servers.d/agents.yaml` | root 0644 | the `agents` server definition; copy to `/etc/mcp-gateway/servers.d/` to allow delegation |
+| `/usr/share/custos/gateway/servers.d/custos-net.yaml`, `/usr/share/custos/gateway/custos-net.d/` | root 0644 | the server `custos-net` and its commands: the network diagnostics (§14c), run by mcp-gateway's `mcp-server-exec` with `network_view: host` (the host's network namespace, no IP traffic; mcp-gateway 1.15); `custos-setup` copies the definition to `/etc/mcp-gateway/servers.d/` |
 | `/usr/share/custos/categories.d/*.yaml` | root 0644 | the task categories' catalog (§6a) |
 | `/etc/custos/categories.d/*.yaml` | root 0644 | the administrator's categories: a file of a shipped name replaces it, an empty one disables it |
 | `/usr/share/custos/templates/<template>/` | root 0644 | the agent templates (§14a), and `exec.d-disk-usage.yaml` and `exec.d-diagnostics.yaml`, the `exec` commands templates and playbooks (§14c) use, for `/etc/mcp-gateway/exec.d/` |
@@ -1161,7 +1162,11 @@ dependencies) and `update-status` (read only: what is pending, not
 installing it). Their read-only commands for mcp-gateway's `exec` server
 are `/usr/share/custos/templates/exec.d-diagnostics.yaml` (and
 `exec.d-disk-usage.yaml`), to copy to `/etc/mcp-gateway/exec.d/`: they run
-as the agent's user, without network, and take no arguments.
+as the agent's user, without network, and take no arguments. The exec
+server's instances have a network namespace of their own, so the network
+commands (`network_addresses`, `network_routes`, `listening_sockets`) are
+Custos's server `custos-net` instead, whose instances see the host's
+network without using it (`network_view: host`).
 
 ## 15. Units and sandbox
 
@@ -1319,8 +1324,11 @@ on standard output as `custos-setup: <step>: done|already|skipped
    so when it added one it stops the server's running instances through
    the gateway's control API (`GET /v1/servers`, `DELETE
    /v1/instances/{id}`, as Cockpit's Servers tab); without the gateway
-   running it says so. All this before the agent, whose session then
-   offers the commands;
+   running it says so. A copy of an earlier release's file, unchanged
+   (by its digest), it replaces. It also copies the server definition
+   `custos-net` into `/etc/mcp-gateway/servers.d/`, keeping one that
+   differs. All this before the agent, whose session then offers the
+   commands;
 4. it creates the agent `health-check` from its template (§14a), which
    takes the defaults' model; one that exists keeps its configuration,
    and is restarted if step 3 added a command;

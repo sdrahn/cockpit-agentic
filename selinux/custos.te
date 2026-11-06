@@ -121,6 +121,22 @@ optional_policy(`
 	')
 	allow mcpsrv_exec_t systemd_unit_file_type:service status;
 ')
+# Custos's server custos-net (gateway/servers.d/custos-net.yaml) runs
+# mcp-server-exec in this domain with network_view: host (mcp-gateway
+# 1.15): in the host's network namespace, unix and netlink sockets only.
+# ip and ss read the interfaces, routes and sockets through netlink
+# (route and sock_diag) and /proc/net; ip is labelled ifconfig_exec_t. The
+# exec server's own instances, with a private network namespace and unix
+# sockets only, cannot open a netlink socket at all.
+allow mcpsrv_exec_t self:netlink_route_socket r_netlink_socket_perms;
+allow mcpsrv_exec_t self:netlink_tcpdiag_socket r_netlink_socket_perms;
+kernel_read_network_state(mcpsrv_exec_t)
+optional_policy(`
+	gen_require(`
+		type ifconfig_exec_t;
+	')
+	can_exec(mcpsrv_exec_t, ifconfig_exec_t)
+')
 # time_status (timedatectl show) asks timedated over D-Bus; dbus-broker
 # refuses the message without this ("A security policy denied ...").
 optional_policy(`

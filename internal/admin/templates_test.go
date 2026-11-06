@@ -42,14 +42,22 @@ var knownTools = map[string]struct{ read, change []string }{
 		change: []string{"refresh_repositories", "pkg_install", "pkg_remove", "update_system", "rollback",
 			"delete_snapshot", "cleanup_snapshots", "apply", "reboot", "run_in_snapshot"},
 	},
-	"exec": {}, // from the shipped exec.d files (init)
+	"exec":       {}, // from the shipped exec.d files (init)
+	"custos-net": {}, // from gateway/custos-net.d (init)
 }
 
-// The exec server's tools are the commands of the shipped exec.d files;
-// the read-only ones among them change nothing.
+// The exec server's tools are the commands of the shipped exec.d files,
+// custos-net's those of gateway/custos-net.d; the read-only ones among
+// them change nothing.
 func init() {
-	files, _ := filepath.Glob("../../templates/exec.d-*.yaml")
-	k := knownTools["exec"]
+	for server, glob := range map[string]string{"exec": "../../templates/exec.d-*.yaml", "custos-net": "../../gateway/custos-net.d/*.yaml"} {
+		knownTools[server] = commandTools(glob)
+	}
+}
+
+func commandTools(glob string) struct{ read, change []string } {
+	files, _ := filepath.Glob(glob)
+	var k struct{ read, change []string }
 	for _, f := range files {
 		b, err := os.ReadFile(f)
 		if err != nil {
@@ -71,7 +79,7 @@ func init() {
 			}
 		}
 	}
-	knownTools["exec"] = k
+	return k
 }
 
 // Changes that alter what runs: never in a category, so they need an
