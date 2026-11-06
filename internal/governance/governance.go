@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/adk/agent"
@@ -114,6 +115,26 @@ type Activity struct {
 	Playbook string `json:"playbook,omitempty"`
 	// Report is its diagnosis report (§4a), if it wrote one.
 	Report *Report `json:"report,omitempty"`
+	// Response is the model's last text in full (Summary is its start),
+	// at most ResponseMax bytes. GET /v1/activities leaves it out.
+	Response string `json:"response,omitempty"`
+}
+
+// SummaryMax and ResponseMax bound an activity's summary and response.
+const (
+	SummaryMax  = 500
+	ResponseMax = 32 << 10
+)
+
+// clipBytes shortens s to at most max bytes, at a rune boundary, marking the cut.
+func clipBytes(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	for max > 0 && !utf8.RuneStart(s[max]) {
+		max--
+	}
+	return s[:max] + "…"
 }
 
 // Activity states.
@@ -634,13 +655,12 @@ func (g *Governor) afterModel(cctx agent.CallbackContext, resp *model.LLMRespons
 				text.WriteString(p.Text)
 			}
 		}
-		if t := strings.TrimSpace(text.String()); t != "" {
-			if len(t) > 500 {
-				t = t[:500] + "…"
-			}
+		if full := strings.TrimSpace(text.String()); full != "" {
+			t := clipBytes(full, SummaryMax)
 			g.mu.Lock()
 			if in := g.inv[cctx.InvocationID()]; in != nil {
 				in.act.Summary = t
+				in.act.Response = clipBytes(full, ResponseMax)
 			}
 			for _, p := range resp.Content.Parts {
 				if p.FunctionCall != nil && p.FunctionCall.ID != "" {

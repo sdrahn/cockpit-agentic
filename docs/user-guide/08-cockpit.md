@@ -79,8 +79,12 @@ text, and the number of tool calls. The filters show all, only running
 and waiting, only those not from a chat, or only chats.
 
 Selecting an activity shows who started it, as a chain back to its
-origin, and its tool calls with their states and the agent's stated
-rationale. A call waiting for approval links to the Approvals tab.
+origin, the start of the agent's response, and its tool calls with
+their states and the agent's stated rationale. **Show the full
+response** opens all of it in a dialog, with its Markdown rendered:
+tables, headings, lists and code. It is the model's own text; the page
+never runs it as HTML and shows a link's address instead of following
+it. **Copy as text** copies it as the model wrote it. A call waiting for approval links to the Approvals tab.
 **Cancel activity** ends a running activity. The page cancels as the
 person first, which works for their own activities, and else through
 administrative access.

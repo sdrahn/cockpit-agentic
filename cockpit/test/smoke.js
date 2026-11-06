@@ -689,6 +689,29 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     // its evidence Custos verified; feedback through the root bridge.
     await page.goto(url + "?report#/activity/patch-pilot/e-33b0cafe");
     await page.waitForSelector("#report");
+    // The agent's response (§4 response): its start in the detail, all of
+    // it in a dialog, rendered from its Markdown and never as HTML.
+    check((await page.textContent("#activity-detail .response")).includes("3 patches pending"), "the detail shows the start of the response");
+    await page.click("#show-response");
+    await page.waitForSelector("#response-dialog[open] table");
+    const dlg = await page.$eval("#response-dialog", d => ({
+        rows: d.querySelectorAll("tbody tr").length, th: [...d.querySelectorAll("th")].map(t => t.textContent),
+        bold: d.querySelector("td strong") && d.querySelector("td strong").textContent,
+        right: d.querySelector("tbody td:nth-child(2)").style.textAlign,
+        code: d.querySelector("pre code") && d.querySelector("pre code").textContent,
+        tool: [...d.querySelectorAll("p code")].map(c => c.textContent),
+        nested: d.querySelectorAll("ul ul li").length,
+        img: d.querySelectorAll("img").length, a: d.querySelectorAll("a").length, text: d.textContent }));
+    check(dlg.rows === 2 && dlg.th.join("|") === "File system|Used|Mounted on" && dlg.bold === "98 %" && dlg.right === "right",
+          "the dialog renders the response's table, with its bold cell and alignment");
+    check(dlg.code === "df -h --output=pcent /var" && dlg.tool.includes("exec__disk_usage") && dlg.nested === 1,
+          "code blocks, code spans (a tool name intact) and nested lists");
+    check(dlg.img === 0 && dlg.a === 0 && dlg.text.includes('<img src=x onerror="window.injected=1">') &&
+          dlg.text.includes("(javascript:alert(1))") && !(await page.evaluate(() => window.injected)),
+          "the agent's HTML stays text and a link is not followed");
+    await page.click("#response-dialog button:has-text('Close')");
+    await page.waitForFunction(() => !document.getElementById("response-dialog"));
+    check(true, "the dialog closes");
     const rep = await page.textContent("#report");
     check(rep.includes("/var is 98 % full") && rep.includes("playbook disk-pressure"), "the report's summary and playbook");
     check((await page.textContent("#hypothesis-h1")).includes("agent's confidence: high") &&

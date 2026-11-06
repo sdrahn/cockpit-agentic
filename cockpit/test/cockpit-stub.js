@@ -220,6 +220,18 @@
         if (name === "old-agent" || name === "sandboxed" || name === "gone-agent") return fail(0, "not-found");
         if (method === "GET" && path === "/v1/status") return ok(status(name));
         if (method === "GET" && path === "/v1/activities") return ok({ activities: activities[name] });
+        // One activity, with its full response (§4): Markdown with a table,
+        // a code block and an attempt at HTML, which must stay text.
+        const one = path.match(/^\/v1\/activities\/([^/]+)$/);
+        if (method === "GET" && one) {
+            const a = (activities[name] || []).find(x => x.id === decodeURIComponent(one[1]));
+            if (!a) return fail(404, null, "404 page not found\n");
+            return ok(Object.assign({}, a, { response: a.summary + "\n\n## Usage\n\n" +
+                "| File system | Used | Mounted on |\n|---|---:|---|\n| /dev/vda3 | **98 %** | /var |\n| /dev/vda2 | 41 % | / |\n\n" +
+                "Checked with `exec__disk_usage`:\n\n```\ndf -h --output=pcent /var\n```\n\n" +
+                "- Limit the journal\n  - `journalctl --vacuum-size=2G`\n- Remove old snapshots\n\n" +
+                "<img src=x onerror=\"window.injected=1\"> [the docs](javascript:alert(1))" }));
+        }
         // The playbooks this agent can run (§5): selinux-denials needs a
         // tool the gateway does not offer it; ?oldplaybooks: an agent
         // from before 0.4.1, without the request.

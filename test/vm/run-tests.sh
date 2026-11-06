@@ -425,6 +425,11 @@ eventually 30 activity_state_is t1 "$kept_id" finished
 systemctl stop agent@t1.service
 check "an ended activity is listed after the agent's service stopped and started again" eventually 30 activity_state_is t1 "$kept_id" finished
 check "kept in the agent's state directory, the agent's alone" stat_is /var/lib/agents/t1/activities.json agent-t1:agent-t1:600
+# The model's last text in full (§4 response): in the activity, not in
+# the list, and kept across the restart too.
+check "GET /v1/activities/{id} has the response, the list only the summary" bash -c \
+	"$(declare -f api); api t1 /v1/activities/$kept_id | jq -e '.response | contains(\"probe ok\")' >/dev/null &&
+		api t1 /v1/activities | jq -e '[.activities[] | select(.response)] | length == 0' >/dev/null"
 
 for decision in approve deny; do
 	section "Approval: $decision"
