@@ -1177,6 +1177,68 @@ if command -v custos-setup >/dev/null; then
 	check "health-check starts with it and answers" eventually 30 bash -c "$(declare -f api); api health-check /v1/status | jq -e '.contract == 1' >/dev/null"
 	if [ -d /etc/mcp-gateway/exec.d ]; then
 		check "the playbooks' exec commands are installed" test -f /etc/mcp-gateway/exec.d/exec.d-diagnostics.yaml -a -f /etc/mcp-gateway/exec.d/exec.d-disk-usage.yaml
+		check "custos-setup stopped the exec server's running instances, for the new commands" grep -q 'exec instances: done' "$work/setup.out"
+		# Each shipped command runs through the gateway, as the agent, in
+		# the exec server's domain (mcpsrv_exec_t): the gateway sees it
+		# come back ok (mcp-result), with no SELinux denial.
+		exec_t0=$(date +%s)
+		exec_failed=
+		for tool in $(sed -n 's/^  \([a-z_]*\):$/\1/p' /usr/share/custos/templates/exec.d-diagnostics.yaml /usr/share/custos/templates/exec.d-disk-usage.yaml); do
+			case $tool in
+			network_addresses | network_routes | listening_sockets)
+				# The exec server's instances have a private network namespace:
+				# they see none of the host's network (mcp-gateway R7).
+				skip "health-check runs exec__$tool (the exec server sees none of the host's network: needs mcp-gateway R7)"
+				continue
+				;;
+			esac
+			answer=$(run_activity health-check "CALL exec__$tool")
+			# rpm -Va exits 1 when it finds something: here opa, which the
+			# test host has as a binary, not as the package mcp-gateway
+			# requires. A finding is the command working.
+			if [ "$tool" = package_dependencies ] && jq -e '.summary | contains("is needed by")' <<<"$answer" >/dev/null 2>&1; then
+				check "health-check runs exec__package_dependencies: it reports the unsatisfied dependencies" true
+				continue
+			fi
+			check "health-check runs exec__$tool: ok, as the gateway saw it" eventually 10 gw_audit_has \
+				".event == \"mcp-result\" and .sub == \"agent-health-check\" and .server == \"exec\" and .name == \"$tool\" and .outcome == \"ok\"" || {
+				echo "    | the activity: $(jq -c '{state, summary, reason}' <<<"$answer" 2>/dev/null || echo "$answer")"
+				journalctl -u mcp-gateway.service -o cat --no-pager --since "@$exec_t0" | grep '"audit":true' |
+					jq -c "select(.sub == \"agent-health-check\" and (.name // \"\") == \"$tool\")" 2>/dev/null | tail -3 | sed 's/^/    | /'
+				exec_failed="$exec_failed $tool"
+			}
+		done
+		if enforcing; then
+			exec_avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$exec_t0" '+%x %T')" 2>/dev/null | grep 'mcpsrv_exec_t' || true)
+			check "no SELinux denial for the diagnostic commands (mcpsrv_exec_t)" test -z "$exec_avc"
+			[ -n "$exec_avc" ] && sed 's/^/    | /' <<<"$exec_avc" | head -30
+			# A command that failed without an audited denial: once more with
+			# the policy's dontaudit rules off, to name what it was refused.
+			if [ -n "$exec_failed" ] && semodule -DB >/dev/null 2>&1; then
+				hidden_t0=$(date +%s)
+				for tool in $exec_failed; do run_activity health-check "CALL exec__$tool" >/dev/null; done
+				semodule -B >/dev/null 2>&1
+				echo "    | every denial, the dontaudit ones included, while running again:$exec_failed"
+				ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$hidden_t0" '+%x %T')" 2>/dev/null |
+					grep -o 'avc: .*' | sed 's/ pid=[0-9]*//' | sort | uniq -c | sort -rn | head -40 | sed 's/^/    | /'
+			fi
+			if [ -n "$exec_failed" ]; then
+				# The same programs as the agent's user, outside the exec server.
+				for p in ip timedatectl rpm; do
+					f=$(PATH=/usr/sbin:/usr/bin command -v "$p") && ls -lZ "$f" "$(readlink -f "$f")" 2>&1 | sed 's/^/    | /'
+				done
+				for c in "ip -brief address" "timedatectl show"; do
+					echo "    | as agent-health-check: $c"
+					runuser -u agent-health-check -- env PATH=/usr/sbin:/usr/bin $c 2>&1 | head -5 | sed 's/^/    |   /'
+				done
+				journalctl --no-pager -o cat --since "@$exec_t0" -u systemd-timedated.service -u dbus.service -u dbus-broker.service 2>/dev/null |
+					tail -15 | sed 's/^/    | /'
+				systemctl show -p ProtectSystem,ProtectHome,PrivateNetwork,NoNewPrivileges,ExecPaths,NoExecPaths,RestrictAddressFamilies,SystemCallFilter,CapabilityBoundingSet,ReadOnlyPaths,InaccessiblePaths \
+					"$(systemctl list-units --plain --no-legend 'mcp-exec-*' | awk 'NR == 1 {print $1}')" 2>&1 | sed 's/^/    | /'
+			fi
+		else
+			skip "no SELinux denial for the diagnostic commands (SELinux is not enforcing)"
+		fi
 	else
 		skip "the playbooks' exec commands are installed (no mcp-gateway-exec-server)"
 	fi

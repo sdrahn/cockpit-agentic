@@ -101,6 +101,44 @@ stream_connect_pattern(mcpsrv_agents_t, agent_runtime_t, agent_sock_t, init_t)
 stream_connect_pattern(mcpsrv_agents_t, agent_runtime_t, agent_sock_t, agent_t)
 allow mcpsrv_agents_t self:unix_stream_socket create_stream_socket_perms;
 
+# The diagnostic commands Custos ships for mcp-gateway's exec server
+# (templates/exec.d-diagnostics.yaml, installed in /etc/mcp-gateway/exec.d
+# by custos-setup) run in its domain, mcpsrv_exec_t, whose shipped rules
+# cover the gateway's own examples only. boot_time and boot_blame
+# (systemd-analyze) ask systemd for the boot's times over D-Bus, which
+# systemd checks as system status; pressure_stall reads /proc/pressure.
+gen_require(`
+	type mcpsrv_exec_t;
+	class system status;
+')
+allow mcpsrv_exec_t init_t:system status;
+# blame reads each unit's times, which systemd checks as status on the
+# unit's file.
+optional_policy(`
+	gen_require(`
+		attribute systemd_unit_file_type;
+		class service status;
+	')
+	allow mcpsrv_exec_t systemd_unit_file_type:service status;
+')
+# time_status (timedatectl show) asks timedated over D-Bus; dbus-broker
+# refuses the message without this ("A security policy denied ...").
+optional_policy(`
+	gen_require(`
+		type systemd_timedated_t;
+		class dbus send_msg;
+	')
+	allow mcpsrv_exec_t systemd_timedated_t:dbus send_msg;
+	allow systemd_timedated_t mcpsrv_exec_t:dbus send_msg;
+')
+optional_policy(`
+	gen_require(`
+		type proc_psi_t;
+	')
+	list_dirs_pattern(mcpsrv_exec_t, proc_psi_t, proc_psi_t)
+	read_files_pattern(mcpsrv_exec_t, proc_psi_t, proc_psi_t)
+')
+
 # Cockpit: the bridge of a logged-in user (unconfined_t) reaches the
 # agents' sockets.
 list_dirs_pattern(unconfined_t, agent_runtime_t, agent_runtime_t)

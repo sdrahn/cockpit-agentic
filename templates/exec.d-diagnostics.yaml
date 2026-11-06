@@ -16,7 +16,8 @@ commands:
     read_only: true
   pressure_stall:
     description: Pressure stall information for CPU, memory and I/O (/proc/pressure)
-    argv: [/usr/bin/cat, /proc/pressure/cpu, /proc/pressure/memory, /proc/pressure/io]
+    # SUSE kernels have it off unless booted with psi=1: say so, not fail.
+    argv: [/usr/bin/sh, -c, "if [ -d /proc/pressure ]; then cd /proc/pressure && grep -H . cpu memory io; else echo 'Pressure stall information is off in this kernel (boot with psi=1 to turn it on).'; fi"]
     read_only: true
   load_average:
     description: Uptime and load averages (uptime)
@@ -52,6 +53,10 @@ commands:
     read_only: true
   package_dependencies:
     description: Unsatisfied dependencies of the installed packages; no file checks (rpm -Va --nofiles)
-    argv: [/usr/bin/rpm, -Va, --nofiles, --nodigest, --nosignature]
+    # --noscripts: no package's %verify script runs; this only reads.
+    argv: [/usr/bin/rpm, -Va, --nofiles, --nodigest, --nosignature, --noscripts]
+    # rpm opens its working directory; the server's sandbox does not let
+    # it read /, the default.
+    dir: /usr
     read_only: true
     timeout: 300s

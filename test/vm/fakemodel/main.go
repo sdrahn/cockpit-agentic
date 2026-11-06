@@ -162,6 +162,12 @@ func (m *Model) Respond(req *request) message {
 		return msg
 	}
 	switch {
+	case strings.Contains(in, "CALL "):
+		f := strings.Fields(in[strings.Index(in, "CALL ")+len("CALL "):])
+		if len(f) == 0 {
+			return text("usage: CALL <tool>")
+		}
+		return call("", strings.TrimRight(f[0], ".,:;"), map[string]any{})
 	case strings.Contains(in, "DELEGATE"):
 		f := strings.Fields(in[strings.Index(in, "DELEGATE")+len("DELEGATE"):])
 		if len(f) < 2 {

@@ -53,6 +53,23 @@ removed.
 
 ### Fixed
 
+- The diagnostic commands `boot_time`, `boot_blame` and `pressure_stall`
+  (`exec.d-diagnostics.yaml`) failed under SELinux with a tool error
+  (0.3.0): mcp-gateway's exec server domain, `mcpsrv_exec_t`, may not
+  ask systemd for the boot's times or read `/proc/pressure`. Custos's
+  SELinux module now allows these, for the commands it ships.
+- Diagnostic commands that failed on any host (0.3.0): `disk_usage` (its
+  `--output=` list was split at the commas, unquoted in a YAML list) and
+  `package_dependencies` (rpm could not open its working directory, `/`;
+  it runs in `/usr` now, and runs no package's `%verify` script). `pressure_stall` says that pressure stall
+  information is off in the kernel (SUSE's default; boot with `psi=1`)
+  instead of failing.
+- `custos-setup` installed the exec commands without telling the exec
+  server, which reads them when an instance starts: an instance running
+  already offered the health-check agent none of them. It now stops the
+  exec server's running instances (through mcp-gateway's control API)
+  after adding commands, does so before creating the agent, and restarts
+  an existing agent when it added one.
 - A call to an `openai` model was cut off after 10 minutes, whatever the
   activity's limit, which a slow local model with a growing prompt
   reached ("Client.Timeout exceeded while awaiting headers").

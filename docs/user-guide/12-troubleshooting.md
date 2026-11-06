@@ -256,13 +256,15 @@ is a warning: the file is written, and the engine reads it at its start.
 ## SELinux denials {#selinux}
 
 ```bash
-ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agents_t'
+ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agents_t|mcpsrv_exec_t'
 ```
 
 | Denial | Cause | Fix |
 |---|---|---|
 | `agent_t` → `name_connect` on a port | the model's port is not an HTTP port | [chapter 5](05-configuration.md#selinux-and-the-models-port) |
 | `agent_t` → files of a generic type | files restored or created before the module | `restorecon -R /etc/custos /var/lib/agents /run/agents` |
+| `mcpsrv_exec_t` → `init_t:system status`, or `proc_psi_t:dir search`; the diagnostic tools `boot_time`, `boot_blame` or `pressure_stall` end in a tool error | Custos 0.3.0's module lacks the rules for these commands of `exec.d-diagnostics.yaml` | update Custos; its module allows them |
+| `mcpsrv_exec_t` → anything else, for a command you added to `/etc/mcp-gateway/exec.d` | the exec server's domain covers the shipped commands only | a local module for your command: `mcp-gateway-admin profile` drafts one |
 | anything else in these domains | unexpected | report it with the `ausearch` output |
 
 ## Error messages {#error-messages}
