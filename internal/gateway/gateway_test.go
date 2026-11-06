@@ -2,7 +2,10 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -72,7 +75,7 @@ func TestCallsCarryToken(t *testing.T) {
 	if _, err := srv.Connect(ctx, st, nil); err != nil {
 		t.Fatal(err)
 	}
-	s, err := NewClient("pp", "test", nil).Connect(ctx, ct, nil)
+	s, err := NewClient("pp", "test", nil, nil).Connect(ctx, ct, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,5 +91,76 @@ func TestCallsCarryToken(t *testing.T) {
 	}
 	if tok := <-got; tok != nil {
 		t.Errorf("a call from outside ADK got token %v", tok)
+	}
+}
+
+// With propose, a call from an ADK tool carries its proposal next to its
+// progress token, cleaned; none when propose has none.
+func TestCallsCarryProposal(t *testing.T) {
+	ctx := context.Background()
+	got := make(chan mcp.Meta, 2)
+	srv := mcp.NewServer(&mcp.Implementation{Name: "gw"}, nil)
+	mcp.AddTool(srv, &mcp.Tool{Name: "probe"}, func(_ context.Context, r *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+		got <- r.Params.GetMeta()
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "ok"}}}, nil, nil
+	})
+	st, ct := mcp.NewInMemoryTransports()
+	if _, err := srv.Connect(ctx, st, nil); err != nil {
+		t.Fatal(err)
+	}
+	propose := func(inv, call string) *Proposal {
+		if call != "c-1" {
+			return nil
+		}
+		return &Proposal{Summary: "Installing\n2 patches\x1b[31m", Context: map[string]string{"activity": inv}}
+	}
+	s, err := NewClient("pp", "test", nil, propose).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	s.CallTool(adkCtx{ctx, "e-1", "c-1"}, &mcp.CallToolParams{Name: "probe"})
+	m := <-got
+	b, _ := json.Marshal(m[ProposalKey])
+	if m["progressToken"] != CallToken("e-1", "c-1") || string(b) != `{"context":{"activity":"e-1"},"summary":"Installing 2 patches[31m"}` {
+		t.Errorf("meta %v (%s)", m, b)
+	}
+	s.CallTool(adkCtx{ctx, "e-1", "c-2"}, &mcp.CallToolParams{Name: "probe"})
+	if m := <-got; m[ProposalKey] != nil {
+		t.Errorf("a call without a proposal sent %v", m[ProposalKey])
+	}
+}
+
+// Clean keeps a proposal within what mcp-gateway takes (proposal.Parse):
+// plain text, one line where one is asked, its limits.
+func TestProposalClean(t *testing.T) {
+	long := strings.Repeat("ä", 400)
+	p := Proposal{
+		Summary:  "  \u202eevil\u202c reason\r\nnext  ",
+		Impact:   "line one\nline two\x07",
+		Steps:    []string{"", "a\tb"},
+		Warnings: append([]string{long}, make([]string, 12)...),
+		Context:  map[string]string{"": "x", "k\n": "v\u2028w"},
+	}
+	for i := range p.Warnings[1:] {
+		p.Warnings[i+1] = "w"
+	}
+	c := p.Clean()
+	if c.Summary != "evil reason next" || c.Impact != "line one\nline two" || len(c.Steps) != 1 || c.Steps[0] != "a b" ||
+		len(c.Warnings) != 10 || len(c.Warnings[0]) > 300 || !strings.HasSuffix(c.Warnings[0], "…") || !utf8.ValidString(c.Warnings[0]) ||
+		len(c.Context) != 1 || c.Context["k"] != "vw" {
+		t.Errorf("%+v", c)
+	}
+	if e := (Proposal{Summary: "\x00 \u2066"}).Clean(); e.Summary == "" {
+		t.Error("a summary is required")
+	}
+	// Big: under 4 KiB as JSON.
+	big := Proposal{Summary: long, Impact: strings.Repeat("x", 2000)}
+	for i := 0; i < 10; i++ {
+		big.Steps = append(big.Steps, long)
+		big.Warnings = append(big.Warnings, long)
+	}
+	if b, _ := json.Marshal(big.Clean()); len(b) > 4096 {
+		t.Errorf("%d bytes", len(b))
 	}
 }
