@@ -168,11 +168,13 @@ Selecting an agent shows:
   access
   ([chapter 6](06-permissions-and-modes.md#readiness));
 - **Schedules**: each with its calendar, next run and **Enable**/**Disable**;
-- **Diagnostic playbooks**: pick one of the host's playbooks, add what
-  to look at if you like, and **Run**: the agent runs it as an activity
-  started by you, and the page opens it, where its report appears. A
-  playbook whose tools the gateway does not offer the agent is refused
-  with the tools it lacks ([chapter 9](09-administration.md#playbooks));
+- **Diagnostic playbooks**: pick one of the playbooks this agent can
+  run, add what to look at if you like, and **Run**: the agent runs it
+  as an activity started by you, and the page opens it, where its report
+  appears. Only the playbooks whose tools the gateway offers the agent
+  are listed; the host's others are listed apart with the tools they
+  need, so an agent without diagnostic permissions offers none
+  ([chapter 9](09-administration.md#playbooks));
 - **Credentials** (with administrative access): the agent's credentials
   by name, what uses them, and when each was stored; never a value. A
   credential its model names but that is not stored is *missing: the

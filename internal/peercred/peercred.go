@@ -78,7 +78,7 @@ var (
 	open     = map[string]bool{"/health": true, "/version": true, "/list-apps": true}
 	// The control API (CONTRACT.md §5): who may use it is checked by its
 	// handlers, except that agents only delegate.
-	control  = regexp.MustCompile(`^/v1/(status|activities(/[^/]+(/cancel)?)?|pause|resume)$`)
+	control  = regexp.MustCompile(`^/v1/(status|playbooks|activities(/[^/]+(/cancel)?)?|pause|resume)$`)
 	agentMay = regexp.MustCompile(`^/v1/activities(/[^/]+)?$`)
 )
 

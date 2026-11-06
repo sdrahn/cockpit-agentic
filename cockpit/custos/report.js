@@ -159,6 +159,19 @@ async function loadPlaybooks() {
     return playbooksCache;
 }
 
+/* The playbooks an agent can run (GET /v1/playbooks, §5): each with
+ * runnable, or the tools the gateway does not offer it. An agent from
+ * before 0.4.1 has no such request: then every playbook on the host. */
+async function agentPlaybooks(name) {
+    try {
+        return (await agentApi(name).get("/v1/playbooks")).playbooks || {};
+    } catch (ex) {
+        if (!ex || ex.status !== 404) throw ex;
+        const all = await loadPlaybooks();
+        return Object.fromEntries(Object.entries(all).map(([n, p]) => [n, { title: p.title, runnable: !p.error, error: p.error }]));
+    }
+}
+
 /* The run-a-playbook form, per agent: kept across the tab's refreshes. */
 const playbookForms = new Map();
 
@@ -170,18 +183,36 @@ function playbookSection(a) {
     const extra = el("input", { name: "request", placeholder: "Optional: what to look at (a unit, a path)", "aria-label": "Request" });
     const note = el("span", { class: "muted" });
     const run = el("button", { type: "submit" }, "Run");
+    const others = el("details", { class: "playbooks-unavailable", hidden: true });
     const form = el("form", { class: "card playbook-run", id: "playbook-run" },
         el("h2", null, "Diagnostic playbooks"),
-        el("p", { class: "muted" }, "A published diagnostic procedure (CONTRACT.md §14c): the agent calls its read-only tools " +
-           "through the gateway, which decides each as usual, and ends with a report. Refused when the gateway does not offer " +
-           "the agent a step's tool."),
+        el("p", { class: "muted" }, "A published diagnostic procedure (CONTRACT.md §14c): the agent's host calls its read-only " +
+           "tools through the gateway, which decides each as usual, and the agent ends with a report. Only the playbooks whose " +
+           "tools the gateway offers this agent are listed."),
         el("div", { class: "fields" }, el("label", null, "Playbook ", pick), el("label", null, "Request ", extra)),
-        el("div", { class: "actions" }, run, note));
-    loadPlaybooks().then(pbs => {
-        const names = Object.keys(pbs).filter(n => !pbs[n].error).sort();
+        el("div", { class: "actions" }, run, note),
+        others);
+    const fill = () => agentPlaybooks(a.name).then(pbs => {
+        const names = Object.keys(pbs).filter(n => pbs[n].runnable).sort();
+        const rest = Object.keys(pbs).filter(n => !pbs[n].runnable && !pbs[n].error).sort();
+        const keep = pick.value;
         pick.replaceChildren(...(names.length ? names.map(n => el("option", { value: n }, n + ": " + pbs[n].title))
-            : [el("option", { value: "" }, "No playbooks on this host")]));
+            : [el("option", { value: "" }, Object.keys(pbs).length ? "None this agent can run" : "No playbooks on this host")]));
+        if (names.includes(keep)) pick.value = keep;
+        pick.disabled = run.disabled = !names.length;
+        others.hidden = !rest.length;
+        others.replaceChildren(
+            el("summary", null, rest.length + " more on this host that this agent cannot run"),
+            el("p", { class: "muted" }, "The gateway does not offer this agent the tools they need: give it the permissions " +
+               "(an agent made from the health-check template has them), or run them from an agent that has."),
+            el("ul", null, rest.map(n => el("li", null, n + ": " + pbs[n].title + " (needs " + (pbs[n].missing || []).join(", ") + ")"))));
+    }, ex => {
+        pick.replaceChildren(el("option", { value: "" }, "Unknown"));
+        pick.disabled = run.disabled = true;
+        note.className = "error-text";
+        note.textContent = describeAgentFailure(ex);
     });
+    fill();
     form.addEventListener("submit", async ev => {
         ev.preventDefault();
         if (!pick.value) return;
@@ -197,8 +228,10 @@ function playbookSection(a) {
             note.className = "error-text";
             note.textContent = (ex && ex.status === 422) || (ex && ex.status === 404)
                 ? String((ex && ex.body) || ex.message || "").trim() : describeAgentFailure(ex);
+            // Its permissions may have changed since the list was read.
+            if (ex && ex.status === 422) fill();
         }
-        run.disabled = false;
+        run.disabled = !pick.value;
     });
     playbookForms.set(a.name, form);
     return form;

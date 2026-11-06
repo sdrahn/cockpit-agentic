@@ -282,6 +282,8 @@ call, in which order, and what to look for. Custos ships eleven, in
 
 ```bash
 agent-admin playbooks | jq 'map_values(.title)'     # the playbooks
+curl -s --unix-socket /run/agents/NAME/api.sock http://agent/v1/playbooks |
+  jq '.playbooks | map_values(select(.runnable)) | keys'   # those NAME can run
 curl --unix-socket /run/agents/NAME/api.sock http://agent/v1/activities \
   -d '{"playbook": "failed-units", "wait": true}'   # run one now
 ```

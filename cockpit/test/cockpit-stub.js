@@ -220,6 +220,16 @@
         if (name === "old-agent" || name === "sandboxed" || name === "gone-agent") return fail(0, "not-found");
         if (method === "GET" && path === "/v1/status") return ok(status(name));
         if (method === "GET" && path === "/v1/activities") return ok({ activities: activities[name] });
+        // The playbooks this agent can run (§5): selinux-denials needs a
+        // tool the gateway does not offer it; ?oldplaybooks: an agent
+        // from before 0.4.1, without the request.
+        if (method === "GET" && path === "/v1/playbooks") {
+            if (window.location.search.includes("oldplaybooks")) return fail(404, null, "404 page not found\n");
+            return ok({ playbooks: {
+                "disk-pressure": { title: "Disk and inode pressure", runnable: true },
+                "selinux-denials": { title: "SELinux state and denials", runnable: false, missing: ["exec__selinux_status"] },
+                "broken": { title: "", runnable: false, error: "steps: at least one" } } });
+        }
         // A playbook (§14c): refused (422) when the gateway does not offer
         // a step's tool, as for "selinux-denials" here.
         if (method === "POST" && path === "/v1/activities") {
