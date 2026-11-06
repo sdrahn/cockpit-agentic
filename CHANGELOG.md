@@ -20,6 +20,10 @@ removed.
   `AGENT_PLAYBOOK_STEP`). A model that cut off its tool calls, as
   gpt-oss did for tools without arguments, left steps out of the
   report.
+- Tools without arguments reach an `openai` model with the plain schema
+  of an empty object. With the schema mcp-gateway's exec server sends
+  (`"additionalProperties": false`), gpt-oss-20b in LM Studio now and
+  then wrote a truncated argument object, and the call was lost.
 - An ended activity, and its diagnosis report, was gone from Cockpit's
   Activity tab and `GET /v1/activities` once the agent exited when idle
   (10 minutes without requests): a scheduled playbook's run was not
