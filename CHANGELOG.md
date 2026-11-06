@@ -5,6 +5,49 @@ All notable changes to Custos. Versions follow
 (CONTRACT.md), names, paths and fields are added, never renamed or
 removed.
 
+## v0.4.1 — 2026-11-06
+
+Fixes for running the diagnostic playbooks with a local model. The
+host now makes a playbook's steps itself, through the gateway, so a
+model that is unreliable at issuing tool calls still gets every
+output; the activities and their reports outlive the agent's idle
+exit; Cockpit offers an agent only the playbooks it can run; and a
+listing that names a unit no longer marks the next call as a suspected
+prompt injection.
+
+Upgrading from 0.4.0 needs no change to configurations or gateway
+data. Within contract version 1 this release adds
+`calls[].playbook_step`, `AGENT_PLAYBOOK_STEP` and `GET /v1/playbooks`.
+
+### Fixed
+
+- A call was marked as a suspected prompt injection whenever one of its
+  argument values was in an earlier tool's output: a diagnostic
+  playbook that reads the log of a unit `boot_blame` named was flagged.
+  The value counts only where the output tells the model to use it
+  ("please set", "call … with value").
+- A playbook's steps are called by the host, in order, before the
+  model's first turn, through the gateway with the same decision,
+  approvals and records (`calls[].playbook_step`,
+  `AGENT_PLAYBOOK_STEP`). A model that cut off its tool calls, as
+  gpt-oss did for tools without arguments, left steps out of the
+  report.
+- Tools without arguments reach an `openai` model with the plain schema
+  of an empty object. With the schema mcp-gateway's exec server sends
+  (`"additionalProperties": false`), gpt-oss-20b in LM Studio now and
+  then wrote a truncated argument object, and the call was lost.
+- An ended activity, and its diagnosis report, was gone from Cockpit's
+  Activity tab and `GET /v1/activities` once the agent exited when idle
+  (10 minutes without requests): a scheduled playbook's run was not
+  there when someone looked. The agent keeps its ended activities in
+  its state directory (`/var/lib/agents/<name>/activities.json`, at
+  most 200 of the last 30 days).
+- Cockpit offered every playbook on the host for every agent, though
+  only an agent the gateway offers a playbook's tools (as health-check)
+  can run it. It now offers only those the agent can run and lists the
+  others apart with the tools they need, from the agent's new
+  `GET /v1/playbooks`.
+
 ## v0.4.0 — 2026-11-06
 
 Autonomy within limits the gateway enforces, and the agent's account of
