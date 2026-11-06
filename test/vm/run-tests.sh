@@ -495,7 +495,9 @@ if gw /v1/reviews | jq -e 'type == "array"' >/dev/null 2>&1; then
 	check "the gateway audited it (mcp-review), by root" eventually 10 gw_audit_has '.event == "mcp-review" and .sub == "agent-t1" and .verdict == "ok" and .by == "root"'
 	check "evaluate keeps the category bounded after ok" bash -c \
 		"agent-admin evaluate >/dev/null && agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"bounded\"' >/dev/null"
-	check "readiness counts the gateway's review" bash -c "agent-admin readiness t1 patch-errata | jq -e '.categories[\"patch-errata\"].reviewed >= 2' >/dev/null"
+	# root and the gateway reviewed the same call (one decision id): one review.
+	check "readiness counts the call reviewed by root and on the gateway once" bash -c \
+		"agent-admin readiness t1 patch-errata | jq -e '.categories[\"patch-errata\"].reviewed == 1' >/dev/null"
 	check "a later verdict on the gateway: should not have run" bash -c \
 		"$(declare -f gw verdict); verdict $rid '{\"verdict\":\"incident\",\"reason\":\"functional test (gateway)\"}' | grep -q '^20'"
 	check "evaluate demotes it on the gateway's incident" bash -c \
