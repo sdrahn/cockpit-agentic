@@ -278,7 +278,8 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | `agent … is advisory, which caps every category` | [A promoted category still asks](#promotion) |
 | `envelope: hosts needs the fleet`, `envelope: blast_radius needs the fleet` | leave the part out; `windows`, `rate` and `rollback` are enforced so far |
 | `envelope: rate: per "1d": want 1s, 1m or 1h` | the gateway counts per second, minute or hour: `{calls: 100, per: 1h}` rather than a day |
-| `rate limit exceeded`, from a promoted category's call | the envelope's `rate` (chapter 6); the call is denied, not asked. Three in a day demote the category |
+| an approval of a promoted category's call, within its windows, "Rate 20/h reached" | the envelope's `rate` (chapter 6): over it, each call asks. Three in a day demote the category |
+| `rate limit exceeded` | a `rate_limit` obligation in a permission (a hard cap: it denies); an envelope's `rate` asks instead |
 | `envelope: rollback: …` | `on` lists at least one of `tool_error`, `limit_exceeded`, `health_check_failed`; `health_check` (a command) is given exactly when `health_check_failed` is ([chapter 6](06-permissions-and-modes.md#auto-demote)) |
 | `agent … category … demoted: …` (from `agent-admin evaluate` or `custos-demote.service`) | the demotion evaluator demoted it, for the reason given; promote it again once that is resolved |
 | `an incident needs --reason TEXT: why it should not have run` | give the reason |

@@ -347,6 +347,7 @@ type gatewayRecord struct {
 	Action        string `json:"action"`
 	Effect        string `json:"effect"`
 	Reason        string `json:"reason"`
+	OverRate      string `json:"over_rate"`
 }
 
 // ParseDecisions reads the gateway's journal (journalctl -o json -u
@@ -520,28 +521,35 @@ func ParseAudit(b []byte, principal string) Audit {
 }
 
 // RateLimitExceeded is the gateway's reason for a call it denied over a
-// rate_limit obligation (an envelope's rate, O12).
+// rate_limit obligation.
 const RateLimitExceeded = "rate limit exceeded"
 
-// RateCap is a tool call of the principal that the gateway denied over a
-// rate limit.
+// RateCap is a tool call of the principal that reached a rate: over an
+// approval_over_rate obligation (an envelope's rate, O12; the gateway's
+// R6) it asked for an approval, and the decision record names the rate
+// (over_rate); over a rate_limit it was denied.
 type RateCap struct {
 	Tool string // server__name
 	At   time.Time
+	// Rate is the rate reached (over_rate); "" for a rate_limit denial.
+	Rate string
 }
 
 // ParseRateCaps reads the gateway's decision records of one principal's
-// tool calls denied over a rate limit, oldest first. Only the gateway's
-// audit records count.
+// tool calls that reached a rate, oldest first. Only the gateway's audit
+// records count.
 func ParseRateCaps(b []byte, principal string) []RateCap {
 	var out []RateCap
 	for _, r := range ParseRecords(b) {
 		var msg gatewayRecord
 		if json.Unmarshal([]byte(r["MESSAGE"]), &msg) != nil || !msg.Audit || msg.Event != "" || msg.Sub != principal ||
-			msg.Action != "tools.call" || msg.Effect != "deny" || msg.Reason != RateLimitExceeded || msg.Name == "" {
+			msg.Action != "tools.call" || msg.Name == "" {
 			continue
 		}
-		out = append(out, RateCap{Tool: msg.Server + "__" + msg.Name, At: At(r)})
+		if msg.OverRate == "" && (msg.Effect != "deny" || msg.Reason != RateLimitExceeded) {
+			continue
+		}
+		out = append(out, RateCap{Tool: msg.Server + "__" + msg.Name, At: At(r), Rate: msg.OverRate})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
 	return out

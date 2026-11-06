@@ -225,9 +225,10 @@ func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record
 	return ""
 }
 
-// rateCapped says why category c is demoted for its rate: the gateway
-// denied calls of its tools over the envelope's rate RateCapDemotion
-// times within the last RateCapWindow since its promotion.
+// rateCapped says why category c is demoted for its rate: calls of its
+// tools reached the envelope's rate RateCapDemotion times within the last
+// RateCapWindow since its promotion (each asked for an approval, or was
+// denied by a rate_limit).
 func rateCapped(c string, st *CategoryState, perms readiness.History, caps []readiness.RateCap, since, now time.Time) string {
 	if st.Envelope == nil || st.Envelope.Rate == nil {
 		return ""
@@ -243,7 +244,7 @@ func rateCapped(c string, st *CategoryState, perms readiness.History, caps []rea
 		hit = append(hit, rc.Tool+" at "+rc.At.UTC().Format(time.RFC3339))
 		if len(hit) == RateCapDemotion {
 			r := st.Envelope.Rate
-			return fmt.Sprintf("rate cap (%d calls per %s per tool) reached %d times within a day: %s",
+			return fmt.Sprintf("rate (%d calls per %s per tool) reached %d times within a day: %s",
 				r.Calls, r.Per, RateCapDemotion, strings.Join(hit, ", "))
 		}
 	}

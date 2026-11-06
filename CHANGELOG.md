@@ -17,10 +17,11 @@ removed.
   `agents.released`), as root; readiness, review and the demotion
   evaluator read them, an agent's own records of them never.
 - An envelope's `rate` (`{calls: 20, per: 1h}`; `per` is `1s`, `1m` or
-  `1h`) is enforced (O12): mcp-gateway's `rate_limit` obligation on each
-  of a promoted category's permissions while they act without approval,
-  per tool. A call over it is denied ("rate limit exceeded"), and three
-  such denials within a day demote the category (`agent-admin
+  `1h`) is enforced (O12): mcp-gateway's `approval_over_rate` obligation
+  (its requirement R6, 1.15) on each of a promoted category's permissions
+  while they act without approval, per tool. A call over it waits for an
+  approval, for that call only, naming the rate reached; reaching it
+  three times within a day demotes the category (`agent-admin
   evaluate`). Before, `promote` refused an envelope with a rate. Cockpit
   shows the rate with the category's windows.
 - `model.timeout_seconds`: how long one model call may take. Without it,
@@ -43,6 +44,12 @@ removed.
   the client sends with a call (summary, impact, steps, context,
   warnings), shown with the approval on the gateway's page, in mails and
   notifications, marked as the client's claim (CONTRACT.md O6).
+
+### Changed
+
+- `custos` and `custos-tests` require mcp-gateway 1.15: an older gateway
+  ignores `approval_over_rate`, so an envelope's rate would not be
+  enforced.
 
 ### Fixed
 

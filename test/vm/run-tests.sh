@@ -175,6 +175,11 @@ approval_of() { activity "$1" "$2" | jq -r '[.calls[] | select(.approval_id != n
 journal() { journalctl -o json --no-pager --since "@$t0" "AGENT_NAME=$1" "AGENT_EVENT=$2" 2>/dev/null; }
 # journal_has <agent> <event> <jq condition>
 journal_has() { journal "$1" "$2" | jq -e "select($3)" >/dev/null 2>&1; }
+# quiet_evaluator: the tests run the demotion evaluator by hand; the
+# timer's run at the same time would demote too, and one of the two would
+# find nothing to do. promote starts the timer (enable --now): stopped
+# before each evaluate by hand.
+quiet_evaluator() { systemctl stop custos-demote.timer custos-demote.service >/dev/null 2>&1; }
 gw_audit_has() { journalctl -u mcp-gateway.service -o cat --no-pager --since "@$t0" | grep '"audit":true' | jq -e "select($1)" >/dev/null 2>&1; }
 enforcing() { [ "$(getenforce 2>/dev/null)" = Enforcing ]; }
 # opa_effect <agent> <tool>: the decision of the gateway's OPA for a call
@@ -522,6 +527,7 @@ if gw /v1/reviews | jq -e 'type == "array"' >/dev/null 2>&1; then
 	check "the gateway refuses \"should not have run\" without a reason" test "$(verdict "$rid" '{"verdict":"incident"}')" = 400
 	check "a verdict on the gateway: ok" bash -c "$(declare -f gw verdict); verdict $rid '{\"verdict\":\"ok\",\"via\":\"test\"}' | grep -q '^20'"
 	check "the gateway audited it (mcp-review), by root" eventually 10 gw_audit_has '.event == "mcp-review" and .sub == "agent-t1" and .verdict == "ok" and .by == "root"'
+	quiet_evaluator
 	check "evaluate keeps the category bounded after ok" bash -c \
 		"agent-admin evaluate >/dev/null && agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"bounded\"' >/dev/null"
 	# root and the gateway reviewed the same call (one decision id): one review.
@@ -529,6 +535,7 @@ if gw /v1/reviews | jq -e 'type == "array"' >/dev/null 2>&1; then
 		"agent-admin readiness t1 patch-errata | jq -e '.categories[\"patch-errata\"].reviewed == 1' >/dev/null"
 	check "a later verdict on the gateway: should not have run" bash -c \
 		"$(declare -f gw verdict); verdict $rid '{\"verdict\":\"incident\",\"reason\":\"functional test (gateway)\"}' | grep -q '^20'"
+	quiet_evaluator
 	check "evaluate demotes it on the gateway's incident" bash -c \
 		"agent-admin evaluate | grep -q 'category patch-errata demoted: review by root on the gateway: custos-test__change (review .*) should not have run: functional test (gateway)'"
 	check "promote again, for what follows" agent-admin promote t1 patch-errata --envelope "$work/now.yaml" --despite-readiness --reason "functional test"
@@ -579,14 +586,17 @@ touch /run/custos-test-healthy
 printf 'windows:\n  - {days: [%s], from: "00:00", to: "23:59", tz: UTC}\nrollback: {on: [health_check_failed], health_check: "test -e /run/custos-test-healthy"}\n' "$today" >"$work/rollback.yaml"
 check "promote with a rollback health check" agent-admin promote t1 patch-errata --envelope "$work/rollback.yaml" --despite-readiness --reason "functional test"
 check "promote enabled custos-demote.timer" systemctl is-enabled -q custos-demote.timer
+quiet_evaluator
 check "evaluate leaves a healthy category bounded" bash -c \
 	"agent-admin evaluate >/dev/null && agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"bounded\"' >/dev/null"
 rm -f /run/custos-test-healthy
+quiet_evaluator
 check "evaluate demotes it when its health check fails" bash -c "agent-admin evaluate | tee $work/evaluate.out | grep -q 'category patch-errata demoted: rollback health_check_failed'"
 # The approvers hear of it through the gateway's notices (its R3), where
 # the gateway takes them.
 if gw /v1/notices | jq -e 'type == "array"' >/dev/null 2>&1; then
-	check "evaluate told the approvers through the gateway" grep -q 'category patch-errata: approvers notified (notice ' "$work/evaluate.out"
+	check "evaluate told the approvers through the gateway" grep -q 'category patch-errata: approvers notified (notice ' "$work/evaluate.out" ||
+		sed 's/^/    | evaluate: /' "$work/evaluate.out"
 	check "the gateway lists the notice for t1's approvers" bash -c "$(declare -f gw); gw /v1/notices | jq -e 'any(.[]; .principal.sub == \"agent-t1\" and
 		.title == \"t1: patch-errata demoted to supervised\" and .severity == \"warning\" and (.text | contains(\"rollback health_check_failed\")) and
 		(.servers == [\"custos-test\"]))' >/dev/null"
@@ -605,27 +615,48 @@ if gw_audit_has '.event == "mcp-result"'; then
 	check "bounded: a change that fails runs without an approval" eventually 30 runs_with t1 "CHANGE FAIL" 'change failed'
 	check "the gateway's audit: its mcp-result is a tool_error, with the agent's progress token" eventually 10 gw_audit_has \
 		'.event == "mcp-result" and .sub == "agent-t1" and .name == "change" and .outcome == "tool_error" and (.approval_id | not) and (.progress_token | startswith("custos:"))'
+	quiet_evaluator
 	check "evaluate demotes it on the gateway's tool_error" bash -c \
 		"agent-admin evaluate | grep -q 'category patch-errata demoted: rollback tool_error: custos-test__change failed .*(the gateway: tool_error'"
 	check "the category is supervised again after the tool error" bash -c "agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"supervised\"' >/dev/null"
 else
 	skip "rollback on the gateway's tool_error (this mcp-gateway does not audit call outcomes, mcp-result)"
 fi
-# The envelope's rate (O12): the gateway's rate_limit on the category's
-# calls without an approval; three calls over it in a day demote it.
+# The envelope's rate (O12): the gateway's approval_over_rate (its R6) on
+# the category's calls without an approval: over it a call waits for an
+# approval, scope once; three in a day demote the category.
 printf 'windows:\n  - {days: [%s], from: "00:00", to: "23:59", tz: UTC}\nrate: {calls: 1, per: 1h}\n' "$today" >"$work/rate.yaml"
 check "promote with a rate of 1 call per hour" agent-admin promote t1 patch-errata --envelope "$work/rate.yaml" --despite-readiness --reason "functional test"
-check "the gateway's policy has the rate as its rate_limit" eventually 30 bash -c \
-	"$(declare -f opa_decision); opa_decision t1 change | jq -e '.result.effect == \"allow\" and .result.obligations.rate_limit == [\"1/h\"]' >/dev/null"
+check "the gateway's policy has the rate as its approval_over_rate" eventually 30 bash -c \
+	"$(declare -f opa_decision); opa_decision t1 change | jq -e '.result.effect == \"allow\" and .result.obligations.approval_over_rate == [\"1/h\"] and (.result.obligations.rate_limit | not)' >/dev/null"
 check "within the rate, the change runs without an approval" eventually 30 runs_with t1 CHANGE 'changed test'
-n0=$(count t1 approval.pending)
-for _ in 1 2 3; do run_activity t1 CHANGE >/dev/null; done
-check "over the rate, the gateway denies the change: rate limit exceeded" eventually 10 gw_audit_has \
-	'.sub == "agent-t1" and .name == "change" and .effect == "deny" and .reason == "rate limit exceeded"'
-check "over the rate, no approval was asked" test "$(count t1 approval.pending)" = "$n0"
-check "evaluate demotes it after three rate caps within a day" bash -c \
-	"agent-admin evaluate | grep -q 'category patch-errata demoted: rate cap (1 calls per 1h per tool) reached 3 times within a day'"
-check "the category is supervised again after the rate caps" bash -c "agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"supervised\"' >/dev/null"
+over_id=$(start_activity t1 CHANGE)
+check "over the rate, the change waits for an approval" eventually 30 activity_state_is t1 "$over_id" waiting_approval
+over_aid=$(approval_of t1 "$over_id")
+check "the approval names the rate reached, for this call only" bash -c \
+	"$(declare -f gw); gw /v1/approvals/$over_aid | jq -e '.over_rate == \"1/h\" and .scopes == [\"once\"]' >/dev/null"
+gw "/v1/approvals/$over_aid" -X POST -d '{"decision":"approve","scope":"once"}' >/dev/null
+check "approved, the change over the rate runs" eventually 30 activity_state_is t1 "$over_id" finished
+check "the gateway's decision record names the rate" eventually 10 gw_audit_has \
+	'.sub == "agent-t1" and .name == "change" and .over_rate == "1/h" and (.event | not)'
+check "the gateway's mcp-approval names it too" eventually 10 gw_audit_has '.event == "mcp-approval" and .over_rate == "1/h"'
+# An approved call is not counted: the rate is still reached. Approved,
+# not declined: declines would raise the override rate, which demotes
+# first.
+asks_and_approve() {
+	local id aid
+	id=$(start_activity t1 CHANGE)
+	eventually 30 activity_state_is t1 "$id" waiting_approval || return 1
+	aid=$(approval_of t1 "$id")
+	gw "/v1/approvals/$aid" -X POST -d '{"decision":"approve","scope":"once"}' >/dev/null
+	eventually 30 activity_state_is t1 "$id" finished
+}
+check "over the rate again: an approval, given" asks_and_approve
+check "and a third time" asks_and_approve
+quiet_evaluator
+check "evaluate demotes it after reaching the rate three times within a day" bash -c \
+	"agent-admin evaluate | grep -q 'category patch-errata demoted: rate (1 calls per 1h per tool) reached 3 times within a day'"
+check "the category is supervised again after reaching its rate" bash -c "agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"supervised\"' >/dev/null"
 check "custos-demote.service runs the evaluator" systemctl start custos-demote.service
 systemctl disable --now custos-demote.timer >/dev/null 2>&1
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' | agent-admin permissions t1

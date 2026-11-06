@@ -276,16 +276,18 @@ An envelope may also cap how often the category acts without approval:
 rate: {calls: 20, per: 1h}       # per tool; per is 1s, 1m or 1h
 ```
 
-mcp-gateway enforces it as its `rate_limit` obligation (`20/h`) on each
-of the category's permissions while they act without approval: at most
-`calls` calls of each tool, by this agent, within any `per` (a sliding
-window). A call over it is **denied** ("rate limit exceeded"), not
-turned into an approval: the gateway's policy decides before it counts.
-It counts per tool, not across the category's tools, and in its
+mcp-gateway enforces it as its `approval_over_rate` obligation (`20/h`)
+on each of the category's permissions while they act without approval:
+at most `calls` calls of each tool, by this agent, within any `per` (a
+sliding window). A call over it **waits for an approval**, as if the
+category were supervised: for that call only (scope `once`), and the
+approval names the rate that was reached ([chapter 7](07-approvals.md)).
+Approved, it runs and is not counted; declined, it is denied. The
+gateway counts per tool, not across the category's tools, and in its
 memory, so a restart of the gateway starts afresh. Calls that need an
-approval, outside the windows or with the category supervised, are not
-counted. Three denials over the rate within a day
-[demote](#auto-demote) the category.
+approval anyway, outside the windows or with the category supervised,
+are not counted. Reaching the rate three times within a day
+[demotes](#auto-demote) the category.
 
 Then promote:
 
@@ -382,9 +384,9 @@ enables the timer. It demotes a category when:
   above the threshold. Outside its windows the category still asks for
   approvals, and a decline counts;
 - a **rollback** condition of its envelope fires;
-- the gateway denied calls of the category over its envelope's
-  [rate](#promote) three times within a day (since the promotion;
-  "rate limit exceeded" in its audit);
+- calls of the category reached its envelope's [rate](#promote) three
+  times within a day (since the promotion; `over_rate` in the gateway's
+  audit);
 - a [review](#review) found an action that should not have run.
 
 ```yaml
