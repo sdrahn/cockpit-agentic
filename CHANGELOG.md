@@ -7,6 +7,15 @@ removed.
 
 ## Unreleased
 
+### Added
+
+- The agent's full response: an activity keeps the model's last text
+  in full (`response`, up to 32 KiB, in `GET /v1/activities/{id}`), and
+  Cockpit's activity detail shows its start with **Show the full
+  response**, a dialog that renders its Markdown (tables, lists, code)
+  as text, never as HTML. Before, only the first 500 characters were
+  kept, and a playbook's table could not be read.
+
 ## v0.4.1 — 2026-11-06
 
 Fixes for running the diagnostic playbooks with a local model. The

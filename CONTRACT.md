@@ -171,7 +171,8 @@ started them.
 | `calls[].suspected_injection` | signs of a prompt injection (O14) in the outputs of the activity's last 3 calls before this one, which the model read: `[{"call_id", "tool", "sign", "quote"?}]`. Signs: an instruction to ignore its instructions, a chat template's role marker, a claimed approval, a new role or policy, a request for its instructions, an instruction to use this call's tool, one of this call's argument values on a line that tells the model to use it (a value merely present, as a unit name in a listing, is the ordinary flow of a diagnosis and no sign). `quote` is the text found (at most 120 characters), never for an argument value. Found by the host in the agent's process: **self-asserted** and advisory; the approval and the gateway's offer are what hold |
 | `calls[].playbook_step` | the number (from 1) of the playbook step (§14c) this call is: the host made it, not the model; absent for the model's calls |
 | `calls[].preceding` | for a call that waits for an approval: those outputs, `[{"call_id", "tool", "excerpt"}]`, each up to 1200 characters around the first sign in it. Outputs of the agent's own tools, shown to whoever may read the activity |
-| `summary` | the agent's last text, at most 500 characters |
+| `summary` | the agent's last text, at most 500 bytes (cut at a character, marked `…`) |
+| `response` | the agent's last text in full, at most 32 KiB (cut as `summary`), as the model wrote it: often Markdown. **Self-asserted by the agent**; a console renders it as text, never as HTML. Only in `GET /v1/activities/{id}` and an ended activity a `wait` returns, not in `GET /v1/activities` |
 | `playbook` | the diagnostic playbook the activity runs (§14c), if any |
 
 Arguments never appear in activities or the journal (only

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/sdrahn/custos/internal/governance"
 	"github.com/sdrahn/custos/internal/journal"
@@ -174,5 +175,34 @@ func TestActivityAfterRestart(t *testing.T) {
 	a, ok := l.Governor.Activity(act.ID)
 	if !ok || a.Playbook != "updates" || a.State != governance.StateFinished {
 		t.Errorf("after a restart: %+v %v", a, ok)
+	}
+}
+
+// An activity keeps the model's last text in full as its response: the
+// list has only its summary (the first 500 bytes), the activity itself
+// the response, so a report with a table can be read whole.
+func TestFullResponse(t *testing.T) {
+	long := "| file system | used |\n|---|---|\n" + strings.Repeat("| /dev/vda2 | 98 % — ä |\n", 60)
+	e := newEnvPlaybooks(t, playbooks(t), testutil.Text(long))
+	_, b := e.do("POST", "/v1/activities", "", map[string]any{"prompt": "how full?", "wait": true})
+	var act governance.Activity
+	json.Unmarshal(b, &act)
+	if act.Response != strings.TrimSpace(long) {
+		t.Errorf("the ended activity's response is %d bytes, want %d", len(act.Response), len(long))
+	}
+	_, b = e.do("GET", "/v1/activities", "", nil)
+	var list struct {
+		Activities []governance.Activity `json:"activities"`
+	}
+	json.Unmarshal(b, &list)
+	if len(list.Activities) != 1 || list.Activities[0].Response != "" || !strings.HasSuffix(list.Activities[0].Summary, "…") ||
+		len(list.Activities[0].Summary) > governance.SummaryMax+len("…") || !utf8.ValidString(list.Activities[0].Summary) {
+		t.Errorf("the list: %s", b)
+	}
+	_, b = e.do("GET", "/v1/activities/"+act.ID, "", nil)
+	var one governance.Activity
+	json.Unmarshal(b, &one)
+	if one.Response != strings.TrimSpace(long) {
+		t.Errorf("GET /v1/activities/{id}: the response is %d bytes, want %d", len(one.Response), len(long))
 	}
 }

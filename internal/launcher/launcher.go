@@ -393,7 +393,11 @@ func (l *Launcher) activities(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "agents may only read the activities they started", http.StatusForbidden)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"activities": nonNil(l.Governor.Activities())})
+	acts := l.Governor.Activities()
+	for i := range acts {
+		acts[i].Response = "" // GET /v1/activities/{id} has it; the list stays small
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"activities": nonNil(acts)})
 }
 
 func (l *Launcher) activity(w http.ResponseWriter, r *http.Request) {

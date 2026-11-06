@@ -207,3 +207,22 @@ button.danger-text { color: var(--danger); }
 .report .plan .command { display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
 .report .plan code { overflow-x: auto; }
 .report-feedback label { display: block; margin: 0.25rem 0; }
+
+/* An activity's response: its start in the list and the detail, all of
+ * it, rendered from Markdown, in a dialog. */
+.activity .summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.response-start { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 8em; overflow: hidden; }
+.response-dialog { width: min(60rem, 92vw); max-height: 88vh; overflow: auto; background: var(--card); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 4px; padding: 1rem 1.25rem; }
+.response-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+.md { line-height: 1.5; overflow-wrap: anywhere; }
+.md .md-h { margin: 1rem 0 0.4rem; }
+.md p, .md ul, .md ol, .md blockquote, .md pre, .md .md-table { margin: 0 0 0.75rem; }
+.md code { font-family: monospace; font-size: 0.92em; background: var(--page); padding: 0 0.2em; border-radius: 3px; }
+.md pre.md-code { background: var(--page); border: 1px solid var(--border); padding: 0.6rem; overflow-x: auto; white-space: pre; }
+.md pre.md-code code { background: none; padding: 0; }
+.md .md-table { overflow-x: auto; }
+.md table { border-collapse: collapse; }
+.md th, .md td { border: 1px solid var(--border); padding: 0.25rem 0.6rem; text-align: left; vertical-align: top; }
+.md th { background: var(--page); }
+.md blockquote { border-left: 3px solid var(--border); padding-left: 0.75rem; color: var(--muted); }
