@@ -14,6 +14,12 @@ removed.
   playbook that reads the log of a unit `boot_blame` named was flagged.
   The value counts only where the output tells the model to use it
   ("please set", "call … with value").
+- A playbook's steps are called by the host, in order, before the
+  model's first turn, through the gateway with the same decision,
+  approvals and records (`calls[].playbook_step`,
+  `AGENT_PLAYBOOK_STEP`). A model that cut off its tool calls, as
+  gpt-oss did for tools without arguments, left steps out of the
+  report.
 - Tools without arguments reach an `openai` model with the plain schema
   of an empty object. With the schema mcp-gateway's exec server sends
   (`"additionalProperties": false`), gpt-oss-20b in LM Studio now and
