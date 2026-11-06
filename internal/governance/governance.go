@@ -75,6 +75,9 @@ type Call struct {
 	// agent's process: self-asserted, like the rationale.
 	SuspectedInjection []Suspicion `json:"suspected_injection,omitempty"`
 	Preceding          []Preceding `json:"preceding,omitempty"`
+	// PlaybookStep is the number (from 1) of the playbook step this call
+	// is: the host made it, not the model (CONTRACT.md §14c).
+	PlaybookStep int `json:"playbook_step,omitempty"`
 }
 
 // Origin says what started an activity (CONTRACT.md §4).
@@ -128,13 +131,22 @@ const (
 // it and how to cancel it. Without one, an activity is origin "api".
 type Start struct {
 	Origin Origin
-	// Playbook is the diagnostic playbook the activity runs (§14c).
+	// Playbook is the diagnostic playbook the activity runs (§14c), and
+	// Steps the calls the host makes for it, in order, before the
+	// model's first turn.
 	Playbook string
+	Steps    []Step
 	Parent   *Ref
 	Root     *Ref
 	Cancel   context.CancelFunc
 	// Started, if set, is told the activity's id when it starts.
 	Started func(id string)
+}
+
+// Step is a playbook step the host runs: a tool called without
+// arguments, and why.
+type Step struct {
+	Tool, Why string
 }
 
 // ClientTool marks tools defined by an AG-UI frontend (§11).
@@ -160,6 +172,9 @@ type invocation struct {
 	// modelStart is when the model call in progress started, for its
 	// record's duration.
 	modelStart time.Time
+	// steps are the playbook steps the host runs, next the next one.
+	steps []Step
+	next  int
 }
 
 // History is how many ended activities are kept in memory; the journal
@@ -179,6 +194,10 @@ type Governor struct {
 	subs     map[string]map[chan Event]struct{}
 	expect   map[string]Start
 	ended    []*Activity // oldest first, at most History
+	paused   bool
+	resume   chan struct{}     // closed on Resume
+	reasons  map[string]string // function call id -> rationale
+	hostStep map[string]int    // function call id -> playbook step
 	// historyPath keeps them across restarts (Keep); historyErr is the
 	// last failure to write it.
 	historyPath, historyErr string
@@ -194,11 +213,12 @@ func New(cfg *config.Config, log journal.Logger) *Governor {
 		ApprovalURL: func(id string) string {
 			return "/cockpit/@localhost/mcp-gateway/index.html#/approvals/" + id
 		},
-		inv:     map[string]*invocation{},
-		subs:    map[string]map[chan Event]struct{}{},
-		expect:  map[string]Start{},
-		reasons: map[string]string{},
-		resume:  make(chan struct{}),
+		inv:      map[string]*invocation{},
+		subs:     map[string]map[chan Event]struct{}{},
+		expect:   map[string]Start{},
+		reasons:  map[string]string{},
+		hostStep: map[string]int{},
+		resume:   make(chan struct{}),
 	}
 }
 
@@ -427,7 +447,7 @@ func (g *Governor) beforeRun(ictx agent.InvocationContext) (*genai.Content, erro
 	act := &Activity{ID: id, Agent: g.cfg.Name, Session: s.ID(), User: s.UserID(), Origin: st.Origin, Parent: st.Parent, Root: root, State: StateRunning, Started: g.now(), Playbook: st.Playbook}
 	paused := g.paused
 	if !paused {
-		g.inv[id] = &invocation{session: s.ID(), user: s.UserID(), start: act.Started, act: act, cancel: st.Cancel}
+		g.inv[id] = &invocation{session: s.ID(), user: s.UserID(), start: act.Started, act: act, cancel: st.Cancel, steps: st.Steps}
 	}
 	g.mu.Unlock()
 	f := journal.Fields{
@@ -457,6 +477,12 @@ func (g *Governor) afterRun(ictx agent.InvocationContext) {
 	g.mu.Lock()
 	in := g.inv[ictx.InvocationID()]
 	delete(g.inv, ictx.InvocationID())
+	for id := range g.hostStep { // steps never made: the activity ended first
+		if strings.HasSuffix(id, "-"+ictx.InvocationID()) {
+			delete(g.hostStep, id)
+			delete(g.reasons, id)
+		}
+	}
 	if in == nil {
 		g.mu.Unlock()
 		return
@@ -510,7 +536,10 @@ func (g *Governor) beforeModel(cctx agent.CallbackContext, _ *model.LLMRequest) 
 	if in == nil {
 		return nil, nil
 	}
-	in.llmCalls++
+	step := in.next < len(in.steps)
+	if !step {
+		in.llmCalls++
+	}
 	var name string
 	var value int
 	switch lim := g.cfg.Limits; {
@@ -518,6 +547,8 @@ func (g *Governor) beforeModel(cctx agent.CallbackContext, _ *model.LLMRequest) 
 		name, value = "max_llm_calls", lim.MaxLLMCalls
 	case g.now().Sub(in.start) > lim.MaxInvocation():
 		name, value = "max_invocation_seconds", lim.MaxInvocationSeconds
+	case step:
+		return g.hostCall(cctx.InvocationID(), in), nil
 	default:
 		in.modelStart = g.now()
 		return nil, nil
@@ -527,6 +558,26 @@ func (g *Governor) beforeModel(cctx agent.CallbackContext, _ *model.LLMRequest) 
 		Content:      genai.NewContentFromText(fmt.Sprintf("I stopped here: this agent's limit %s (%d) was reached.", name, value), genai.RoleModel),
 		TurnComplete: true,
 	}, nil
+}
+
+// hostCall is the turn the host takes in place of the model to make a
+// playbook's next step (CONTRACT.md §14c): the step's tool, called
+// without arguments, one step a turn so that they run in order. ADK runs
+// it as it would a call of the model's, so the gateway's policy, the
+// approvals and every record apply to it unchanged; the step's "why" is
+// its rationale. No model is called and no model.call is recorded.
+// g.mu is held.
+func (g *Governor) hostCall(invocation string, in *invocation) *model.LLMResponse {
+	s := in.steps[in.next]
+	in.next++
+	id := fmt.Sprintf("custos-step-%d-%s", in.next, invocation)
+	g.hostStep[id] = in.next
+	g.reasons[id] = fmt.Sprintf("Playbook %s, step %d of %d: %s", in.act.Playbook, in.next, len(in.steps), s.Why)
+	return &model.LLMResponse{
+		Content: &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{{
+			FunctionCall: &genai.FunctionCall{ID: id, Name: s.Tool, Args: map[string]any{}},
+		}}},
+	}
 }
 
 // modelFields are a model.call record's fields, with the duration of the
@@ -636,10 +687,14 @@ func (g *Governor) beforeTool(tctx agent.ToolContext, t tool.Tool, args map[stri
 			}
 		}
 	}
-	c := &Call{Session: tctx.SessionID(), Invocation: tctx.InvocationID(), CallID: tctx.FunctionCallID(), Tool: t.Name(), ArgsSHA256: f["ARGS_SHA256"], Since: g.now(), State: StateRunning, Rationale: g.reasons[tctx.FunctionCallID()]}
+	c := &Call{Session: tctx.SessionID(), Invocation: tctx.InvocationID(), CallID: tctx.FunctionCallID(), Tool: t.Name(), ArgsSHA256: f["ARGS_SHA256"], Since: g.now(), State: StateRunning, Rationale: g.reasons[tctx.FunctionCallID()], PlaybookStep: g.hostStep[tctx.FunctionCallID()]}
 	delete(g.reasons, tctx.FunctionCallID())
+	delete(g.hostStep, tctx.FunctionCallID())
 	f["RATIONALE"] = c.Rationale
-	if in != nil {
+	if c.PlaybookStep > 0 {
+		f["PLAYBOOK_STEP"] = strconv.Itoa(c.PlaybookStep)
+	}
+	if in != nil && c.PlaybookStep == 0 {
 		if c.SuspectedInjection = suspect(t.Name(), argStrings(args), in.lastResults(c.CallID)); len(c.SuspectedInjection) > 0 {
 			f["SUSPECTED_INJECTION"] = suspicionText(c.SuspectedInjection)
 		}

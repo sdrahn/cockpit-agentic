@@ -31,9 +31,11 @@ func playbooks(t *testing.T) string {
 	return root
 }
 
-// An activity runs a playbook: the model gets its steps (those offered),
-// what to look for and the person's words; the activity and its record
-// name the playbook.
+// An activity runs a playbook: the host makes the steps' calls (those
+// offered), through the gateway and recorded like the model's, before
+// the model's first turn; the model gets the steps, what to look for,
+// the person's words and the steps' outputs. The activity and its
+// record name the playbook.
 func TestPlaybookActivity(t *testing.T) {
 	e := newEnvPlaybooks(t, playbooks(t), testutil.Text("Report: nothing pending."))
 	res, b := e.do("POST", "/v1/activities", "", map[string]any{"playbook": "updates", "prompt": "nginx in particular", "wait": true})
@@ -45,9 +47,20 @@ func TestPlaybookActivity(t *testing.T) {
 	if act.Playbook != "updates" || act.State != governance.StateFinished {
 		t.Errorf("activity %s", b)
 	}
-	sent := e.m.Calls[0].Contents[len(e.m.Calls[0].Contents)-1].Parts[0].Text
+	if len(e.m.Calls) != 1 {
+		t.Fatalf("the model was called %d times, want once (for the report)", len(e.m.Calls))
+	}
+	cs := e.m.Calls[0].Contents
+	sent := ""
+	for _, c := range cs {
+		for _, p := range c.Parts {
+			if p.Text != "" && c.Role == "user" {
+				sent = p.Text
+			}
+		}
+	}
 	for _, want := range []string{`Run the diagnostic playbook "updates"`, "1. zypp__list_updates: Pending updates.", "Look for: Security patches.",
-		"The administrator adds: nginx in particular"} {
+		"The host calls these tools for you", "The administrator adds: nginx in particular"} {
 		if !strings.Contains(sent, want) {
 			t.Errorf("the model was not given %q:\n%s", want, sent)
 		}
@@ -55,9 +68,38 @@ func TestPlaybookActivity(t *testing.T) {
 	if strings.Contains(sent, "fs__read_file") {
 		t.Errorf("an optional step not offered reached the model:\n%s", sent)
 	}
+	// The step's call and its output come before the model's turn.
+	var call, out bool
+	for _, c := range cs {
+		for _, p := range c.Parts {
+			if fc := p.FunctionCall; fc != nil && fc.Name == "zypp__list_updates" && len(fc.Args) == 0 {
+				call = true
+			}
+			if fr := p.FunctionResponse; fr != nil && fr.Name == "zypp__list_updates" {
+				out = true
+			}
+		}
+	}
+	if !call || !out {
+		t.Errorf("the step's call (%v) or its output (%v) is not in the model's request", call, out)
+	}
+	if len(act.Calls) != 1 || act.Calls[0].Tool != "zypp__list_updates" || act.Calls[0].PlaybookStep != 1 || act.Calls[0].State != "ok" ||
+		act.Calls[0].Rationale != "Playbook updates, step 1 of 1: Pending updates." {
+		t.Errorf("calls %+v", act.Calls)
+	}
+	if n := len(e.gw.Ran()); n != 1 {
+		t.Errorf("the gateway ran %d calls: %v", n, e.gw.Ran())
+	}
 	st := e.log.Events(journal.InvocationStart)
 	if f := st[len(st)-1].Fields; f["PLAYBOOK"] != "updates" {
 		t.Errorf("invocation.start %v", f)
+	}
+	tc := e.log.Events(journal.ToolCall)
+	if len(tc) != 1 || tc[0].Fields["PLAYBOOK_STEP"] != "1" || tc[0].Fields["RATIONALE"] == "" {
+		t.Errorf("tool.call %v", tc)
+	}
+	if n := len(e.log.Events(journal.ModelCall)); n != 1 {
+		t.Errorf("%d model.call records, want 1: the host's turn is no model call", n)
 	}
 }
 

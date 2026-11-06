@@ -1037,6 +1037,13 @@ pb_run() { api pb /v1/activities -X POST -d "$(jq -nc --arg p "$1" '{playbook: $
 check "an activity runs the playbook: its probe is called" eventually 30 bash -c \
 	"$(declare -f api pb_run); pb_run probe-check | jq -e '.playbook == \"probe-check\" and .state == \"finished\" and (.calls | map(.tool) | index(\"custos-test__probe\"))' >/dev/null"
 check "journal: invocation.start names the playbook" eventually 10 journal_has pb invocation.start '.AGENT_PLAYBOOK == "probe-check"'
+# The host makes the steps' calls itself, through the gateway, before the
+# model's first turn: the probe is called once, as step 1, with the step's
+# why as its rationale.
+check "the host made the step's call: the probe once, as playbook step 1" bash -c \
+	"$(declare -f api); api pb /v1/activities | jq -e '[.activities[] | select(.playbook == \"probe-check\")][0].calls | map(select(.tool == \"custos-test__probe\")) |
+		length == 1 and .[0].playbook_step == 1 and (.[0].rationale | startswith(\"Playbook probe-check, step 1 of 1\"))' >/dev/null"
+check "journal: tool.call of the step has PLAYBOOK_STEP" eventually 10 journal_has pb tool.call '.AGENT_TOOL == "custos-test__probe" and .AGENT_PLAYBOOK_STEP == "1"'
 # The diagnosis report (§4a): the host verifies each quote against the
 # output of the tool it names; feedback is recorded outside the agent.
 pb_act=$(api pb /v1/activities | jq -r '[.activities[] | select(.playbook == "probe-check" and .report)][0].id // empty')
