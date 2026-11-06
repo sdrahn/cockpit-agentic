@@ -1,6 +1,7 @@
 package launcher
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -82,5 +83,29 @@ func TestPlaybookRefused(t *testing.T) {
 	}
 	if n := len(e.log.Events(journal.InvocationStart)); n != 0 {
 		t.Errorf("%d activities started", n)
+	}
+}
+
+// An activity outlives the launcher: after an idle exit, the next one
+// started on the same state directory lists it, with its report.
+func TestActivityAfterRestart(t *testing.T) {
+	e := newEnvPlaybooks(t, playbooks(t), testutil.Text("Report: nothing pending."))
+	_, b := e.do("POST", "/v1/activities", "", map[string]any{"playbook": "updates", "wait": true})
+	var act governance.Activity
+	json.Unmarshal(b, &act)
+	if act.ID == "" || act.State != governance.StateFinished {
+		t.Fatalf("activity %s", b)
+	}
+	dir := filepath.Dir(e.gw.Socket)
+	if _, err := os.Stat(filepath.Join(dir, governance.HistoryFile)); err != nil {
+		t.Fatalf("not kept: %v", err)
+	}
+	l, err := New(context.Background(), Options{Config: e.l.cfg, Log: &journal.Memory{}, StateDir: dir, Model: &testutil.Model{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, ok := l.Governor.Activity(act.ID)
+	if !ok || a.Playbook != "updates" || a.State != governance.StateFinished {
+		t.Errorf("after a restart: %+v %v", a, ok)
 	}
 }

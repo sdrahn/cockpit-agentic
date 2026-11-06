@@ -7,6 +7,15 @@ removed.
 
 ## Unreleased
 
+### Fixed
+
+- An ended activity, and its diagnosis report, was gone from Cockpit's
+  Activity tab and `GET /v1/activities` once the agent exited when idle
+  (10 minutes without requests): a scheduled playbook's run was not
+  there when someone looked. The agent keeps its ended activities in
+  its state directory (`/var/lib/agents/<name>/activities.json`, at
+  most 200 of the last 30 days).
+
 ## v0.4.0 — 2026-11-06
 
 Autonomy within limits the gateway enforces, and the agent's account of

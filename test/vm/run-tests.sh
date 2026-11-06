@@ -418,6 +418,13 @@ check "with probe read-only, PROBE runs without an approval" eventually 30 runs_
 check "journal: tool.result ok for custos-test__probe" eventually 10 journal_has t1 tool.result '.AGENT_TOOL == "custos-test__probe" and .AGENT_OUTCOME == "ok"'
 check "journal: model.call says how long the call took" eventually 10 journal_has t1 model.call '(.AGENT_DURATION_MS // "" | test("^[0-9]+$"))'
 check "journal: arguments are a digest only" journal_has t1 tool.call '.AGENT_ARGS_SHA256 != null'
+# Ended activities outlive the launcher (its idle exit): the next one,
+# started by the socket, lists them.
+kept_id=$(start_activity t1 PROBE)
+eventually 30 activity_state_is t1 "$kept_id" finished
+systemctl stop agent@t1.service
+check "an ended activity is listed after the agent's service stopped and started again" eventually 30 activity_state_is t1 "$kept_id" finished
+check "kept in the agent's state directory, the agent's alone" stat_is /var/lib/agents/t1/activities.json agent-t1:agent-t1:600
 
 for decision in approve deny; do
 	section "Approval: $decision"

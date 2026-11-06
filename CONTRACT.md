@@ -262,7 +262,7 @@ by `SO_PEERCRED`.
 | Request | Who | Meaning |
 |---|---|---|
 | `GET /v1/status` | supervisors, root | `{"contract":1, "implementation", "lifecycle":{"kind",…} (§3a), "units":{"service","socket"} (systemd only), "name", "version", "model", "paused", "gateway":{"socket","reachable"}, "running", "in_flight":[call…], "started", "limits", "interaction":{"agui","client_tools"}, "schedules":[{"name","on_calendar","prompt"}]}` |
-| `GET /v1/activities` | supervisors, root | `{"activities": [activity…]}`, running first, then ended, newest first |
+| `GET /v1/activities` | supervisors, root | `{"activities": [activity…]}`, running first, then ended, newest first. Ended activities, with their reports, outlive the host process (an idle exit, a restart): the reference host keeps up to 200 of the last 30 days in its state directory (§13) |
 | `GET /v1/activities/{id}` | supervisors, root; an agent only for activities it delegated | one activity |
 | `POST /v1/activities` | root (schedules, events, api); supervisors (`api`); agents (`delegation`, §9) | `{"prompt", "session"?, "user"? (root only), "origin"? (root only), "trace"? (agents only), "wait"?, "playbook"? (§14c; draft, O16)}`: `202 {"id","session"}`, or with `wait` the ended activity; `409` while paused |
 | `POST /v1/activities/{id}/cancel` | root; the activity's user or originator | ends a running activity: `204`, `409` if not running |
@@ -1013,6 +1013,7 @@ aggregation, policy distribution and approvals across hosts) is parked
 | `/etc/systemd/system/agent@<name>.service.d/` | root | sandbox changes; Cockpit writes `50-cockpit.conf` only |
 | `/etc/systemd/system/agent-schedule@<name>_<schedule>.timer.d/schedule.conf` | root | a schedule's `OnCalendar=` |
 | `/var/lib/agents/<name>/sessions.db` | agent-`<name>` 0600 | ADK sessions (SQLite) |
+| `/var/lib/agents/<name>/activities.json` | agent-`<name>` 0600 | the ended activities (§5), at most 200 of the last 30 days |
 
 ## 14. Agent configuration (`agent.yaml`)
 
