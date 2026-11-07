@@ -779,7 +779,14 @@ delegation itself needs an approval unless it is marked `read_only`.
    `_trace: {root_agent, root_activity, parent_agent, parent_activity}`.
 2. The gateway runs the `agents` server (`agent-delegate`) **as the
    delegating agent's user** (`run_as: principal`). It posts the task to
-   the callee's `POST /v1/activities` and waits for the result.
+   the callee's `POST /v1/activities` and waits for the result. The tool
+   answers `{"agent", "activity", "state", "answer", "report"?, "reason"?}`:
+   `answer` is the callee activity's `response` (§4, its last text in
+   full, up to 32 KiB), or its `summary` from a host without one;
+   `report` its diagnosis report (§4a), if it wrote one; `reason` why it
+   did not finish. An activity that did not finish is a tool error. The
+   answer is tool output like any other: the delegating host checks it
+   for signs of a prompt injection (§4 `calls[].suspected_injection`).
 3. The callee sees the caller as `agent-<parent>` by `SO_PEERCRED`. It
    records `origin: {kind: delegation, by: agent-<parent>}`. It believes
    the trace only when `parent_agent` is that caller, and otherwise

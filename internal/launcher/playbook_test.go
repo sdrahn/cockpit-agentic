@@ -3,12 +3,15 @@ package launcher
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sdrahn/custos/internal/delegate"
 	"github.com/sdrahn/custos/internal/governance"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/playbook"
@@ -204,5 +207,25 @@ func TestFullResponse(t *testing.T) {
 	json.Unmarshal(b, &one)
 	if one.Response != strings.TrimSpace(long) {
 		t.Errorf("GET /v1/activities/{id}: the response is %d bytes, want %d", len(one.Response), len(long))
+	}
+}
+
+// A delegation (§9) answers with the other agent's full response: the
+// bridge's tool, against a running agent, returns all of a long answer,
+// not the 500-byte summary.
+func TestDelegationGetsFullResponse(t *testing.T) {
+	long := "Restarted nginx.service; it is active.\n\n" + strings.Repeat("| nginx.service | active | 2026-11-07 |\n", 40)
+	e := newEnvPlaybooks(t, "", testutil.Text(long))
+	// The bridge finds agents as <dir>/<name>/api.sock.
+	dir := t.TempDir()
+	os.Mkdir(filepath.Join(dir, "patch-pilot"), 0o755)
+	if err := os.Symlink(filepath.Join(filepath.Dir(e.gw.Socket), "api.sock"), filepath.Join(dir, "patch-pilot", "api.sock")); err != nil {
+		t.Fatal(err)
+	}
+	r := delegate.Ask(context.Background(), dir, delegate.Args{Agent: "patch-pilot", Task: "Restart nginx."})
+	var m map[string]any
+	json.Unmarshal([]byte(r.Content[0].(*mcp.TextContent).Text), &m)
+	if r.IsError || m["answer"] != strings.TrimSpace(long) || m["state"] != "finished" {
+		t.Errorf("error %v, answer of %d bytes (want %d): %v", r.IsError, len(fmt.Sprint(m["answer"])), len(strings.TrimSpace(long)), m["state"])
 	}
 }

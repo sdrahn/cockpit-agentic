@@ -7,7 +7,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func serve(t *testing.T, h http.HandlerFunc) string {
@@ -58,5 +61,34 @@ func TestRunErrors(t *testing.T) {
 	}
 	if _, err := Run(context.Background(), "/nonexistent/api.sock", map[string]any{}); err == nil {
 		t.Error("unreachable agent not an error")
+	}
+}
+
+// What the delegating agent gets: the other activity's full response
+// (§4), not its 500-byte summary; the summary from an agent before the
+// response was kept; the diagnosis report when there is one; and an
+// error, with the reason, when the activity did not finish.
+func TestAnswer(t *testing.T) {
+	text := func(r *mcp.CallToolResult) map[string]any {
+		var m map[string]any
+		json.Unmarshal([]byte(r.Content[0].(*mcp.TextContent).Text), &m)
+		return m
+	}
+	long := strings.Repeat("| /dev/vda2 | 98 % |\n", 200) // 4 KB, far beyond a summary
+	r := answer("t1", map[string]any{"id": "e-1", "state": "finished", "summary": long[:500] + "…", "response": long,
+		"report": map[string]any{"kind": "diagnosis", "summary": "/var is full."}})
+	m := text(r)
+	if r.IsError || m["answer"] != long || m["activity"] != "e-1" || m["agent"] != "t1" {
+		t.Errorf("full response: %v %v", r.IsError, m)
+	}
+	if rep, _ := m["report"].(map[string]any); rep["summary"] != "/var is full." {
+		t.Errorf("report %v", m["report"])
+	}
+	if m := text(answer("t1", map[string]any{"id": "e-2", "state": "finished", "summary": "done"})); m["answer"] != "done" || m["report"] != nil {
+		t.Errorf("an older agent's summary: %v", m)
+	}
+	r = answer("t1", map[string]any{"id": "e-3", "state": "limit", "summary": "I stopped here.", "reason": "max_tool_calls (5)"})
+	if m := text(r); !r.IsError || m["reason"] != "max_tool_calls (5)" || m["state"] != "limit" {
+		t.Errorf("an unfinished activity: %v %v", r.IsError, m)
 	}
 }

@@ -7,6 +7,15 @@ removed.
 
 ## Unreleased
 
+### Changed
+
+- A delegation (`agents__delegate`) answers with the other agent's full
+  response (up to 32 KiB), its diagnosis report if it wrote one, and why
+  its activity did not finish, instead of the first 500 characters of
+  its last text. The delegating agent can judge from it whether the task
+  was done; the answer is still checked for signs of a prompt injection
+  (#119).
+
 ### Added
 
 - Events: an agent's `events:` start its activities when a systemd unit
