@@ -46,7 +46,7 @@ func TestParseErrors(t *testing.T) {
 		"name":         {"version: 1\nname: Bad\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a]}", "name:"},
 		"unknown key":  {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a]}\nlimitz: {}", "limitz"},
 		"no servers":   {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}", "gateway.servers"},
-		"tool server":  {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a], tools: [b__x]}", "not in gateway.servers"},
+		"tool server":  {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a], tools: [b__x]}", `gateway.tools: "b__x": its server "b" is not in gateway.servers: add b to gateway.servers`},
 		"gemini key":   {"version: 1\nname: ab\nmodel: {provider: gemini, name: m}\ngateway: {servers: [a]}", "API key"},
 		"client tools": {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a]}\ninteraction: {client_tools: allow}", "client_tools"},
 		"timeout":      {"version: 1\nname: ab\nmodel: {provider: vertex, name: m, timeout_seconds: -1}\ngateway: {servers: [a]}", "model.timeout_seconds: -1"},

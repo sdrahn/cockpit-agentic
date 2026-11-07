@@ -82,10 +82,10 @@ function describeTemplate(name) {
         el("p", { class: "muted" }, "Its tools: servers " + (t.servers || []).join(", ") + "; permissions in " + t.dir + "/permissions.yaml."));
 }
 
-function setCreateNote(text, cls) {
+function setCreateNote(text, cls, fix) {
     const note = document.getElementById("create-note");
     note.className = cls || "muted";
-    note.textContent = text;
+    note.replaceChildren(...nodes(text, fix ? " " : null, fix));
 }
 
 /* withName puts name into the configuration's top-level name: line. */
@@ -247,7 +247,7 @@ function initCreate() {
             await checkConfig(yaml.value);
             setCreateNote("The configuration is valid.", "ok-text");
         } catch (ex) {
-            setCreateNote(ex.message, "error-text");
+            setCreateNote(ex.message, "error-text", serverFix(ex.message, yaml, () => form.elements.check.click()));
         }
     });
     form.addEventListener("submit", async ev => {
@@ -282,7 +282,7 @@ function initCreate() {
                 cred ? credentialForm(n, cred) : "");
             cockpit.location.go(["agents", n]);
         } catch (ex) {
-            setCreateNote(ex.message, "error-text");
+            setCreateNote(ex.message, "error-text", serverFix(ex.message, yaml, () => form.elements.check.click()));
         }
         submit.disabled = false;
     });
@@ -347,7 +347,7 @@ function configEditor(a) {
     const check = el("button", { class: "secondary" }, "Check");
     const save = el("button", null, "Save and apply");
     const cancel = el("button", { class: "link" }, "Cancel");
-    const say = (t, cls) => { note.className = cls || "muted"; note.textContent = t };
+    const say = (t, cls, fix) => { note.className = cls || "muted"; note.replaceChildren(...nodes(t, fix ? " " : null, fix)) };
     const openshell = a.status && a.status.lifecycle && a.status.lifecycle.kind === "openshell";
     const editing = el("div", { class: "config-edit", hidden: true },
         el("p", { class: "muted" }, "Saving replaces " + configPath(a.name) + " and syncs its schedules. " + (openshell
@@ -379,7 +379,7 @@ function configEditor(a) {
             await checkConfig(text.value);
             say("The configuration is valid.", "ok-text");
         } catch (ex) {
-            say(ex.message, "error-text");
+            say(ex.message, "error-text", serverFix(ex.message, text, () => check.click()));
         }
     });
     save.addEventListener("click", async () => {
@@ -395,7 +395,7 @@ function configEditor(a) {
             showError(null);
             tabs.agents.refresh();
         } catch (ex) {
-            say(ex.message, "error-text");
+            say(ex.message, "error-text", serverFix(ex.message, text, () => check.click()));
         }
         save.disabled = false;
     });

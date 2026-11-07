@@ -440,7 +440,9 @@ func (c *Config) Check() error {
 		if !ok {
 			bad("gateway.tools: %q: want <server>__<tool>", t)
 		} else if !contains(c.Gateway.Servers, srv) {
-			bad("gateway.tools: %q: server %q is not in gateway.servers", t, srv)
+			// The fix in the message (and for Cockpit to offer): a tool
+			// is shown only from a server the agent names.
+			bad("gateway.tools: %q: its server %q is not in gateway.servers: add %s to gateway.servers", t, srv, srv)
 		}
 	}
 	for k, v := range map[string]int{"max_llm_calls": c.Limits.MaxLLMCalls, "max_tool_calls": c.Limits.MaxToolCalls, "max_invocation_seconds": c.Limits.MaxInvocationSeconds} {

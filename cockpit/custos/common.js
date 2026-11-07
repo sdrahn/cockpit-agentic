@@ -75,6 +75,50 @@ const agentApiAsRoot = name => client(agentSocket(name), { superuser: "try" });
 /* Tabs register here: { refresh(), intervalMs, init()? } (main.js). */
 const tabs = {};
 
+/* missingServers are the servers a configuration check says are not in
+ * gateway.servers, though gateway.tools names their tools (#116). */
+function missingServers(message) {
+    const out = [];
+    for (const m of String(message || "").matchAll(/server "([a-z0-9][a-z0-9_.-]*)" is not in gateway\.servers/g)) {
+        if (!out.includes(m[1])) out.push(m[1]);
+    }
+    return out;
+}
+
+/* withServers adds servers to a configuration's gateway.servers: a flow
+ * list ([a, b], also inside gateway: {…}) or a block list (- a). null when
+ * the configuration has neither: then nothing is offered. */
+function withServers(yaml, servers) {
+    const flow = /(servers:[ \t]*\[)([^\]\n]*)(\])/;
+    const f = yaml.match(flow);
+    if (f) {
+        const have = f[2].split(",").map(s => s.trim()).filter(Boolean);
+        return yaml.replace(flow, (_, a, inner, z) => a + have.concat(servers).join(", ") + z);
+    }
+    const block = /^([ \t]*)servers:[ \t]*\n((?:\1[ \t]+-[ \t].*(?:\n|$))+)/m;
+    const b = yaml.match(block);
+    if (b) {
+        const indent = b[2].match(/^([ \t]*-[ \t]*)/)[1];
+        const items = b[2].endsWith("\n") ? b[2] : b[2] + "\n";
+        return yaml.replace(block, (_, ind) => ind + "servers:\n" + items + servers.map(s => indent + s + "\n").join(""));
+    }
+    return null;
+}
+
+/* serverFix is a button that adds the missing servers a check named to the
+ * configuration in textarea and checks it again (recheck), or null. */
+function serverFix(message, textarea, recheck) {
+    const servers = missingServers(message);
+    if (servers.length === 0 || withServers(textarea.value, servers) === null) return null;
+    const b = el("button", { type: "button", class: "secondary server-fix" },
+        "Add " + servers.join(", ") + " to gateway.servers");
+    b.addEventListener("click", () => {
+        textarea.value = withServers(textarea.value, servers);
+        recheck();
+    });
+    return b;
+}
+
 /* nodes is children as DOM nodes: arrays flattened, null, undefined and
  * false left out, the rest as text. */
 function nodes(...children) {

@@ -43,7 +43,8 @@ journalctl -u mcp-gateway.service --since -30min                 # the gateway: 
 | `model.credential: provider gemini needs an API key credential` | `set-credential NAME model-key` and `model.credential: model-key` |
 | `instruction and instruction_file: set one of them` | keep one |
 | `gateway.servers: name at least one gateway server` | list the servers the model uses |
-| `gateway.tools: "…": want <server>__<tool>`, `… server "…" is not in gateway.servers` | fix the tool name, or add its server |
+| `gateway.tools: "…": want <server>__<tool>` | fix the tool name: `<server>__<tool>`, as the gateway names it |
+| `gateway.tools: "agents__delegate": its server "agents" is not in gateway.servers: add agents to gateway.servers` | an agent is shown a tool only from a server it names: add the server to `gateway.servers`. In Cockpit, **Add agents to gateway.servers** next to the message does it and checks again |
 | `gateway: set socket or url, not both` | `url` for OpenShell agents, `socket` (or nothing) otherwise |
 | `gateway.url: "…": want an https URL (http only on the host's loopback, for tests)` | `https://host.openshell.internal:8443/mcp` |
 | `gateway.url: an openshell agent reaches the gateway over HTTPS (CONTRACT.md §3a)` | add `gateway.url` |
