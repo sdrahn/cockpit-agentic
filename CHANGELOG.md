@@ -9,6 +9,10 @@ removed.
 
 ### Fixed
 
+- Cockpit's permissions editor closed, and lost what was typed, within
+  five seconds: the Agents tab rebuilt the agent's view and kept the
+  editor only while its text field had the focus. It now stays open with
+  the edit until it is saved; so does the owners field.
 - An activity without tool calls had `calls: null` instead of `[]`
   (§4); found by the second host's conformance checks (#112).
 - Cockpit stopped and started a socket unit that does not exist for a

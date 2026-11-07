@@ -191,18 +191,24 @@ async function renderAgentDetail() {
                 el("td", null, el("span", { class: "badge " + cls }, eff))));
         }
         table.append(tbody);
-        const yaml = el("textarea", { id: "permissions-yaml", rows: String(Math.max(4, perms.length + 2)), spellcheck: "false",
-                                      "aria-label": "Permissions (YAML list)" });
-        yaml.value = perms.map(p => "- " + JSON.stringify(p)).join("\n") + "\n";
-        const save = el("button", null, "Save permissions");
-        save.addEventListener("click", () => act(save, "Saving the permissions of " + a.name,
-            () => admin(["permissions", a.name], yaml.value)));
-        bounds.append(table, el("details", null, el("summary", null, "Edit the permissions"),
-            el("p", { class: "muted" }, "A YAML list of gateway permissions, with read_only: true for tools that only read and " +
-               "autonomous: true for changes bounded mode may make without asking (§6), or category: NAME for a task category, which " +
-               "agent-admin promote lets act without asking within its windows (§6a). agent-admin checks it, and returns " +
-               "once the gateway enforces it."),
-            yaml, el("div", { class: "actions" }, save)));
+        const current = perms.map(p => "- " + JSON.stringify(p)).join("\n") + "\n";
+        const ed = keptEditor("permissions:" + a.name, current, () => {
+            const yaml = el("textarea", { id: "permissions-yaml", spellcheck: "false", "aria-label": "Permissions (YAML list)" });
+            const save = el("button", null, "Save permissions");
+            const node = el("details", { class: "permissions-edit" }, el("summary", null, "Edit the permissions"),
+                el("p", { class: "muted" }, "A YAML list of gateway permissions, with read_only: true for tools that only read and " +
+                   "autonomous: true for changes bounded mode may make without asking (§6), or category: NAME for a task category, which " +
+                   "agent-admin promote lets act without asking within its windows (§6a). agent-admin checks it, and returns " +
+                   "once the gateway enforces it."),
+                yaml, el("div", { class: "actions" }, save));
+            const k = { node, field: yaml };
+            save.addEventListener("click", () => act(save, "Saving the permissions of " + a.name,
+                () => admin(["permissions", a.name], yaml.value).then(() => { k.dirty = false; node.open = false })
+                    .finally(() => { save.disabled = false })));
+            return k;
+        });
+        if (!ed.dirty) ed.field.rows = Math.max(4, perms.length + 2);
+        bounds.append(table, ed.node);
     }
 
     const scheds = (a.status && a.status.schedules) || [];
@@ -455,18 +461,41 @@ function categoriesSection(a, data) {
  * agent-admin owners through the root bridge. */
 function ownersEditor(a, data) {
     const owners = data.owners || [];
-    const input = el("input", { id: "owners-input", class: "mono", "aria-label": "Owners", value: owners.join(" "),
-                                placeholder: "user:alice group:web-team" });
-    const save = el("button", { class: "secondary" }, "Save owners");
-    save.addEventListener("click", () => act(save, "Setting the owners of " + a.name,
-        () => admin(["owners", a.name, ...input.value.split(/\s+/).filter(Boolean)])));
+    const ed = keptEditor("owners:" + a.name, owners.join(" "), () => {
+        const input = el("input", { id: "owners-input", class: "mono", "aria-label": "Owners", placeholder: "user:alice group:web-team" });
+        const save = el("button", { class: "secondary" }, "Save owners");
+        const k = { node: el("div", { class: "actions" }, input, save), field: input };
+        save.addEventListener("click", () => act(save, "Setting the owners of " + a.name,
+            () => admin(["owners", a.name, ...input.value.split(/\s+/).filter(Boolean)]).then(() => { k.dirty = false })
+                .finally(() => { save.disabled = false })));
+        return k;
+    });
     return el("div", { id: "owners" },
         el("h3", null, "Owners"),
         el("p", { class: "muted" }, owners.length
             ? "Besides the servers' approvers, " + owners.join(", ") + " may approve this agent's calls, and are mailed about them."
             : "No owners: the servers' approvers decide this agent's calls. Owners (user:NAME, group:NAME, role:NAME, remote-user:SUB, " +
               "remote-group:NAME) may approve them too."),
-        el("div", { class: "actions" }, input, save));
+        ed.node);
+}
+
+/* keptEditor is an editor kept across the tab's refreshes, which rebuild
+ * the agent's view every few seconds: while it is open (a <details>) or
+ * holds changes not yet saved, a refresh reuses it as it is. Otherwise each
+ * render gets a new one with the current value: one element cannot be in
+ * two renders, and with slow commands two may overlap. make returns
+ * {node, field}; a save that went through sets dirty to false. */
+const keptEditors = new Map();
+
+function keptEditor(key, current, make) {
+    const old = keptEditors.get(key);
+    if (old && (old.dirty || old.node.open)) return old;
+    const k = make();
+    k.dirty = false;
+    k.field.addEventListener("input", () => { k.dirty = true });
+    k.field.value = current;
+    keptEditors.set(key, k);
+    return k;
 }
 
 /* The host's enablement state (CONTRACT.md §6b): which task categories it
