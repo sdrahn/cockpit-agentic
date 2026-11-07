@@ -35,6 +35,14 @@ removed.
 
 ### Added
 
+- OpenShell agents reach mcp-gateway by the host's own name, so an
+  official TLS certificate covers them (#131). The user guide (chapter
+  11) recommends it; `host.openshell.internal` with a private CA remains
+  for test systems. `agent-admin check`, `create` and `edit` note an
+  OpenShell agent by that alias, a gateway name that resolves to a
+  loopback address (which OpenShell's proxy never connects to) or not at
+  all, and a `gateway.url` other than the gateway's `http.audience`;
+  Cockpit's **Check** shows the notes.
 - The site's identity provider issues OpenShell agents' tokens (#111):
   `agent-admin idp-client NAME` says what the agent's OAuth client must
   be, from the gateway's own settings, and with `--keycloak` prints a

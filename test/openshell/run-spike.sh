@@ -9,8 +9,14 @@
 # mcp-gateway checkout built with `make build` (MCPGW_SRC), and the user
 # whose local OpenShell gateway it is (OPENSHELL_GATEWAY_USER).
 #
-# Usage: MCPGW_SRC=DIR OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --disposable [--results DIR]
-#        OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --system --disposable [--results DIR]
+# Usage: MCPGW_SRC=DIR OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --disposable [--gateway-host name|alias] [--results DIR]
+#        OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --system --disposable [--gateway-host name|alias] [--results DIR]
+#
+# --gateway-host: the name the agent reaches the gateway by (#131). name
+# (the default): a host name of its own, custos-gw.test, which resolves to
+# the host's network address (/etc/hosts), as a host's DNS name does in a
+# deployment with an official certificate. alias: host.openshell.internal,
+# the sandbox's name for the host's loopback.
 #
 # --system: on a system with the packages installed (custos, custos-selinux,
 # custos-tests, mcp-gateway), e.g. the Leap 16 VM with SELinux enforcing
@@ -28,18 +34,20 @@
 # credentials grant and renews them while the agent runs.
 set -u
 here=$(cd "$(dirname "$0")/../.." && pwd)
-disposable= results= system=
+disposable= results= system= gateway_host=name
 while [ $# -gt 0 ]; do
 	case $1 in
 	--disposable) disposable=1 ;;
 	--results) results=${2:?}; shift ;;
 	--system) system=1 ;;
-	*) echo "usage: $0 [--system] --disposable [--results DIR]" >&2; exit 2 ;;
+	--gateway-host) gateway_host=${2:?}; shift ;;
+	*) echo "usage: $0 [--system] --disposable [--gateway-host name|alias] [--results DIR]" >&2; exit 2 ;;
 	esac
 	shift
 done
 [ -n "$disposable" ] || { echo "$0: installs agents, units and users on this system; use --disposable" >&2; exit 2; }
 [ "$(id -u)" = 0 ] || { echo "$0: runs as root" >&2; exit 2; }
+case $gateway_host in name | alias) ;; *) echo "$0: --gateway-host name or alias" >&2; exit 2 ;; esac
 work=$(mktemp -d)
 t0=$(date +%s)
 failed=0
@@ -129,21 +137,33 @@ section "Model on the host"
 systemd-run --unit=osh-fakemodel /usr/libexec/custos/tests/fakemodel --listen 0.0.0.0:8008 >/dev/null
 
 section "mcp-gateway on the host (HTTPS)"
-# The agent reaches the host as host.openshell.internal (OpenShell's
-# Docker driver: the host's loopback), so that is the certificate's name
-# and the gateway's audience.
-aud=https://host.openshell.internal:18443/mcp
+# The name the agent reaches the gateway by, the certificate's name and
+# the gateway's audience (#131). By name: a host name of its own for the
+# host's network address, which OpenShell's proxy (in the host's network)
+# resolves and connects to; the gateway listens on every address. By the
+# alias: host.openshell.internal, which OpenShell maps to the host.
+if [ "$gateway_host" = name ]; then
+	gw_host=custos-gw.test
+	host_ip=$(ip -4 route get 192.0.2.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')
+	sed -i '/# custos run-spike.sh$/d' /etc/hosts
+	echo "$host_ip $gw_host # custos run-spike.sh" >>/etc/hosts
+	check "$gw_host resolves to the host's network address ($host_ip)" bash -c \
+		"[ -n '$host_ip' ] && getent ahostsv4 $gw_host | grep -q '^$host_ip ' && ! getent ahostsv4 $gw_host | grep -q '^127\.'"
+else
+	gw_host=host.openshell.internal
+fi
+aud=https://$gw_host:18443/mcp
 issuer=http://127.0.0.1:18445
 mkdir -p "$work/gw/servers.d" "$work/gw/rbac" "$work/tls" /run/mcp-gateway
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 -subj /CN=custos-test-ca \
 	-addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign \
 	-keyout "$work/tls/ca.key" -out "$work/tls/ca.pem" 2>/dev/null
-openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj /CN=host.openshell.internal \
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj "/CN=$gw_host" \
 	-keyout "$work/tls/key.pem" -out "$work/tls/req.pem" 2>/dev/null
-printf 'subjectAltName=DNS:host.openshell.internal,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' >"$work/tls/ext.cnf"
+printf 'subjectAltName=DNS:%s,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' "$gw_host" >"$work/tls/ext.cnf"
 openssl x509 -req -in "$work/tls/req.pem" -CA "$work/tls/ca.pem" -CAkey "$work/tls/ca.key" -CAcreateserial -days 2 \
 	-extfile "$work/tls/ext.cnf" -out "$work/tls/cert.pem" 2>/dev/null
-check "the gateway's certificate names host.openshell.internal" bash -c "openssl x509 -in '$work/tls/cert.pem' -noout -ext subjectAltName | grep -q DNS:host.openshell.internal"
+check "the gateway's certificate names $gw_host (no other name)" bash -c "openssl x509 -in '$work/tls/cert.pem' -noout -ext subjectAltName | grep -q 'DNS:$gw_host, IP'"
 
 # agent-sb's OAuth client; its tokens live 90 s, so the agent outlives one.
 head -c 24 /dev/urandom | base64 | tr -d '/+=' >"$work/client-secret"
@@ -206,7 +226,7 @@ else
 	systemd-run --unit=osh-mcp-gateway "$gw_bin" --config "$work/gw/gateway.yaml" >/dev/null
 fi
 check "the gateway's HTTPS listener refuses a request without a token (401)" eventually 30 bash -c \
-	"curl -s -o /dev/null -w '%{http_code}' --cacert '$work/tls/ca.pem' --resolve host.openshell.internal:18443:127.0.0.1 -X POST $aud | grep -qx 401" ||
+	"curl -s -o /dev/null -w '%{http_code}' --cacert '$work/tls/ca.pem' --resolve $gw_host:18443:127.0.0.1 -X POST $aud | grep -qx 401" ||
 	journalctl -u "$gw_unit" -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
 check "the gateway takes the test server" eventually 30 bash -c "curl -s --unix-socket '$gw_ctl' http://localhost/v1/servers | grep -q custos-test"
 check "the issuer gives agent-sb's client a token" bash -c \
@@ -277,6 +297,17 @@ export CUSTOS_OPENSHELL_IMAGE=$img
 # Rootless Podman: the relay's log source reads the user's containers.
 [ "$runtime" = podman ] && export CUSTOS_OPENSHELL_USER=$osh_user
 check "agent-admin create sb (openshell)" agent-admin create sb --from "$work/sb.yaml"
+# #131: no note by the host's name (it resolves to a network address and
+# is the gateway's audience); the alias's note says what an official
+# certificate needs.
+gwcfg=()
+[ -n "$system" ] || gwcfg=(--gateway-config "$work/gw/gateway.yaml")
+if [ "$gateway_host" = name ]; then
+	check "agent-admin check sb: no note on the gateway's name" bash -c "! agent-admin check sb | grep -q 'note: gateway.url'"
+else
+	check "agent-admin check sb: the note on host.openshell.internal and the certificate" bash -c \
+		"agent-admin check sb | grep -q 'note: gateway.url $aud: the sandbox reaches the gateway as host.openshell.internal'"
+fi
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' >"$work/perms.yaml"
 check "agent-admin permissions sb (supervised: change needs an approval)" agent-admin permissions sb <"$work/perms.yaml"
 check "the sandbox policy is written" test -s /etc/custos/agents/sb/openshell-policy.yaml
@@ -284,8 +315,6 @@ check "the provider profile is imported" eventually 10 bash -c 'openshell -g ope
 # #111: the client's tokens checked before OpenShell gets the secret. The
 # installed gateway's settings as the gateway reads them (its listener is
 # a gateway.d drop-in), else the spike's own gateway's file.
-gwcfg=()
-[ -n "$system" ] || gwcfg=(--gateway-config "$work/gw/gateway.yaml")
 idp=$(agent-admin idp-client sb "${gwcfg[@]}")
 check "agent-admin idp-client sb: its client id" grep -qF 'client id     agent-sb' <<<"$idp"
 check "agent-admin idp-client sb: the gateway's audience" grep -qF "$aud" <<<"$idp"
@@ -450,6 +479,7 @@ check "the relay is back" systemctl is-active -q agent-openshell@sb.socket
 
 section Removing
 check "agent-admin delete sb" agent-admin delete sb
+sed -i '/# custos run-spike.sh$/d' /etc/hosts
 check "the sandbox is gone" eventually 60 not osh sandbox get agent-sb
 if [ -n "$system" ]; then
 	section SELinux
