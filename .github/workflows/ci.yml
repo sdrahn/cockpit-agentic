@@ -44,6 +44,36 @@ jobs:
 
   # The Cockpit page (cockpit/custos) in a headless browser, against a
   # stub of cockpit.js with fixtures.
+  # A real Keycloak as the site's IdP (#111): the client agent-admin
+  # idp-client --keycloak makes, and check-token's token against it.
+  keycloak:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Keycloak
+        run: |
+          docker run -d --name kc -p 127.0.0.1:8180:8080 \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+            quay.io/keycloak/keycloak:26.0.7 start-dev
+          for i in $(seq 120); do
+            curl -sf http://127.0.0.1:8180/realms/master >/dev/null && break
+            sleep 2
+          done
+          docker exec kc /opt/keycloak/bin/kcadm.sh config credentials \
+            --server http://localhost:8080 --realm master --user admin --password admin
+      - name: idp-client --keycloak and check-token
+        env:
+          KEYCLOAK_URL: http://127.0.0.1:8180
+          KCADM: docker exec -i kc /opt/keycloak/bin/kcadm.sh
+        run: go test -tags keycloak -count=1 -v -run TestKeycloak ./internal/admin/
+      - name: Keycloak's log
+        if: failure()
+        run: docker logs kc 2>&1 | tail -100
+
   cockpit:
     runs-on: ubuntu-24.04
     steps:

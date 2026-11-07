@@ -181,30 +181,75 @@ The token must not map the agent to a person's local account: the
 gateway maps a token to a local user only for persons' accounts and
 refuses system accounts, so an agent's subject stays `agent-<name>`.
 
+`agent-admin idp-client NAME` prints what the agent's client must be at
+your provider: its client id (`gateway.oauth.client_id`, or
+`agent-NAME`), the grant, and the claims above with the values of this
+host's `/etc/mcp-gateway/gateway.yaml`. It also says whether the issuer
+is listed for agents yet ([step 6](#issuers)).
+
 ### Keycloak {#keycloak}
 
 In the realm the gateway's `http.issuer` names (mcp-gateway user guide,
-chapter 15, sets one up for people):
+chapter 15, sets one up for people), `agent-admin idp-client NAME
+--keycloak` prints a script that creates the agent's client with
+Keycloak's admin CLI, `kcadm.sh`. Run it where `kcadm.sh` is logged in
+to the realm's Keycloak with a user that may manage clients:
 
-1. **A client scope for the gateway's audience**, if the realm has none:
-   *Client scopes* → *Create client scope*, name `mcp-agents`, type
-   *Default*, *Include in token scope* on. In it, *Mappers* → *Audience*:
-   *Included Custom Audience* `https://host.openshell.internal:8443/mcp`,
-   *Add to access token* on.
-2. **One client per agent**: *Clients* → *Create client*, client ID
-   `agent-patch-pilot`; *Client authentication* on, *Service accounts
-   roles* on, *Standard flow* and *Direct access grants* off.
-3. Its *Client scopes*: add `mcp-agents` as *Default*.
-4. **The subject**: in `agent-patch-pilot-dedicated` → *Configure a new
-   mapper* → *Hardcoded claim*: *Token Claim Name* `sub`, *Claim value*
-   `agent-patch-pilot`, *Claim JSON Type* String, *Add to access token*
-   on. Without it, Keycloak's `sub` is the service account's id.
-5. *Credentials*: copy the **client secret** for step 8.
-6. *Advanced* → *Access Token Lifespan*: for example 5 minutes.
+```bash
+agent-admin idp-client patch-pilot --keycloak >patch-pilot-client.sh
+less patch-pilot-client.sh                     # read it first
+kcadm.sh config credentials --server https://idp.example.com --realm master --user admin
+bash patch-pilot-client.sh >client-secret.txt  # KCADM=/path/to/kcadm.sh if it is not in PATH
+```
 
-Check a token before going on ([step 9](#check)): Keycloak's handling
-of a hardcoded `sub` depends on its version, and the gateway must see
-`sub: agent-patch-pilot`.
+The script
+
+1. creates a client scope for each scope of `http.scopes` that the realm
+   lacks (*Include in token scope* on);
+2. creates the client `agent-patch-pilot`: *Client authentication* and
+   *Service accounts roles* on, *Standard flow*, *Direct access grants*
+   and *Implicit flow* off, *Full scope allowed* off, *Access Token
+   Lifespan* 5 minutes;
+3. gives it two mappers: a *Hardcoded claim* `sub` = `agent-patch-pilot`
+   (without it, Keycloak's `sub` is the service account's id) and an
+   *Audience* with the gateway's `http.audience`;
+4. removes the realm's other default client scopes from the client
+   (Keycloak 26's `basic` maps the service account's id to `sub`) and
+   adds the scopes of `http.scopes` as *Default*;
+5. prints the client's secret, the only thing on its standard output:
+   `client-secret.txt` is the secret for [step 8](#credential); keep it
+root's (`chmod 600`) and delete it once it is set.
+
+It stops at the first error; if the client exists already, `kcadm.sh`
+refuses to create it again: delete it (`kcadm.sh delete clients/ID -r
+REALM`) or change it in the admin console. The same settings by hand in
+the admin console: *Clients* → *Create client* with the settings of 2,
+then in *Client scopes* → `agent-patch-pilot-dedicated` the two mappers
+of 3, and in *Client scopes* the scopes of 4.
+
+Once the agent is created ([step 8](#credential)), check the client
+with a real token before giving OpenShell its secret:
+
+```console
+# agent-admin check-token patch-pilot < client-secret.txt
+ok   iss https://idp.example.com/realms/mcp
+ok   the issuer is listed for agents (/etc/mcp-gateway/policy/agents/_http.yaml)
+ok   sub agent-patch-pilot
+ok   aud includes https://host.openshell.internal:8443/mcp
+ok   scope mcp-agents
+ok   exp in 4m59s
+ok   no preferred_username (the gateway's local_user_claim)
+agent patch-pilot's token is what the gateway expects
+```
+
+`check-token` gets a token as OpenShell will: the client credentials
+grant at `gateway.oauth.token_url`, with its client id and scopes and
+the secret from standard input. It checks the token's claims against the
+gateway's `http` settings and `_http.yaml`. A `FAIL` line says what is
+wrong and, where it knows, how to fix it at the provider; the command
+then exits 1. It does not check the token's signature, which the gateway
+does with the issuer's keys. It works with any provider, not only
+Keycloak.
 
 ### Other identity providers and a static token {#other-idp}
 
@@ -221,9 +266,11 @@ production.
 CI runs this backend with real OpenShell, on Docker and on rootless
 Podman with SELinux enforcing. It uses mcp-gateway's HTTPS listener and
 the test issuer: tokens minted and renewed by OpenShell with the client
-credentials grant, calls under the agent's mode and approvals. A
-production identity provider such as Keycloak is not part of those
-tests (contract open item O10).
+credentials grant, calls under the agent's mode and approvals. A further
+CI job runs a real Keycloak (26): the script of `agent-admin idp-client
+--keycloak` creates an agent's client in a new realm, and `agent-admin
+check-token` gets a token with its secret that has every claim the
+gateway relies on.
 
 ## Step 6: the gateway trusts the issuer for agents {#issuers}
 
@@ -287,6 +334,7 @@ sandbox: {kind: openshell, openshell_gateway: openshell}
 export CUSTOS_OPENSHELL_USER=osh                       # rootless Podman (step 1)
 agent-admin create patch-pilot --from patch-pilot.yaml
 agent-admin permissions patch-pilot < perms.yaml
+agent-admin check-token patch-pilot < client-secret.txt   # step 5: the token has what the gateway needs
 agent-admin set-credential patch-pilot gateway-client-secret < client-secret.txt
 ```
 
@@ -329,8 +377,10 @@ journalctl -u mcp-gateway.service -o cat --since -10min | grep '"audit":true' | 
 ```
 
 The gateway's records show `"sub":"agent-patch-pilot"` and the issuer.
-To see what the gateway makes of a token, fetch one with the client's
-secret and ask the gateway:
+
+`agent-admin check-token NAME < secret` ([step 5](#keycloak)) checks
+the client's tokens without the gateway. To see what the gateway itself makes
+of a token, fetch one with the client's secret and ask the gateway:
 
 ```bash
 curl -s https://idp.example.com/realms/mcp/protocol/openid-connect/token \

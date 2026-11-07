@@ -35,6 +35,14 @@ removed.
 
 ### Added
 
+- The site's identity provider issues OpenShell agents' tokens (#111):
+  `agent-admin idp-client NAME` says what the agent's OAuth client must
+  be, from the gateway's own settings, and with `--keycloak` prints a
+  `kcadm.sh` script that creates it (subject `agent-<name>`, the
+  gateway's audience and scopes, 5-minute tokens, without the realm's
+  default client scopes). `agent-admin check-token NAME < secret` gets a
+  token with the client and checks each claim the gateway relies on,
+  before `set-credential`. CI runs both against a real Keycloak.
 - A second agent host for tests (#112): `test/vm/secondhost`, built from
   the contract alone, and conformance checks (`test/contract`) that it
   and the launcher pass; the functional and Cockpit tests use it as an

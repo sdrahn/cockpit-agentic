@@ -40,6 +40,8 @@ person behind `sudo` (`SUDO_USER`), else `USER`.
 | `agent-admin disable CATEGORY… \| --all` | disable task categories again; `--all`: back to diagnostics-only ([chapter 6](06-permissions-and-modes.md#diagnostics-only)) |
 | `agent-admin diagnostics-only` | make a freshly installed host diagnostics-only (the installer's setup runs it) |
 | `agent-admin set-credential NAME CRED < secret` | store a secret for it |
+| `agent-admin idp-client NAME [--keycloak]` | the OAuth client an OpenShell agent needs at the identity provider; `--keycloak`: a script that creates it ([chapter 11](11-openshell.md#idp)) |
+| `agent-admin check-token NAME < secret` | get a token with that client and check its claims as the gateway will ([chapter 11](11-openshell.md#keycloak)) |
 | `agent-admin credentials [NAME…]` | its credentials' names, what uses them and the missing ones, as JSON; never the values ([below](#credentials)) |
 | `agent-admin remove-credential NAME CRED [--force]` | remove a stored credential (`--force`: one its model uses) |
 | `agent-admin pause NAME`, `resume NAME` | hold it, let it go on |
