@@ -114,13 +114,16 @@ Both need access to the journal (`systemd-journal` or `wheel`).
 
 ## Agents tab {#agents}
 
-On a host that started diagnostics-only, **Task categories on this
-host** comes first: which categories are enabled and which are disabled
-(the gateway denies their calls), who changed it last, and a warning
-when the state was changed outside agent-admin. **Enable…** enables the
-ones you pick, after a confirmation (`agent-admin enable`, with
-administrative access); they start supervised, and there is no way back
-([chapter 6](06-permissions-and-modes.md#diagnostics-only)). In an
+**Task categories on this host** comes first: which categories are
+enabled and which are disabled (the gateway denies their calls), who
+changed it last, and a warning when the state was changed outside
+agent-admin. On a host installed with the full capability every
+category is enabled. **Enable…** enables the ones you pick, after a
+confirmation (`agent-admin enable`, with administrative access); they
+start supervised. **Disable…** disables the ones you pick, or returns
+the host to diagnostics-only (`agent-admin disable`); while an agent
+still uses a category it is refused, and the form shows what is in the
+way ([chapter 6](06-permissions-and-modes.md#diagnostics-only)). In an
 agent's *Task categories*, a disabled category is marked *disabled on
 this host* and has no **Promote…**.
 

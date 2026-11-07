@@ -638,13 +638,32 @@ record `categories.enabled` (§10) with the person, the state before and
 after, and the state's digest. A newly enabled category starts
 `supervised` with no envelope (§6a): the result is the same agent data
 and gateway behaviour as an installation of the broader capability with
-those categories enabled, which a release-gate test compares. Going
-back to `diagnostics-only` is not part of version 1 (O16).
+those categories enabled, which a release-gate test compares.
 
-**Tampering shows.** Only `agent-admin enable` changes the state, and
+**Disabling** is the way back (#110):
+
+```
+agent-admin disable CATEGORY… | --all
+```
+
+It runs as root and records `categories.disabled` (§10) with the same
+fields. `--all` returns the host to `diagnostics-only`: every category
+but `diagnostics`, and permissions without a category. On a host
+without a state (every category enabled) it writes one: every category
+of the catalog but those disabled. It refuses, naming what is in the
+way and recording `category.refused` (`AGENT_REASON` `disable` or
+`disable --all`), while an agent has a permission in a category it
+disables (for `--all`: any permission outside `diagnostics`) or has
+such a category promoted: the administrator removes the permissions
+(`agent-admin permissions`) and demotes (`agent-admin demote`) first,
+so that each step is recorded on its own. A disabled category's
+readiness history stays; enabling it again starts it supervised.
+
+**Tampering shows.** Only `agent-admin enable` and `disable` change the state, and
 each change records the SHA-256 of `state` and `enabled` (JSON, sorted
 keys). `agent-admin show` and the control plane compare the data in
-force with the last enablement record and report a state that was
+force with the last enablement record (`categories.enabled` or
+`categories.disabled`) and report a state that was
 changed without one; only a record root wrote counts (§10, trusted
 records). On one host root can still edit any file; sealing
 the state (for instance to the TPM) is open (O16).
@@ -904,10 +923,10 @@ calls between categories or add incidents.
 
 **Diagnostics and enablement records** (§4a, §6b; draft, O16). The host
 writes `diagnosis.report` with the agent's fields; `agent-admin` writes
-`diagnosis.feedback`, `categories.enabled`, `category.refused` and
-`event.skipped` with
+`diagnosis.feedback`, `categories.enabled`, `categories.disabled`,
+`category.refused` and `event.skipped` with
 `SYSLOG_IDENTIFIER=custos-promotion`, `AGENT_CONTRACT`, `AGENT_NAME` (empty
-for `categories.enabled`, which is the host's) and these added fields:
+for `categories.enabled` and `categories.disabled`, which are the host's) and these added fields:
 
 | Field | Value |
 |---|---|
@@ -916,9 +935,9 @@ for `categories.enabled`, which is the host's) and these added fields:
 | `AGENT_INVOCATION` | `diagnosis.report`, `diagnosis.feedback`: the activity whose report it is |
 | `AGENT_FEEDBACK` | `diagnosis.feedback`: `{"hypotheses": {"h1": "confirmed"}, "plan": "useful", "executed": true, "comment": "…"}` |
 | `AGENT_BY` | the person |
-| `AGENT_ENABLEMENT_FROM`, `AGENT_ENABLEMENT_TO` | `categories.enabled`: the state before and after, as JSON (`{"state", "enabled"}`) |
-| `AGENT_ENABLEMENT_SHA256` | `categories.enabled`: the digest of the state after (§6b) |
-| `AGENT_ENABLEMENT` | `categories.enabled`: the record's id (`n-…`), also in the data's `record` |
+| `AGENT_ENABLEMENT_FROM`, `AGENT_ENABLEMENT_TO` | `categories.enabled`, `categories.disabled`: the state before and after, as JSON (`{"state", "enabled"}`) |
+| `AGENT_ENABLEMENT_SHA256` | `categories.enabled`, `categories.disabled`: the digest of the state after (§6b) |
+| `AGENT_ENABLEMENT` | `categories.enabled`, `categories.disabled`: the record's id (`n-…`), also in the data's `record` |
 | `AGENT_CATEGORY`, `AGENT_REASON` | `category.refused`: the disabled category, and what was refused (`permissions`, `promote`, `create --template patch-pilot`) |
 | `AGENT_ORIGIN_EVENT`, `AGENT_ORIGIN_BY`, `AGENT_REASON` | `event.skipped`: an event (§14) that started no activity: the event, `unit-failure:<unit>`, and why (its activity for the unit still runs, the minimum interval, or the agent refused) |
 
@@ -927,6 +946,7 @@ for `categories.enabled`, which is the host's) and these added fields:
 | `diagnosis.report` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a670` |
 | `diagnosis.feedback` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a671` |
 | `categories.enabled` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a672` |
+| `categories.disabled` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a675` |
 | `category.refused` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a673` |
 | `event.skipped` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a674` |
 
@@ -1337,7 +1357,8 @@ standard error:
 | `remove-credential NAME CRED [--force]` | removes a stored credential; the one `model.credential` names only with `--force`. Refuses `gateway-token` and `gateway-client-secret`, which OpenShell holds |
 | `pause NAME`, `resume NAME` | §8 (gateway data and `/v1/pause`) |
 | `enable CATEGORY… \| --all` | enables task categories on a `diagnostics-only` or partly enabled host (§6b): writes `_enablement.yaml` and the record `categories.enabled`, and returns once the gateway's OPA has loaded it. The categories start supervised. Refuses a category not in the catalog |
-| `diagnostics-only` | makes a fresh host `diagnostics-only` (§6b): the bundled install's step, which `custos-setup` runs (§17a). Refuses a host with enablement data (there is no way back in version 1) and one with an agent that has a permission outside `diagnostics` |
+| `disable CATEGORY… \| --all` | disables task categories again (§6b, #110); `--all` returns the host to `diagnostics-only`. Writes `_enablement.yaml` and the record `categories.disabled`. Refused, naming what is in the way, while an agent has a permission in a category it disables or has one promoted; `diagnostics` is never disabled |
+| `diagnostics-only` | makes a fresh host `diagnostics-only` (§6b): the bundled install's step, which `custos-setup` runs (§17a). Refuses a host with enablement data (`disable --all` is the way back there) and one with an agent that has a permission outside `diagnostics` |
 | `feedback NAME ACTIVITY [--hypothesis ID=confirmed\|rejected\|unsure…] [--plan useful\|not_useful] [--executed] [--comment TEXT]` | feedback on an activity's report (§4a), recorded as `diagnosis.feedback` with the person |
 | `playbooks` | the playbooks (§14c), as JSON: `{"<playbook>": {"title", "description", "needs"?, "steps": [{"tool", "why", "optional"?}], "look_for", "file", "error"?}}`, where `error` says why a file cannot be used. Needs no root |
 | `stop-all`, `release-all` | the emergency stop (§8) and its end. `release-all` starts again the agents' sockets and schedule timers that are enabled: what an administrator disabled stays stopped. Both record who (`_control.by`: the person behind `sudo`, `SUDO_USER`, else `USER`) and when (`at`) |
@@ -1529,7 +1550,7 @@ inherited, not specified again.
 | A "diagnostics-only" enablement state in which only `diagnostics` is usable, enforced by the runtime, not by files an administrator edits | §6b | done: the gateway denies and hides disabled categories (tested with OPA and on the gateway); `agent-admin` refuses to load them; a state changed by hand is reported; sealing open (O16) |
 | Release-gate test: other categories refused in diagnostics-only | §6b, §19 | done: the functional tests' section "Diagnostics-only (release gate)", on every VM run and in the air-gapped gate |
 | Attempts to use a disabled category recorded | §6b, §10 | done: the gateway's audit (calls), `category.refused` (loading) |
-| Enabling more categories: one documented, authenticated, logged action; the result identical to a broader install with them | §6b, §17 | done: `agent-admin enable` (in Cockpit **Enable…**, which also shows the state and marks disabled categories), `categories.enabled`; the gate compares the gateway's decisions with a host without enablement state |
+| Enabling more categories: one documented, authenticated, logged action; the result identical to a broader install with them | §6b, §17 | done: `agent-admin enable` (in Cockpit **Enable…**, which also shows the state and marks disabled categories), `categories.enabled`; the gate compares the gateway's decisions with a host without enablement state. The way back, `agent-admin disable` (**Disable…**), `categories.disabled`, done (#110) |
 | Enabled categories start supervised | §6a, §6b | done (§6a); nothing new needed |
 | The diagnostics history as trust evidence for promotion | §4a, §6a, §6b | done: `agent-admin readiness` and the Cockpit readiness view show the reports, their verified quotes and root's feedback on them; on a host that started diagnostics-only they are readiness thresholds (reports with feedback, confirmed share), so `promote` follows them |
 | The bundled health-check and diagnostics agent | §14a, §17a, §20b | done: the template `health-check` (every playbook's tools, read-only in `diagnostics`, supervised, with daily and weekly playbook schedules), which `custos-setup` creates; both tested on a diagnostics-only host in the functional tests |
@@ -1716,7 +1737,7 @@ inherited, not specified again.
   readiness (§6b); `custos-setup` and the package `custos-diagnostics`
   (§17a), tested on a fresh host in the functional tests; the reason in
   the gateway's audit for a denial ("task category … is not enabled on
-  this host", §6), with mcp-gateway's R1. Open: sealing the enablement
-  state against root (the TPM, say); going back to `diagnostics-only`
-  (one way is enough for now). Sealing the state is not needed for
-  0.3.0 (detection is enough).
+  this host", §6), with mcp-gateway's R1; the way back, `agent-admin
+  disable` and `disable --all` (#110). Open: sealing the enablement
+  state against root (the TPM, say; #109). Sealing the state is not
+  needed for 0.3.0 (detection is enough).

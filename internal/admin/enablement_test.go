@@ -250,3 +250,123 @@ func TestTemplateOfDisabledCategoryRefused(t *testing.T) {
 		t.Errorf("records %+v", rec)
 	}
 }
+
+// disable is the way back from enable (#110): refused while an agent has
+// permissions in the category or has it promoted; then the gateway data
+// lists every other category, the change is recorded, and enable undoes
+// it. --all returns to diagnostics-only, once only diagnostics is used.
+func TestDisable(t *testing.T) {
+	a, mem := withCategories(t) // every category enabled; patch-pilot has patch-errata and config-lifecycle
+	for _, c := range []struct {
+		cats []string
+		all  bool
+		want string
+	}{
+		{nil, false, "name the categories"},
+		{[]string{"no-such"}, false, "no-such"},
+		{[]string{Diagnostics}, false, "always enabled"},
+	} {
+		if err := a.Disable("alice", c.cats, c.all); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%v: %v, want %q", c.cats, err, c.want)
+		}
+	}
+	err := a.Disable("alice", []string{"patch-errata"}, false)
+	if err == nil || !strings.Contains(err.Error(), "agent patch-pilot has permissions in patch-errata (agent-admin permissions patch-pilot)") {
+		t.Fatalf("with a permission in it: %v", err)
+	}
+	if r := records(mem, journal.CategoryRefused); len(r) != 1 || r[0].Fields["CATEGORY"] != "patch-errata" || r[0].Fields["REASON"] != "disable" || r[0].Fields["BY"] != "alice" {
+		t.Errorf("category.refused %+v", r)
+	}
+	if e, _ := a.GetEnablement(); e != nil {
+		t.Errorf("a refused disable wrote %+v", e)
+	}
+
+	// Promoted, without the permission: still refused, until demoted.
+	if err := promote(a, "patch-errata", sat); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetPermissions("patch-pilot", strings.NewReader("- {server: systemd, tool: restart_unit, category: config-lifecycle}\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Disable("alice", []string{"patch-errata"}, false); err == nil || !strings.Contains(err.Error(), "has patch-errata promoted (agent-admin demote patch-pilot patch-errata)") {
+		t.Fatalf("promoted: %v", err)
+	}
+	if err := a.Demote("patch-pilot", "patch-errata", "alice", "going back"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Disable("alice", []string{"patch-errata"}, false); err != nil {
+		t.Fatal(err)
+	}
+	e, _ := a.GetEnablement()
+	cats, _ := a.Categories()
+	if e == nil || e.State != SomeCategories || len(e.Enabled) != len(cats)-1 || e.Usable("patch-errata") || !e.Usable("config-lifecycle") || !e.Usable("") {
+		t.Fatalf("after disable: %+v", e)
+	}
+	rec := records(mem, journal.CategoriesDisabled)
+	if len(rec) != 1 || rec[0].Fields["ENABLEMENT"] != e.Record || rec[0].Fields["ENABLEMENT_SHA256"] != e.Digest() ||
+		rec[0].Fields["BY"] != "alice" || rec[0].Fields["ENABLEMENT_FROM"] != `{"state":"","enabled":"all"}` || !strings.Contains(rec[0].Message, "patch-errata") {
+		t.Errorf("categories.disabled %+v", rec)
+	}
+	// Disabled now: refused as any disabled category; enable undoes it.
+	if err := a.SetPermissions("patch-pilot", strings.NewReader("- {server: zypp, tool: patch, category: patch-errata}\n")); err == nil {
+		t.Error("a permission in a disabled category")
+	}
+	if err := a.Disable("alice", []string{"patch-errata"}, false); err == nil || !strings.Contains(err.Error(), "not enabled") {
+		t.Errorf("twice: %v", err)
+	}
+	if err := a.Enable("alice", []string{"patch-errata"}, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// --all: diagnostics-only, once the agent has only diagnostics.
+	if err := a.Disable("alice", nil, true); err == nil || !strings.Contains(err.Error(), "permissions in config-lifecycle") {
+		t.Fatalf("--all with other permissions: %v", err)
+	}
+	if err := a.SetPermissions("patch-pilot", strings.NewReader(diagPerms)); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Disable("alice", nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := a.GetEnablement(); e.State != DiagnosticsOnly || strings.Join(e.Enabled, ",") != Diagnostics || e.Usable("") {
+		t.Errorf("after --all: %+v", e)
+	}
+	if err := a.Disable("alice", []string{"patch-errata"}, false); err == nil || !strings.Contains(err.Error(), "diagnostics-only already") {
+		t.Errorf("on diagnostics-only: %v", err)
+	}
+	// And forward again, as from the bundled install.
+	if err := a.Enable("alice", []string{"patch-errata"}, false); err != nil {
+		t.Errorf("enable after going back: %v", err)
+	}
+}
+
+// A state disable wrote is root's, recorded: show does not call it
+// tampered.
+func TestDisableRecordNotTampered(t *testing.T) {
+	a, mem := diagnosticsHost(t)
+	if err := a.Enable("alice", []string{"patch-errata"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Disable("alice", []string{"patch-errata"}, false); err != nil {
+		t.Fatal(err)
+	}
+	var asked []string
+	a.JournalJSON = func(args ...string) ([]byte, error) {
+		asked = args
+		var out []string
+		for _, ev := range []string{journal.CategoriesEnabled, journal.CategoriesDisabled} {
+			for _, r := range records(mem, ev) {
+				b, _ := json.Marshal(map[string]string{"_UID": "0", "AGENT_ENABLEMENT": r.Fields["ENABLEMENT"], "AGENT_ENABLEMENT_SHA256": r.Fields["ENABLEMENT_SHA256"]})
+				out = append(out, string(b))
+			}
+		}
+		return []byte(strings.Join(out, "\n")), nil
+	}
+	p, err := a.Show()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Enablement.Tampered != "" || !strings.Contains(strings.Join(asked, " "), "AGENT_EVENT="+journal.CategoriesDisabled) {
+		t.Errorf("tampered %q, asked %v", p.Enablement.Tampered, asked)
+	}
+}

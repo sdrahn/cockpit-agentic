@@ -35,6 +35,8 @@ const usage = `usage: agent-admin COMMAND …
   remove-credential NAME CRED [--force]  remove a stored credential (--force: one its model uses)
   enable CATEGORY… | --all               enable task categories on a diagnostics-only host (CONTRACT.md §6b);
                                          they start supervised
+  disable CATEGORY… | --all              disable task categories again; --all: back to diagnostics-only.
+                                         Refused while an agent has permissions in them or one promoted
   diagnostics-only                       make a fresh host diagnostics-only (the bundled install, custos-setup)
   mode NAME advisory|supervised|bounded  set the autonomy mode (enforced by mcp-gateway)
   owners NAME [RULE…]                    who may approve its calls besides the servers' approvers
@@ -177,6 +179,14 @@ func run(a *admin.Admin, args []string) error {
 			}
 		}
 		return a.Enable(by(), cats, has("--all"))
+	case "disable":
+		var cats []string
+		for _, x := range args {
+			if x != "--all" {
+				cats = append(cats, x)
+			}
+		}
+		return a.Disable(by(), cats, has("--all"))
 	case "diagnostics-only":
 		return a.InitDiagnosticsOnly(by())
 	case "mode":

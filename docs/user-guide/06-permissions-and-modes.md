@@ -168,18 +168,37 @@ tried).
 agent-admin show | jq .enablement     # the state: diagnostics-only, or the enabled categories
 agent-admin enable patch-errata       # enable one category (or several)
 agent-admin enable --all              # every category: the full capability
+agent-admin disable patch-errata      # disable one again (or several)
+agent-admin disable --all             # back to diagnostics-only
 ```
 
-`enable` is the one action out of diagnostics-only; in Cockpit it is
+`enable` is the action out of diagnostics-only; in Cockpit it is
 **Enable…** on the Agents tab ([chapter 8](08-cockpit.md#agents)). It needs root (sudo
 or Cockpit's administrative access) and is recorded with who ran it
 (`categories.enabled`). An enabled category starts supervised, as on a
 host installed with the full capability: promote it later on the path
 below. What the diagnostics agent did until then is the first evidence
-for that. There is no way back to diagnostics-only.
+for that.
+
+`disable` is the way back; in Cockpit it is **Disable…**. It turns
+categories off again, and `--all` returns the host to diagnostics-only
+(then permissions without a category are disabled too). On a host
+installed with the full capability it works as well: the host then has
+an enablement state, with every category but those you disabled. It is
+recorded (`categories.disabled`) like `enable`. It refuses while an
+agent still uses a category, and says which:
+
+```
+agent-admin: disable: still in use: agent patch-pilot has permissions in patch-errata (agent-admin permissions patch-pilot)
+```
+
+Take the category's permissions from the agent and demote it where it
+is promoted, then disable. Each step is recorded on its own. A disabled
+category keeps its readiness history; enabled again, it starts
+supervised.
 
 The state is `/etc/mcp-gateway/policy/agents/_enablement.yaml`. Change it
-only with `agent-admin enable`: `agent-admin show` compares it with its
+only with `agent-admin enable` and `disable`: `agent-admin show` compares it with its
 record in the journal and reports a state changed by hand
 (`"tampered": "the state differs from its record n-…"`). A host without
 the file (every host installed with the full capability) has every

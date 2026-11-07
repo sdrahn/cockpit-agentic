@@ -466,9 +466,10 @@ function ownersEditor(a, data) {
 }
 
 /* The host's enablement state (CONTRACT.md §6b): which task categories it
- * may use, from agent-admin show; Enable… runs agent-admin enable through
- * the root bridge. Only on a host that has a state: one installed with the
- * full capability uses every category. */
+ * may use, from agent-admin show; Enable… and Disable… run agent-admin
+ * enable and disable through the root bridge. A host installed with the
+ * full capability has no state: every category is enabled, and Disable…
+ * is the one change offered. */
 let catalog = null; // agent-admin categories, once read
 
 async function loadCatalog() {
@@ -482,33 +483,88 @@ async function loadCatalog() {
 }
 
 let enableForm = null; // kept across the tab's refreshes
+let disableForm = null;
 
 function renderEnablement() {
     const box = document.getElementById("enablement");
     const e = state.posture && state.posture.enablement;
-    box.hidden = !e;
-    if (!e) return;
+    box.hidden = !state.posture;
+    if (!state.posture) return;
     loadCatalog().then(cat => {
         const names = Object.keys(cat).sort();
         const disabled = names.filter(n => !categoryUsable(n));
-        const what = e.state === "diagnostics-only"
+        const enabled = names.filter(n => categoryUsable(n) && n !== "diagnostics");
+        const what = !e
+            ? "Every task category is enabled on this host (installed with the full capability). Disable… turns categories off again, or returns the host to diagnostics-only."
+            : e.state === "diagnostics-only"
             ? "This host is diagnostics-only: only the diagnostics category is usable. The other task categories are installed but disabled; the gateway denies their calls and does not show their tools."
-            : "This host started diagnostics-only; these task categories are enabled. The others are disabled: the gateway denies their calls.";
+            : "These task categories are enabled. The others are disabled: the gateway denies their calls.";
         const list = el("ul", { class: "enablement-list" }, names.map(n => el("li", { id: "enabled-" + n },
             el("span", { class: "badge " + (categoryUsable(n) ? "badge-ok" : "badge-bad") }, categoryUsable(n) ? "enabled" : "disabled"),
             " ", el("span", { class: "mono" }, n), el("span", { class: "muted" }, " " + ((cat[n] && cat[n].title) || "")))));
         const open = el("button", { class: "secondary" }, "Enable…");
         open.hidden = disabled.length === 0;
         if (!enableForm || enableForm.dataset.for !== disabled.join(",")) enableForm = enablementForm(disabled);
-        open.addEventListener("click", () => { enableForm.hidden = false });
+        open.addEventListener("click", () => { enableForm.hidden = false; disableForm.hidden = true });
+        const close = el("button", { class: "secondary", id: "disable-open" }, "Disable…");
+        close.hidden = enabled.length === 0;
+        if (!disableForm || disableForm.dataset.for !== enabled.join(",")) disableForm = disablementForm(enabled);
+        close.addEventListener("click", () => { disableForm.hidden = false; enableForm.hidden = true });
         box.replaceChildren(...nodes([
-            el("div", { class: "toolbar" }, el("h2", null, "Task categories on this host"), el("span", { class: "actions" }, open)),
+            el("div", { class: "toolbar" }, el("h2", null, "Task categories on this host"), el("span", { class: "actions" }, open, close)),
             el("p", null, what),
-            e.tampered ? el("p", { class: "error-text", id: "enablement-tampered" },
+            e && e.tampered ? el("p", { class: "error-text", id: "enablement-tampered" },
                 "The state was changed outside agent-admin: " + e.tampered + ". The gateway enforces what the file says now.") : null,
-            el("p", { class: "muted" }, "Changed by " + (e.changed_by || "?") + " (record " + (e.record || "none") + ")."),
-            list, enableForm]));
+            e ? el("p", { class: "muted" }, "Changed by " + (e.changed_by || "?") + " (record " + (e.record || "none") + ").") : null,
+            list, enableForm, disableForm]));
     });
+}
+
+/* disablementForm turns enabled categories off again (agent-admin disable,
+ * #110), or returns the host to diagnostics-only (disable --all).
+ * agent-admin refuses while an agent has permissions in a category or has
+ * it promoted, and says which: shown as it says it. */
+function disablementForm(enabled) {
+    const checks = enabled.map(n => ({ n, c: el("input", { type: "checkbox", value: n }) }));
+    const back = el("input", { type: "checkbox", name: "diagnostics-only" });
+    const note = el("span", { class: "muted" });
+    const go = el("button", { class: "danger" }, "Disable");
+    const cancel = el("button", { type: "button", class: "link" }, "Cancel");
+    const form = el("form", { class: "confirm enablement-edit", id: "disable-form", hidden: true },
+        el("h2", null, "Disable task categories?"),
+        el("p", null, "The gateway then denies the categories' calls and hides their tools. First take their permissions from " +
+           "the agents and demote them where promoted: agent-admin refuses while either remains, and says which. " +
+           "Enable… turns them on again; their readiness history stays. The change is recorded with your name."),
+        checks.map(({ n, c }) => el("label", null, c, " " + n)),
+        el("label", null, back, " Return to diagnostics-only: every category but diagnostics, and permissions without a category"),
+        el("div", { class: "actions" }, go, cancel, note));
+    form.dataset.for = enabled.join(",");
+    back.addEventListener("change", () => checks.forEach(x => { x.c.disabled = back.checked }));
+    cancel.addEventListener("click", () => { form.hidden = true; note.textContent = "" });
+    form.addEventListener("submit", async ev => {
+        ev.preventDefault();
+        const picked = checks.filter(x => x.c.checked).map(x => x.n);
+        if (!back.checked && picked.length === 0) {
+            note.className = "error-text";
+            note.textContent = "Pick a category, or return to diagnostics-only.";
+            return;
+        }
+        go.disabled = true;
+        note.className = "muted";
+        note.textContent = "Disabling…";
+        try {
+            await admin(back.checked ? ["disable", "--all"] : ["disable", ...picked]);
+            disableForm = null;
+            showError(null);
+        } catch (ex) {
+            note.className = "error-text";
+            note.textContent = ex.message;
+            go.disabled = false;
+            return;
+        }
+        tabs.agents.refresh();
+    });
+    return form;
 }
 
 function enablementForm(disabled) {
@@ -519,7 +575,7 @@ function enablementForm(disabled) {
     const form = el("form", { class: "confirm enablement-edit", hidden: true },
         el("h2", null, "Enable task categories?"),
         el("p", null, "An enabled category starts supervised: each of its changes waits for an approval until you promote it. " +
-           "This cannot be undone: the host does not go back to fewer categories. It is recorded with your name."),
+           "Disable… turns it off again. The change is recorded with your name."),
         checks.map(({ n, c }) => el("label", null, c, " " + n)),
         el("div", { class: "actions" }, go, cancel, note));
     form.dataset.for = disabled.join(",");
