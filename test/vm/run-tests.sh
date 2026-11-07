@@ -1123,8 +1123,9 @@ check "t1's schedule is gone" not systemctl is-enabled -q 'agent-schedule@t1_che
 
 section "Diagnostics-only (release gate)"
 # CONTRACT.md §6b: on a diagnostics-only host only the diagnostics
-# category is usable, enforced by the gateway; enable is the one action
-# out of it, and its result is the broader install's.
+# category is usable, enforced by the gateway; enable is the action out of
+# it, disable the way back (#110), and enabling every category gives the
+# broader install's result.
 # The gateway names a module's reasons (deny_reasons, unmatched_reasons:
 # its requirement R1) when its shipped policy has them.
 gateway_reasons() { grep -rqs unmatched_reason /usr/share/mcp-gateway/policy/; }
@@ -1202,6 +1203,28 @@ check "the gateway's OPA asks for the enabled category's call" eventually 30 eff
 check "readiness on a host that started diagnostics-only asks for the diagnostics history" bash -c \
 	"agent-admin readiness dg patch-errata | jq -e '.diagnostics_apply and (.categories[\"patch-errata\"].unmet | any(startswith(\"diagnosis reports with feedback\")))' >/dev/null"
 check "enabled, the category starts supervised: its change waits for an approval" change_asks dg
+# The way back (#110): disable is refused while dg has a permission in the
+# category; without it, the category is disabled again, recorded, and the
+# gateway denies it once more; disable --all returns to diagnostics-only.
+cp "$dgdata" "$work/dg-patch.yaml"
+check "agent-admin disable refuses a category an agent has a permission in" bash -c \
+	"agent-admin disable patch-errata 2>&1 | grep -q 'agent dg has permissions in patch-errata'"
+check "journal: category.refused for disable" eventually 10 promotion_record category.refused '.AGENT_CATEGORY == "patch-errata" and .AGENT_REASON == "disable"'
+check "dg keeps only its diagnostics permission" dg_perms
+check "agent-admin disable patch-errata" agent-admin disable patch-errata
+check "show: patch-errata disabled, recorded, not tampered" enablement_is \
+	'.state == "categories" and (.enabled | index("patch-errata") | not) and (has("tampered") | not)'
+check "journal: categories.disabled by root" eventually 10 promotion_record categories.disabled \
+	'.AGENT_BY == "root" and (.AGENT_ENABLEMENT_TO | contains("patch-errata") | not)'
+cp "$work/dg-patch.yaml" "$dgdata"
+check "disabled again, the gateway denies the category even with its permission" eventually 30 effect_is dg change deny
+check "dg keeps only its diagnostics permission, again" dg_perms
+check "agent-admin disable --all: back to diagnostics-only" agent-admin disable --all
+check "show: diagnostics-only, recorded, not tampered" enablement_is \
+	'.state == "diagnostics-only" and .enabled == ["diagnostics"] and (has("tampered") | not)'
+check "agent-admin disable on a diagnostics-only host has nothing to do" not agent-admin disable compliance-audit
+# Forward again, as below; dg's permission in patch-errata back for it.
+cp "$work/dg-patch.yaml" "$dgdata"
 # Every category enabled decides as a host without enablement state (the
 # broader install).
 check "agent-admin enable --all" agent-admin enable --all

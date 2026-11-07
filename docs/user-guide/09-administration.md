@@ -37,6 +37,7 @@ person behind `sudo` (`SUDO_USER`), else `USER`.
 | `agent-admin promote NAME CATEGORY --envelope FILE [--despite-readiness --reason TEXT]` | let a category act without approval within its windows ([chapter 6](06-permissions-and-modes.md#promote)) |
 | `agent-admin demote NAME CATEGORY [--reason TEXT]` | back to supervised |
 | `agent-admin enable CATEGORY… \| --all` | enable task categories on a diagnostics-only host ([chapter 6](06-permissions-and-modes.md#diagnostics-only)) |
+| `agent-admin disable CATEGORY… \| --all` | disable task categories again; `--all`: back to diagnostics-only ([chapter 6](06-permissions-and-modes.md#diagnostics-only)) |
 | `agent-admin diagnostics-only` | make a freshly installed host diagnostics-only (the installer's setup runs it) |
 | `agent-admin set-credential NAME CRED < secret` | store a secret for it |
 | `agent-admin credentials [NAME…]` | its credentials' names, what uses them and the missing ones, as JSON; never the values ([below](#credentials)) |

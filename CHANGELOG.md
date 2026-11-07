@@ -18,6 +18,11 @@ removed.
 
 ### Added
 
+- The way back from enabling task categories (#110): `agent-admin
+  disable CATEGORY…` disables them again, and `disable --all` returns the
+  host to diagnostics-only; Cockpit's **Disable…** does the same. It is
+  refused, naming what is in the way, while an agent has a permission in
+  the category or has it promoted, and recorded as `categories.disabled`.
 - Events: an agent's `events:` start its activities when a systemd unit
   fails (`on_unit_failure`). `agent-admin` puts an `OnFailure=` drop-in
   on each unit, which starts `agent-event@<agent>_<event>_<unit>.service`;

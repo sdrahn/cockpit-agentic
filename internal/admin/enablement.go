@@ -103,8 +103,13 @@ func (a *Admin) GetEnablement() (*Enablement, error) {
 }
 
 // writeEnablement writes the state with a new record id, records the
-// change (categories.enabled) and waits for the gateway's OPA.
-func (a *Admin) writeEnablement(from, to *Enablement, by, msg string) error {
+// change (categories.enabled, or event: categories.disabled) and waits for
+// the gateway's OPA.
+func (a *Admin) writeEnablement(from, to *Enablement, by, msg string, event ...string) error {
+	ev := journal.CategoriesEnabled
+	if len(event) > 0 {
+		ev = event[0]
+	}
 	id := "n-" + a.Secret()
 	if len(id) > 18 {
 		id = id[:18]
@@ -113,7 +118,7 @@ func (a *Admin) writeEnablement(from, to *Enablement, by, msg string) error {
 	to.Record = id
 	var buf bytes.Buffer
 	buf.WriteString("# The task categories this host may use (custos CONTRACT.md §6b), written\n" +
-		"# by agent-admin. Change it only with agent-admin enable: a change without\n" +
+		"# by agent-admin. Change it only with agent-admin enable or disable: a change without\n" +
 		"# its record is reported as tampered.\n")
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
@@ -127,7 +132,7 @@ func (a *Admin) writeEnablement(from, to *Enablement, by, msg string) error {
 	if from != nil {
 		fromJSON = from.summary()
 	}
-	a.record(journal.CategoriesEnabled, "", msg, journal.Fields{
+	a.record(ev, "", msg, journal.Fields{
 		"BY": by, "ENABLEMENT": id, "ENABLEMENT_FROM": fromJSON, "ENABLEMENT_TO": to.summary(),
 		"ENABLEMENT_SHA256": to.Digest(),
 	})
@@ -223,6 +228,136 @@ func (a *Admin) Enable(by string, cats []string, all bool) error {
 	return nil
 }
 
+// Disable disables task categories again (§6b, #110): the way back from
+// enable. all returns the host to diagnostics-only. It refuses, naming
+// what is in the way and recording the refusal (category.refused), while
+// an agent has a permission in a category it disables (for all: any
+// permission not in diagnostics) or has one promoted (bounded): remove
+// the permissions with agent-admin permissions, demote with agent-admin
+// demote, then disable. On a host without an enablement state (every
+// category enabled) it creates one: every category of the catalog but
+// those disabled. The change is recorded (categories.disabled).
+func (a *Admin) Disable(by string, cats []string, all bool) error {
+	catalog, err := a.Categories()
+	if err != nil {
+		return err
+	}
+	if !all && len(cats) == 0 {
+		return errors.New("disable: name the categories, or --all for diagnostics-only")
+	}
+	for _, c := range cats {
+		if err := a.checkCategory(c); err != nil {
+			return err
+		}
+		if c == Diagnostics {
+			return errors.New("disable: diagnostics is always enabled; --all leaves only it")
+		}
+	}
+	from, err := a.GetEnablement()
+	if err != nil {
+		return err
+	}
+	// What is enabled now.
+	set := map[string]bool{Diagnostics: true}
+	switch {
+	case from == nil:
+		for c := range catalog {
+			set[c] = true
+		}
+	case from.State == DiagnosticsOnly:
+		return errors.New("this host is diagnostics-only already: nothing to disable")
+	default:
+		for _, c := range from.Enabled {
+			set[c] = true
+		}
+	}
+	off := map[string]bool{}
+	if all {
+		for c := range set {
+			if c != Diagnostics {
+				off[c] = true
+			}
+		}
+	} else {
+		for _, c := range cats {
+			if !set[c] {
+				return fmt.Errorf("disable: task category %s is not enabled on this host", c)
+			}
+			off[c] = true
+		}
+	}
+	// What is in the way.
+	p, err := a.Show()
+	if err != nil {
+		return err
+	}
+	var blockers []string
+	names := make([]string, 0, len(p.Agents))
+	for n := range p.Agents {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		d := p.Agents[name]
+		perms := map[string]bool{}
+		for _, perm := range d.Permissions {
+			c, _ := perm["category"].(string)
+			if off[c] || (all && c != Diagnostics) {
+				perms[c] = true
+			}
+		}
+		for c := range perms {
+			shown := c
+			if c == "" {
+				shown = "(none)"
+			}
+			blockers = append(blockers, fmt.Sprintf("agent %s has permissions in %s (agent-admin permissions %s)", name, shown, name))
+		}
+		for c, st := range d.Categories {
+			if off[c] && st != nil && st.Mode == "bounded" {
+				blockers = append(blockers, fmt.Sprintf("agent %s has %s promoted (agent-admin demote %s %s)", name, c, name, c))
+			}
+		}
+	}
+	if len(blockers) > 0 {
+		sort.Strings(blockers)
+		what := "disable"
+		if all {
+			what = "disable --all"
+		}
+		for c := range off {
+			a.record(journal.CategoryRefused, "", fmt.Sprintf("%s: category %s is still in use", what, c),
+				journal.Fields{"CATEGORY": c, "REASON": what, "BY": by})
+		}
+		return fmt.Errorf("%s: still in use: %s", what, strings.Join(blockers, "; "))
+	}
+	var gone []string
+	for c := range off {
+		gone = append(gone, c)
+	}
+	sort.Strings(gone)
+	if all {
+		to := &Enablement{State: DiagnosticsOnly, Enabled: []string{Diagnostics}}
+		if err := a.writeEnablement(from, to, by, by+" returned this host to diagnostics-only", journal.CategoriesDisabled); err != nil {
+			return err
+		}
+		fmt.Fprintln(a.Out, "this host is diagnostics-only again: other task categories are disabled until agent-admin enable")
+		return nil
+	}
+	to := &Enablement{State: SomeCategories}
+	for c := range set {
+		if !off[c] {
+			to.Enabled = append(to.Enabled, c)
+		}
+	}
+	sort.Strings(to.Enabled)
+	if err := a.writeEnablement(from, to, by, fmt.Sprintf("%s disabled the task categories %s", by, strings.Join(gone, ", ")), journal.CategoriesDisabled); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.Out, "disabled: %s; the gateway denies them and hides their tools (agent-admin enable to undo)\n", strings.Join(gone, ", "))
+	return nil
+}
+
 // checkEnabled refuses permissions of a disabled category, recording the
 // refusal (category.refused) for the person, once per disabled category.
 // what names the action. The error names everything that is disabled.
@@ -291,7 +426,9 @@ func (a *Admin) enablementTampered(e *Enablement) string {
 	if e.Record == "" {
 		return "the state has no record: it was not written by agent-admin"
 	}
-	out, err := read("_UID=0", "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT="+journal.CategoriesEnabled, "AGENT_ENABLEMENT="+e.Record)
+	// Both kinds of change: journalctl ORs matches of the same field.
+	out, err := read("_UID=0", "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT="+journal.CategoriesEnabled,
+		"AGENT_EVENT="+journal.CategoriesDisabled, "AGENT_ENABLEMENT="+e.Record)
 	if err != nil {
 		return ""
 	}

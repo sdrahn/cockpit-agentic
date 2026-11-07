@@ -473,6 +473,20 @@
                                  posture.enablement = Object.assign({}, posture.enablement, { state: "categories", record: "n-2", changed_by: by + " now",
                                      enabled: [...new Set([...(posture.enablement.enabled || []), ...cats])].sort() });
                              }
+                             // disable (#110): refused while an agent uses the
+                             // category (here: patch-errata), as agent-admin says.
+                             if (cmd === "disable") {
+                                 if (name === "--all") {
+                                     posture.enablement = { state: "diagnostics-only", enabled: ["diagnostics"], record: "n-3", changed_by: by + " now" };
+                                 } else {
+                                     const cats = args.slice(2);
+                                     if (cats.includes("patch-errata")) return Promise.reject(new Error("agent-admin: disable: still in use: " +
+                                         "agent patch-pilot has permissions in patch-errata (agent-admin permissions patch-pilot)")).then(ok, bad);
+                                     const all = ["compliance-audit", "config-lifecycle", "diagnostics", "patch-errata", "security-response"];
+                                     const was = posture.enablement ? posture.enablement.enabled : all;
+                                     posture.enablement = { state: "categories", record: "n-3", changed_by: by + " now", enabled: was.filter(c => !cats.includes(c)) };
+                                 }
+                             }
                              if (cmd === "feedback") {
                                  if (args.includes("h9=confirmed")) return Promise.reject(new Error("agent-admin: the report of " + arg + " has no hypothesis \"h9\"")).then(ok, bad);
                                  (window.__feedback = window.__feedback || []).push(args.slice(2));

@@ -840,7 +840,7 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     // disabled ones are not promoted; Enable… through the root bridge.
     await page.goto(url + "?diag#/agents/disk-watch");
     await page.waitForSelector("#enablement #enabled-patch-errata");
-    check(!(await page.isHidden("#enablement")) && (await page.textContent("#enablement")).includes("started diagnostics-only") &&
+    check(!(await page.isHidden("#enablement")) && (await page.textContent("#enablement")).includes("These task categories are enabled") &&
           (await page.textContent("#enabled-config-lifecycle")).includes("enabled") &&
           (await page.textContent("#enabled-patch-errata")).includes("disabled") && !(await page.textContent("#enablement")).includes("null"),
           "the enablement state: enabled and disabled categories");
@@ -868,9 +868,38 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.click("#enablement form button:text-is('Enable')");
     await page.waitForFunction(() => document.querySelector("#enablement button").hidden);
     check((await spawned("agent-admin enable --all")).length === 1, "every remaining category: enable --all; then nothing left to enable");
+    // The way back (#110): Disable… runs agent-admin disable through the root
+    // bridge; its refusal names what is in the way; --all returns the host
+    // to diagnostics-only.
+    await page.click("#disable-open");
+    await page.check("#disable-form input[value=patch-errata]");
+    await page.click("#disable-form button:text-is('Disable')");
+    await page.waitForFunction(() => document.querySelector("#disable-form .error-text"));
+    check((await page.textContent("#disable-form")).includes("agent patch-pilot has permissions in patch-errata (agent-admin permissions patch-pilot)"),
+          "a category still in use: the refusal says what is in the way");
+    await page.uncheck("#disable-form input[value=patch-errata]");
+    await page.check("#disable-form input[value=compliance-audit]");
+    await page.click("#disable-form button:text-is('Disable')");
+    await page.waitForFunction(() => document.querySelector("#enabled-compliance-audit").textContent.includes("disabled"));
+    const dis1 = await spawned("agent-admin disable compliance-audit");
+    check(dis1.length === 1 && dis1[0][4] === "require", "Disable… runs agent-admin disable through the root bridge");
+    await page.click("#disable-open");
+    await page.check("#disable-form input[name=diagnostics-only]");
+    check(await page.$eval("#disable-form input[value=config-lifecycle]", c => c.disabled), "returning to diagnostics-only covers every category");
+    await page.click("#disable-form button:text-is('Disable')");
+    await page.waitForFunction(() => document.querySelector("#enablement").textContent.includes("This host is diagnostics-only"));
+    check((await spawned("agent-admin disable --all")).length === 1 && await page.isHidden("#disable-open"),
+          "back to diagnostics-only: disable --all; then nothing left to disable");
     await page.goto(url + "?diag&tampered#/agents/disk-watch");
     await page.waitForSelector("#enablement-tampered");
     check((await page.textContent("#enablement-tampered")).includes("differs from its record"), "a state changed outside agent-admin is reported");
+    // A host installed with the full capability: every category enabled,
+    // Disable… offered, Enable… not.
+    await page.goto(url + "?full#/agents/disk-watch");
+    await page.waitForSelector("#enablement #enabled-patch-errata");
+    check((await page.textContent("#enablement")).includes("Every task category is enabled on this host") &&
+          !(await page.isHidden("#disable-open")) && await page.isHidden("#enablement button:has-text('Enable…')"),
+          "a full host: the card shows every category enabled, and offers Disable…");
 
     check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join("; ") : ""));
     await browser.close();
