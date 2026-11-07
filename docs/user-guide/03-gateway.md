@@ -161,8 +161,12 @@ delegate to:
 - {server: agents, tool: delegate, read_only: true, args: {agent: '^patch-pilot$'}}
 ```
 
-The callee works under its own mode, permissions and approvals: a
-delegation never lends one agent's rights to another. In supervised mode
+The delegating agent gets the other agent's full last response (up to
+32 KiB), its diagnosis report if it wrote one, and the activity's state,
+so it can judge whether the task was done. An agent from before 0.4.2
+gives only its 500-character summary. The callee works under its own
+mode, permissions and approvals: a delegation never lends one agent's
+rights to another. In supervised mode
 the delegation itself needs an approval unless the permission says
 `read_only: true`. The Activity tab shows the chain from the first
 activity to the last ([chapter 8](08-cockpit.md#activity)).

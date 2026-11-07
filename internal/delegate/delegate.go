@@ -36,20 +36,45 @@ func Serve(ctx context.Context, socketDir, version string) error {
 	s := mcp.NewServer(&mcp.Implementation{Name: "custos-agents", Version: version}, nil)
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "delegate",
-		Description: "Ask another agent on this host to do a task, and wait for its answer. The other agent works under its own permissions and approvals.",
+		Description: "Ask another agent on this host to do a task, and wait for its answer: its full last response, and its diagnosis report if it wrote one. The other agent works under its own permissions and approvals.",
 		Annotations: &mcp.ToolAnnotations{OpenWorldHint: ptr(false)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, a Args) (*mcp.CallToolResult, any, error) {
-		if !config.ValidName(a.Agent) {
-			return errResult("unknown agent %q", a.Agent), nil, nil
-		}
-		res, err := Run(ctx, filepath.Join(socketDir, a.Agent, "api.sock"), map[string]any{"prompt": a.Task, "trace": a.Trace, "wait": true})
-		if err != nil {
-			return errResult("%v", err), nil, nil
-		}
-		b, _ := json.Marshal(map[string]any{"agent": a.Agent, "activity": res["id"], "state": res["state"], "answer": res["summary"]})
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}, IsError: res["state"] != "finished"}, nil, nil
+		return Ask(ctx, socketDir, a), nil, nil
 	})
 	return s.Run(ctx, &mcp.StdioTransport{})
+}
+
+// Ask is the tool: it starts the task on the agent's socket under
+// socketDir, waits for the activity to end, and answers with its result.
+func Ask(ctx context.Context, socketDir string, a Args) *mcp.CallToolResult {
+	if !config.ValidName(a.Agent) {
+		return errResult("unknown agent %q", a.Agent)
+	}
+	res, err := Run(ctx, filepath.Join(socketDir, a.Agent, "api.sock"), map[string]any{"prompt": a.Task, "trace": a.Trace, "wait": true})
+	if err != nil {
+		return errResult("%v", err)
+	}
+	return answer(a.Agent, res)
+}
+
+// answer is the delegating agent's result (CONTRACT.md §9): the other
+// activity's id and state, its answer, which is its full response (§4;
+// up to 32 KiB) or, from an agent before 0.4.2, its 500-byte summary, and
+// its diagnosis report (§4a) when it wrote one. An activity that did not
+// finish is an error.
+func answer(agent string, res map[string]any) *mcp.CallToolResult {
+	out := map[string]any{"agent": agent, "activity": res["id"], "state": res["state"], "answer": res["summary"]}
+	if r, ok := res["response"].(string); ok && r != "" {
+		out["answer"] = r
+	}
+	if rep, ok := res["report"]; ok && rep != nil {
+		out["report"] = rep
+	}
+	if reason, ok := res["reason"].(string); ok && reason != "" {
+		out["reason"] = reason
+	}
+	b, _ := json.Marshal(out)
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}, IsError: res["state"] != "finished"}
 }
 
 func ptr[T any](v T) *T { return &v }
