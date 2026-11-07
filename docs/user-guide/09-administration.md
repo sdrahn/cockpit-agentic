@@ -260,6 +260,24 @@ the timers: it enables a new schedule's timer, and leaves one you
 disabled disabled. A disabled timer stays disabled until you enable it,
 `release-all` included.
 
+## Events {#events}
+
+An agent's events start its activities when a unit fails
+([chapter 5](05-configuration.md#events)):
+
+```bash
+systemctl show -p OnFailure nginx.service                       # the events on a unit
+journalctl -o json AGENT_NAME=NAME AGENT_EVENT=invocation.start \
+  | jq -r 'select(.AGENT_ORIGIN == "event") | .AGENT_ORIGIN_BY'    # the activities events started
+journalctl -o json AGENT_NAME=NAME AGENT_EVENT=event.skipped | jq -r .MESSAGE   # the skipped ones
+agent-admin event NAME_EVENT_UNIT                                # start one by hand, damped like systemd's
+```
+
+To stop an event, remove it from the configuration and run
+`agent-admin edit`. Pausing the agent, or the emergency stop, refuses
+the event's activities like any other: the refusal is recorded
+(`event.skipped`) and fails `agent-event@….service`.
+
 ## Diagnostic playbooks {#playbooks}
 
 A playbook is a published diagnostic procedure: which read-only tools to

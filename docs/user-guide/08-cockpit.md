@@ -172,6 +172,10 @@ Selecting an agent shows:
   access
   ([chapter 6](06-permissions-and-modes.md#readiness));
 - **Schedules**: each with its calendar, next run and **Enable**/**Disable**;
+- **Events**: each with the units whose failure starts it, how often at
+  most per unit, and its prompt or playbook
+  ([chapter 5](05-configuration.md#events)); change them in the
+  configuration;
 - **Diagnostic playbooks**: pick one of the playbooks this agent can
   run, add what to look at if you like, and **Run**: the agent runs it
   as an activity started by you, and the page opens it, where its report

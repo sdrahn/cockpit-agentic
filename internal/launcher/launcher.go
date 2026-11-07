@@ -351,6 +351,7 @@ type Status struct {
 	Limits         config.Limits     `json:"limits"`
 	Interaction    map[string]any    `json:"interaction"`
 	Schedules      []config.Schedule `json:"schedules"`
+	Events         []config.Event    `json:"events"`
 }
 
 type GatewayStatus struct {
@@ -384,6 +385,7 @@ func (l *Launcher) status(w http.ResponseWriter, r *http.Request) {
 		InFlight: nonNil(l.Governor.InFlight()), Running: running, Started: l.started, Limits: l.cfg.Limits,
 		Interaction: map[string]any{"agui": l.cfg.Interaction.AGUI, "client_tools": nonNil(l.cfg.Interaction.ClientTools.Allow)},
 		Schedules:   nonNil(l.cfg.Schedules),
+		Events:      nonNil(l.cfg.Events),
 	})
 }
 

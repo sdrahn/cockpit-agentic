@@ -1075,6 +1075,43 @@ check "journal: the scheduled activity ran the playbook" eventually 30 bash -c \
 check "agent-admin delete pb" agent-admin delete pb
 rm -f /etc/custos/playbooks/probe-check.yaml /etc/custos/playbooks/change-check.yaml
 
+section "Events"
+# CONTRACT.md §14, §15: an event starts an activity when a unit it names
+# fails. agent-admin puts an OnFailure= drop-in on the unit; systemd starts
+# agent-event@<agent>_<event>_<unit>.service, which starts the activity as
+# root with origin event, damped per unit.
+printf '%s\n' '[Unit]' 'Description=Custos functional test: a unit that fails' \
+	'[Service]' 'Type=oneshot' 'ExecStart=/bin/false' >/etc/systemd/system/evtest-fail.service
+systemctl daemon-reload
+agent-admin delete ev >/dev/null 2>&1
+check "agent-admin create ev, with an event on evtest-fail.service" agent-admin create ev --from \
+	"$(config ev custos-test 'events: [{name: down, on_unit_failure: [evtest-fail.service], prompt: "The unit {unit} failed.", min_interval_seconds: 3600}]')"
+check "the unit has the event's OnFailure= drop-in" bash -c \
+	"systemctl show -p OnFailure --value evtest-fail.service | grep -qw 'agent-event@ev_down_evtest-fail.service.service'"
+check "agent-admin check refuses an event on Custos's own units" not agent-admin check \
+	"$(config ev2 custos-test 'events: [{name: loop, on_unit_failure: [agent-event@x.service], prompt: x}]')"
+systemctl start evtest-fail.service >/dev/null 2>&1
+check "the unit's failure starts ev's activity, origin event" eventually 30 journal_has ev invocation.start \
+	'.AGENT_ORIGIN == "event" and .AGENT_ORIGIN_BY == "unit-failure:evtest-fail.service" and .AGENT_ORIGIN_EVENT == "down"'
+check "the activity ends" eventually 30 bash -c \
+	"$(declare -f api); api ev /v1/activities | jq -e '[.activities[] | select(.origin.kind == \"event\" and .state == \"finished\")] | length == 1' >/dev/null"
+check "when it last started is kept in /run/custos/events, root's alone" stat_is /run/custos/events/ev_down_evtest-fail.service root:root:600
+# Damped: a second failure within the event's interval starts nothing.
+systemctl start evtest-fail.service >/dev/null 2>&1
+check "a second failure within the interval is skipped and recorded (event.skipped)" eventually 30 journal_has ev event.skipped \
+	'.AGENT_ORIGIN_BY == "unit-failure:evtest-fail.service" and (.AGENT_REASON | contains("minimum interval"))'
+check "and starts no second activity" bash -c \
+	"[ \$(journalctl -o json --no-pager --since '@$t0' AGENT_NAME=ev AGENT_EVENT=invocation.start | jq -s 'map(select(.AGENT_ORIGIN == \"event\")) | length') -eq 1 ]"
+# Edit without the event: its drop-in goes, the unit no longer starts it.
+check "agent-admin edit ev without the event" agent-admin edit ev --from "$(config ev custos-test)"
+check "the drop-in is gone" not test -e /etc/systemd/system/evtest-fail.service.d/50-custos-event-ev_down.conf
+check "the unit no longer names the event" bash -c \
+	"! systemctl show -p OnFailure --value evtest-fail.service | grep -q agent-event@"
+check "agent-admin delete ev" agent-admin delete ev
+rm -f /etc/systemd/system/evtest-fail.service
+systemctl reset-failed evtest-fail.service >/dev/null 2>&1
+systemctl daemon-reload
+
 section Removing
 check "agent-admin delete t2" agent-admin delete t2
 check "agent-admin delete t1" agent-admin delete t1

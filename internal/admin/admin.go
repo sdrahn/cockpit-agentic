@@ -42,8 +42,14 @@ type Admin struct {
 	Now func() time.Time
 	// Control posts to an agent's control API (pause, resume).
 	Control func(sock, path string) error
-	// Start starts an activity on an agent's socket (schedules).
+	// Start starts an activity on an agent's socket (schedules, events).
 	Start func(sock string, body map[string]any) error
+	// Activities reads an agent's activities (GET /v1/activities), for
+	// an event's damping; nil: not checked.
+	Activities func(sock string) ([]map[string]any, error)
+	// Getenv reads the environment (systemd's MONITOR_* for an event);
+	// nil: os.Getenv.
+	Getenv func(string) string
 	// RunEnv runs a command with extra environment variables (secrets
 	// handed to openshell, which reads them from its environment).
 	RunEnv func(env []string, name string, args ...string) error
@@ -98,6 +104,9 @@ func New() *Admin {
 		Out: os.Stdout, In: os.Stdin, Now: time.Now,
 		Control: func(sock, path string) error { return delegate.Post(context.Background(), sock, path) },
 		Start:   func(sock string, body map[string]any) error { return delegate.Start(context.Background(), sock, body) },
+		Activities: func(sock string) ([]map[string]any, error) {
+			return delegate.Activities(context.Background(), sock)
+		},
 		RunEnv: func(env []string, name string, args ...string) error {
 			c := exec.Command(name, args...)
 			c.Env = append(os.Environ(), env...)
@@ -242,6 +251,9 @@ func (a *Admin) create(name string, b []byte) (err error) {
 	}
 	// Supervised by default, and nothing allowed until listed (§6).
 	if err := a.writeGateway(name, &GatewayData{Mode: "supervised", Permissions: []map[string]any{}}); err != nil {
+		return err
+	}
+	if err := a.syncEvents(cfg); err != nil {
 		return err
 	}
 	if err := a.syncSchedules(cfg); err != nil {
@@ -445,6 +457,9 @@ func (a *Admin) Edit(name, from string) (err error) {
 		return err
 	}
 	a.Run(nil, "chgrp", "agent-"+name, filepath.Join(dir, "agent.yaml"))
+	if err := a.syncEvents(cfg); err != nil {
+		return err
+	}
 	if err := a.syncSchedules(cfg); err != nil {
 		return err
 	}
@@ -624,6 +639,7 @@ func (a *Admin) Delete(name string, keepState bool) error {
 	rm = append(rm, matches...)
 	timers, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "agent-schedule@"+name+"_*")))
 	rm = append(rm, timers...)
+	a.removeEvents(name)
 	if !keepState {
 		rm = append(rm, a.p("/var/lib/agents/"+name))
 	}

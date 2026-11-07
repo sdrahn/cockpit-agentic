@@ -78,7 +78,7 @@ install: build
 	install -m 0755 bin/custos-setup $(DESTDIR)$(SBINDIR)/custos-setup
 	ln -sf ../../sbin/agent-admin $(DESTDIR)$(LIBEXECDIR)/custos/agent-admin
 	install -d $(DESTDIR)$(UNITDIR)
-	install -m 0644 systemd/agent@.service systemd/agent@.socket systemd/agent-schedule@.service systemd/agent-schedule@.timer \
+	install -m 0644 systemd/agent@.service systemd/agent@.socket systemd/agent-schedule@.service systemd/agent-schedule@.timer systemd/agent-event@.service \
 		systemd/agent-openshell@.service systemd/agent-openshell@.socket \
 		systemd/custos-demote.service systemd/custos-demote.timer $(DESTDIR)$(UNITDIR)/
 	install -m 0755 packaging/openshell/agent-openshell-logs packaging/openshell/agent-openshell-start $(DESTDIR)$(LIBEXECDIR)/custos/

@@ -78,6 +78,9 @@
         running: (activities[name] || []).filter(a => a.state === "running" || a.state === "waiting_approval").length,
         interaction: { agui: name !== "triage", client_tools: "deny" },
         schedules: name === "triage" ? [{ name: "morning-check", on_calendar: "*-*-* 06:00", prompt: "Check the host and patch what is due." }] : [],
+        // Events (§14): triage watches two units.
+        events: name === "triage" ? [{ name: "web-down", on_unit_failure: ["nginx.service", "php-fpm.service"],
+                                        prompt: "The unit {unit} failed. Find out why.", playbook: "service-health" }] : [],
         // triage runs in an OpenShell sandbox (§3a).
         lifecycle: name === "triage"
             ? { kind: "openshell", sandbox: "agent-triage", gateway: "openshell", service: "agent-openshell@triage.service" }

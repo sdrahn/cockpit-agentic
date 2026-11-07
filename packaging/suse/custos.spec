@@ -216,6 +216,7 @@ done
 %{_unitdir}/agent@.socket
 %{_unitdir}/agent-schedule@.service
 %{_unitdir}/agent-schedule@.timer
+%{_unitdir}/agent-event@.service
 %{_unitdir}/agent-openshell@.service
 %{_unitdir}/agent-openshell@.socket
 %{_unitdir}/custos-demote.service

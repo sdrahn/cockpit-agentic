@@ -1,7 +1,7 @@
 ---
 title: "5. Configuring an agent (agent.yaml)"
-description: Every key of agent.yaml with its default, the model providers and their credentials, the gateway keys, limits, interaction, schedules, sessions, the sandbox, SELinux and the model's port, and checking a configuration.
-tags: [configuration, agent.yaml, model, credentials, schedules, limits]
+description: Every key of agent.yaml with its default, the model providers and their credentials, the gateway keys, limits, interaction, schedules, events, sessions, the sandbox, SELinux and the model's port, and checking a configuration.
+tags: [configuration, agent.yaml, model, credentials, schedules, events, limits]
 ---
 
 # 5. Configuring an agent (agent.yaml)
@@ -243,6 +243,50 @@ scheduled activity runs as `system:schedule` with the origin
 any other. In supervised mode a scheduled change waits for an approval
 like a chat's.
 
+## Events {#events}
+
+An event starts an activity when something happens on the host. For
+now that is a systemd unit failing:
+
+```yaml
+events:
+  - name: web-down
+    on_unit_failure: [nginx.service, php-fpm.service]
+    prompt: "The unit {unit} failed. Find out why; if a restart is the fix, hand it to service-doctor."
+  - {name: db-down, on_unit_failure: [postgresql.service], playbook: service-health, min_interval_seconds: 3600}
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `name` | required | unique per agent, as a schedule's name |
+| `on_unit_failure` | required | 1 to 32 units, by their full name (`nginx.service`); not a template instance (`getty@tty1.service`), and none of Custos's own units (`agent@…`, `agent-…`, `custos-…`) |
+| `prompt` | required unless `playbook` | the activity's prompt; `{unit}` is the unit that failed |
+| `playbook` | none | a diagnostic playbook to run, as for a schedule; the prompt is added to it |
+| `min_interval_seconds` | `600` | after the event started an activity for a unit, how long it starts none for the same unit (up to 7 days) |
+
+`agent-admin` puts a drop-in on each unit,
+`/etc/systemd/system/<unit>.d/50-custos-event-<agent>_<event>.conf`, with
+`OnFailure=agent-event@<agent>_<event>_<unit>.service`. Your own
+drop-ins on the unit stay, and so do other agents' events on it. When
+the unit fails, systemd starts that unit, which asks the agent to start
+the event's activity. The prompt gets systemd's account of the failure
+added, such as "(systemd: nginx.service failed: result exit-code,
+exited 1.)". The activity runs as `system:event` with the origin
+`event · unit-failure:nginx.service`, under the agent's mode,
+permissions and approvals like any other.
+
+An event is damped per unit. While its activity for a unit still runs,
+or within `min_interval_seconds` after it last started one, another
+failure of that unit starts nothing. Each skip is in the journal:
+
+```bash
+journalctl -o json AGENT_EVENT=event.skipped | jq -r .MESSAGE
+```
+
+Check that a unit has the event with
+`systemctl show -p OnFailure nginx.service`. Removing the event from the
+configuration, or deleting the agent, removes its drop-ins.
+
 ## Checking and changing a configuration {#check-and-edit}
 
 ```bash
@@ -253,7 +297,7 @@ agent-admin edit patch-pilot --from /root/patch-pilot.yaml
 
 `check` reports every problem at once; the messages are in
 [chapter 12](12-troubleshooting.md#configuration-errors). `edit`
-validates, replaces the file and syncs the schedules. It then restarts
+validates, replaces the file and syncs the schedules and events. It then restarts
 a running agent (`try-restart`), which ends its activities in flight;
 an idle agent picks the change up when it next starts. The name and
 `sandbox.kind` cannot change with `edit`: delete and create the agent

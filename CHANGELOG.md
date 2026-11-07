@@ -7,6 +7,17 @@ removed.
 
 ## Unreleased
 
+### Added
+
+- Events: an agent's `events:` start its activities when a systemd unit
+  fails (`on_unit_failure`). `agent-admin` puts an `OnFailure=` drop-in
+  on each unit, which starts `agent-event@<agent>_<event>_<unit>.service`;
+  the activity has origin `event` (`origin.event`, `AGENT_ORIGIN_EVENT`),
+  its prompt names the unit and systemd's account of the failure. Damped
+  per unit: none while its activity runs, nor within
+  `min_interval_seconds` (default 600); each skip is recorded
+  (`event.skipped`). Cockpit shows an agent's events (#118).
+
 ## v0.4.2 — 2026-11-06
 
 The agent's full response. An activity keeps the model's last text in

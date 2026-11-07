@@ -190,6 +190,9 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
           "an OpenShell agent's gateway token is OpenShell's: replaced, not removed");
     check((await page.textContent("#agent-detail")).includes("morning-check") &&
           (await page.textContent("#agent-detail")).includes("*-*-* 06:00"), "the schedules with their calendar");
+    const evs = await page.textContent("#agent-events");
+    check(evs.includes("web-down") && evs.includes("when nginx.service, php-fpm.service fails") && evs.includes("at most every 10 min per unit") &&
+          evs.includes("playbook service-health") && evs.includes("The unit {unit} failed."), "the events with their units, interval and playbook");
     await page.click("#agent-detail button:has-text('Disable')");
     await page.waitForSelector("#agent-detail button:has-text('Enable')");
     const dis = await spawned("systemctl disable --now agent-schedule@triage_morning-check.timer");
