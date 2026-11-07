@@ -54,6 +54,13 @@ async function act(button, what, fn) {
     tabs.agents.refresh();
 }
 
+/* relativeSpan says a number of seconds as minutes or hours. */
+function relativeSpan(s) {
+    if (s < 120) return s + " s";
+    if (s < 7200) return Math.round(s / 60) + " min";
+    return Math.round(s / 3600) + " h";
+}
+
 /* timersOf are the schedule timers' next runs and whether they are
  * enabled, read as the person. */
 async function timersOf(a) {
@@ -210,12 +217,30 @@ async function renderAgentDetail() {
             toggle), el("div", { class: "muted" }, "“" + s.prompt + "”")));
     }
 
+    // Events (§14): the units whose failure starts an activity. Changed by
+    // editing the configuration, which rewrites their drop-ins.
+    const evs = (a.status && a.status.events) || [];
+    const events = el("section", { class: "card", id: "agent-events" }, el("h2", null, "Events"),
+        el("p", { class: "muted" }, "When one of these units fails, systemd starts agent-event@" + a.name +
+           "_<event>_<unit>.service, which starts the event's activity: origin event, at most one at a time per unit, " +
+           "and none within the event's interval after the last."));
+    if (evs.length === 0) events.append(el("p", { class: "muted" }, a.status ? "No events." : "Unknown while the agent is not reachable."));
+    for (const e of evs) {
+        const every = e.min_interval_seconds || 600;
+        events.append(el("div", { class: "call" },
+            el("div", { class: "head" }, el("strong", null, e.name),
+               el("span", { class: "muted" }, "when " + (e.on_unit_failure || []).join(", ") + " fails"),
+               el("span", { class: "muted", style: "margin-left:auto" }, "at most every " + relativeSpan(every) + " per unit")),
+            e.playbook ? el("div", null, el("span", { class: "badge" }, "playbook " + e.playbook)) : null,
+            e.prompt ? el("div", { class: "muted" }, "“" + e.prompt + "”") : null));
+    }
+
     // Rebuilding the view takes the chat out and puts it back, which resets
     // the scroll position of its messages (and can move the page): keep
     // both, so that a refresh every few seconds does not scroll them away.
     const chatLogs = [...box.querySelectorAll(".chat-log")].map(l => [l, l.scrollTop]);
     const pageY = window.scrollY;
-    box.replaceChildren(head, mode, bounds, categoriesSection(a, data), schedules, playbookSection(a), credentialsSection(a), configEditor(a), chatSection(a));
+    box.replaceChildren(head, mode, bounds, categoriesSection(a, data), schedules, events, playbookSection(a), credentialsSection(a), configEditor(a), chatSection(a));
     for (const [l, top] of chatLogs) {
         if (l.isConnected) l.scrollTop = top;
     }

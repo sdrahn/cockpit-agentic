@@ -95,6 +95,31 @@ func Start(ctx context.Context, sock string, body map[string]any) error {
 	return err
 }
 
+// Activities reads an agent's activities (GET /v1/activities), as root.
+func Activities(ctx context.Context, sock string) ([]map[string]any, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://agent/v1/activities", nil)
+	if err != nil {
+		return nil, err
+	}
+	res, err := client(sock).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("agent answered %d", res.StatusCode)
+	}
+	var out struct {
+		Activities []map[string]any `json:"activities"`
+	}
+	if err := json.NewDecoder(io.LimitReader(res.Body, 8<<20)).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out.Activities, nil
+}
+
 // Post sends an empty POST to an agent's control API (pause, resume).
 func Post(ctx context.Context, sock, path string) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)

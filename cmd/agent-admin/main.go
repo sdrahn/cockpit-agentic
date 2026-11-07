@@ -52,6 +52,7 @@ const usage = `usage: agent-admin COMMAND …
                                          or rollback conditions say so (custos-demote.timer)
   pause NAME | resume NAME               hold an agent / let it go on
   trigger NAME_SCHEDULE                  start a schedule's activity (agent-schedule@.service)
+  event NAME_EVENT_UNIT                  start an event's activity for a unit that failed (agent-event@.service)
   stop-all                               emergency stop: every agent, every schedule
   release-all                            undo stop-all`
 
@@ -346,6 +347,11 @@ func run(a *admin.Admin, args []string) error {
 			return err
 		}
 		return a.Trigger(args[0])
+	case "event":
+		if err := need(1); err != nil {
+			return err
+		}
+		return a.Event(args[0])
 	case "stop-all":
 		return a.StopAll(by())
 	case "release-all":

@@ -148,3 +148,36 @@ func TestGatewayOAuth(t *testing.T) {
 		}
 	}
 }
+
+// An agent's events (§14): units whose failure starts an activity, never
+// Custos's own, and no template instances; a prompt or a playbook.
+func TestEvents(t *testing.T) {
+	c, err := Parse([]byte(sample + `events:
+  - {name: web-down, on_unit_failure: [nginx.service, php-fpm.service], prompt: "{unit} failed."}
+  - {name: db, on_unit_failure: [postgresql.service], playbook: service-health, min_interval_seconds: 60}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Events) != 2 || c.Events[0].MinInterval().Seconds() != DefaultEventInterval || c.Events[1].MinInterval().Seconds() != 60 {
+		t.Errorf("events %+v", c.Events)
+	}
+	for name, tc := range map[string]struct{ events, want string }{
+		"no units":     {"[{name: e, prompt: x}]", "events[0].on_unit_failure: want 1 to 32"},
+		"own unit":     {"[{name: e, prompt: x, on_unit_failure: [agent@x.service]}]", "Custos's own units"},
+		"own unit 2":   {"[{name: e, prompt: x, on_unit_failure: [custos-demote.service]}]", "Custos's own units"},
+		"template":     {"[{name: e, prompt: x, on_unit_failure: [getty@tty1.service]}]", "no template instance"},
+		"not a unit":   {"[{name: e, prompt: x, on_unit_failure: [nginx]}]", "want a unit name"},
+		"twice":        {"[{name: e, prompt: x, on_unit_failure: [a.service, a.service]}]", "twice"},
+		"no prompt":    {"[{name: e, on_unit_failure: [a.service]}]", "events[0].prompt: missing"},
+		"bad name":     {"[{name: E_1, prompt: x, on_unit_failure: [a.service]}]", "events[0].name"},
+		"same name":    {"[{name: e, prompt: x, on_unit_failure: [a.service]}, {name: e, prompt: x, on_unit_failure: [b.service]}]", "events[1].name"},
+		"interval":     {"[{name: e, prompt: x, on_unit_failure: [a.service], min_interval_seconds: -5}]", "min_interval_seconds"},
+		"bad playbook": {"[{name: e, playbook: ../x, on_unit_failure: [a.service]}]", "not a playbook name"},
+	} {
+		_, err := Parse([]byte(sample + "events: " + tc.events + "\n"))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want %q", name, err, tc.want)
+		}
+	}
+}

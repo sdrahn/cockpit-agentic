@@ -49,6 +49,9 @@ const (
 	DiagnosisFeedback = "diagnosis.feedback"
 	CategoriesEnabled = "categories.enabled"
 	CategoryRefused   = "category.refused"
+	// EventSkipped: an event (§14) started no activity (damped, or the
+	// agent refused).
+	EventSkipped = "event.skipped"
 )
 
 var MessageIDs = map[string]string{
@@ -79,6 +82,7 @@ var MessageIDs = map[string]string{
 	DiagnosisFeedback: "6f3c0e1a9b2d4c58a7e1f2d3c4b5a671",
 	CategoriesEnabled: "6f3c0e1a9b2d4c58a7e1f2d3c4b5a672",
 	CategoryRefused:   "6f3c0e1a9b2d4c58a7e1f2d3c4b5a673",
+	EventSkipped:      "6f3c0e1a9b2d4c58a7e1f2d3c4b5a674",
 }
 
 // Fields of a record, without the AGENT_ prefix: "SESSION", "TOOL", ….

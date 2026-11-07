@@ -95,6 +95,7 @@ type Config struct {
 	Interaction     Interaction `yaml:"interaction"`
 	Sessions        Sessions    `yaml:"sessions"`
 	Schedules       []Schedule  `yaml:"schedules"`
+	Events          []Event     `yaml:"events"`
 	Sandbox         Sandbox     `yaml:"sandbox"`
 
 	// Dir is the directory the file was read from (not in the file).
@@ -225,6 +226,45 @@ type Schedule struct {
 }
 
 var scheduleRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}$`)
+
+// Event is an activity started when something happens on the host
+// (CONTRACT.md §14, §15): for now, when one of the named systemd units
+// fails. agent-admin puts an OnFailure= drop-in on each unit, which
+// starts agent-event@<name>_<event>_<unit>.service.
+type Event struct {
+	Name string `yaml:"name" json:"name"`
+	// OnUnitFailure are the units whose failure starts it.
+	OnUnitFailure []string `yaml:"on_unit_failure" json:"on_unit_failure"`
+	// Prompt is the activity's prompt; {unit} is the unit that failed.
+	Prompt string `yaml:"prompt" json:"prompt"`
+	// Playbook names a diagnostic playbook to run (CONTRACT.md §14c), as
+	// for a schedule.
+	Playbook string `yaml:"playbook,omitempty" json:"playbook,omitempty"`
+	// MinIntervalSeconds is how long after it started an activity for a
+	// unit the event starts none for the same unit (0: DefaultEventInterval).
+	MinIntervalSeconds int `yaml:"min_interval_seconds,omitempty" json:"min_interval_seconds,omitempty"`
+}
+
+// DefaultEventInterval is an event's minimum interval per unit.
+const DefaultEventInterval = 600
+
+// MinInterval is the event's minimum interval per unit.
+func (e Event) MinInterval() time.Duration {
+	if e.MinIntervalSeconds == 0 {
+		return DefaultEventInterval * time.Second
+	}
+	return time.Duration(e.MinIntervalSeconds) * time.Second
+}
+
+// eventUnitRE is a unit an event may watch: a plain unit name, no
+// template instance (no "@"), of a kind that can fail.
+var eventUnitRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9:_.-]{0,190}\.(service|socket|mount|swap|timer|path)$`)
+
+// ownUnit reports whether a unit is Custos's own: an event on it could
+// start itself.
+func ownUnit(u string) bool {
+	return strings.HasPrefix(u, "agent@") || strings.HasPrefix(u, "agent-") || strings.HasPrefix(u, "custos-")
+}
 
 type Sessions struct {
 	RetentionDays int `yaml:"retention_days"`
@@ -431,6 +471,37 @@ func (c *Config) Check() error {
 		}
 		if s.Playbook != "" && !playbook.ValidName(s.Playbook) {
 			bad("schedules[%d].playbook: %q is not a playbook name", i, s.Playbook)
+		}
+	}
+	seenEvent := map[string]bool{}
+	for i, e := range c.Events {
+		if !scheduleRE.MatchString(e.Name) || seenEvent[e.Name] {
+			bad("events[%d].name: %q: want a unique lower-case name", i, e.Name)
+		}
+		seenEvent[e.Name] = true
+		if len(e.OnUnitFailure) == 0 || len(e.OnUnitFailure) > 32 {
+			bad("events[%d].on_unit_failure: want 1 to 32 systemd units", i)
+		}
+		seenUnit := map[string]bool{}
+		for _, u := range e.OnUnitFailure {
+			switch {
+			case seenUnit[u]:
+				bad("events[%d].on_unit_failure: %q twice", i, u)
+			case ownUnit(u):
+				bad("events[%d].on_unit_failure: %q is one of Custos's own units", i, u)
+			case !eventUnitRE.MatchString(u):
+				bad("events[%d].on_unit_failure: %q: want a unit name such as nginx.service (no template instance with @)", i, u)
+			}
+			seenUnit[u] = true
+		}
+		if strings.TrimSpace(e.Prompt) == "" && e.Playbook == "" {
+			bad("events[%d].prompt: missing (or name a playbook)", i)
+		}
+		if e.Playbook != "" && !playbook.ValidName(e.Playbook) {
+			bad("events[%d].playbook: %q is not a playbook name", i, e.Playbook)
+		}
+		if e.MinIntervalSeconds < 0 || e.MinIntervalSeconds > 7*24*3600 {
+			bad("events[%d].min_interval_seconds: want 0 (the default, %d) to %d", i, DefaultEventInterval, 7*24*3600)
 		}
 	}
 	if c.Sessions.RetentionDays < 0 {

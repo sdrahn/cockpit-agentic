@@ -86,6 +86,7 @@ type Origin struct {
 	Kind     string `json:"kind"`               // chat | schedule | event | delegation | api
 	By       string `json:"by"`                 // a user, a schedule's name, an event source, an agent principal
 	Schedule string `json:"schedule,omitempty"` // schedules only
+	Event    string `json:"event,omitempty"`    // events only: the agent's event (§14)
 }
 
 // Ref names an activity of an agent, possibly on another agent.
@@ -470,7 +471,7 @@ func (g *Governor) beforeRun(ictx agent.InvocationContext) (*genai.Content, erro
 	g.mu.Unlock()
 	f := journal.Fields{
 		"SESSION": s.ID(), "INVOCATION": id, "USER": s.UserID(),
-		"ORIGIN": st.Origin.Kind, "ORIGIN_BY": st.Origin.By, "SCHEDULE": st.Origin.Schedule,
+		"ORIGIN": st.Origin.Kind, "ORIGIN_BY": st.Origin.By, "SCHEDULE": st.Origin.Schedule, "ORIGIN_EVENT": st.Origin.Event,
 		"ROOT_AGENT": root.Agent, "ROOT_ACTIVITY": root.Activity, "PLAYBOOK": st.Playbook,
 	}
 	if st.Parent != nil {

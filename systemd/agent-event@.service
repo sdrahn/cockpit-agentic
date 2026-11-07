@@ -1,0 +1,23 @@
+# An event's activity: %i is <agent>_<event>_<unit> (CONTRACT.md §14, §15).
+# The OnFailure= drop-in agent-admin puts on <unit> starts it when the unit
+# fails; it asks the agent, as root, to start the event's activity, damped
+# per event and unit. It runs agent-admin, not agent-launcher, as
+# agent-schedule@.service does: the launcher's program would run in the
+# agents' SELinux domain, which may not reach their sockets.
+[Unit]
+Description=Event %i
+Documentation=https://github.com/sdrahn/custos/blob/main/CONTRACT.md
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/agent-admin event %i
+# When each event last started an activity for a unit: /run/custos/events,
+# kept between runs, gone at boot.
+RuntimeDirectory=custos/events
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX

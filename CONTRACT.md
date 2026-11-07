@@ -162,7 +162,8 @@ started them.
 | Field | Values |
 |---|---|
 | `origin.kind` | `chat` (a person, through the REST API or AG-UI), `schedule`, `event`, `delegation`, `api` (a program or person through `POST /v1/activities`) |
-| `origin.by` | the person, the timer unit, the event source, or the delegating agent's user |
+| `origin.by` | the person, the timer unit, the event source, or the delegating agent's user. For an agent's event (§14): `unit-failure:<unit>` |
+| `origin.event` | events only: the name of the agent's event (§14) that started it |
 | `parent`, `root` | delegation (§9): the activity that delegated this one, and the first one of the chain. `root` is the activity itself when nothing delegated it |
 | `state` | `running`, `waiting_approval` (a call waits for the gateway's approval), `paused`, `finished`, `failed`, `cancelled`, `limit` (a local limit ended it) |
 | `calls[].state` | `running`, `waiting_approval`, `ok`, `error` |
@@ -263,7 +264,7 @@ by `SO_PEERCRED`.
 
 | Request | Who | Meaning |
 |---|---|---|
-| `GET /v1/status` | supervisors, root | `{"contract":1, "implementation", "lifecycle":{"kind",…} (§3a), "units":{"service","socket"} (systemd only), "name", "version", "model", "paused", "gateway":{"socket","reachable"}, "running", "in_flight":[call…], "started", "limits", "interaction":{"agui","client_tools"}, "schedules":[{"name","on_calendar","prompt"}]}` |
+| `GET /v1/status` | supervisors, root | `{"contract":1, "implementation", "lifecycle":{"kind",…} (§3a), "units":{"service","socket"} (systemd only), "name", "version", "model", "paused", "gateway":{"socket","reachable"}, "running", "in_flight":[call…], "started", "limits", "interaction":{"agui","client_tools"}, "schedules":[{"name","on_calendar","prompt"}], "events":[{"name","on_unit_failure","prompt","playbook"?,"min_interval_seconds"?}]}` |
 | `GET /v1/activities` | supervisors, root | `{"activities": [activity…]}`, running first, then ended, newest first. Ended activities, with their reports, outlive the host process (an idle exit, a restart): the reference host keeps up to 200 of the last 30 days in its state directory (§13) |
 | `GET /v1/playbooks` | supervisors, root | the host's playbooks (§14c) as this agent may run them now: `{"playbooks": {"<name>": {"title", "description"?, "runnable", "missing"?, "error"?}}}`; `runnable` when the gateway offers it the tool of every step that is not `optional`, else `missing` names the tools it lacks; `error` for a file that does not parse. `502` when the gateway's tools cannot be listed |
 | `GET /v1/activities/{id}` | supervisors, root; an agent only for activities it delegated | one activity |
@@ -811,7 +812,7 @@ and without the `AGENT_` prefix):
 | `AGENT_CONTRACT` | `1` |
 | `AGENT_NAME`, `AGENT_EVENT` | the agent; the event (table below) |
 | `AGENT_SESSION`, `AGENT_INVOCATION`, `AGENT_USER` | session, activity id, session user |
-| `AGENT_ORIGIN`, `AGENT_ORIGIN_BY`, `AGENT_SCHEDULE` | §4 (`invocation.start`) |
+| `AGENT_ORIGIN`, `AGENT_ORIGIN_BY`, `AGENT_SCHEDULE`, `AGENT_ORIGIN_EVENT` | §4 (`invocation.start`); `AGENT_ORIGIN_EVENT` is `origin.event` |
 | `AGENT_PLAYBOOK` | `invocation.start`: the playbook the activity runs (§14c), if any |
 | `AGENT_PARENT_AGENT`, `AGENT_PARENT_ACTIVITY`, `AGENT_ROOT_AGENT`, `AGENT_ROOT_ACTIVITY` | §9 (`invocation.start`, `invocation.end`) |
 | `AGENT_TOOL`, `AGENT_SERVER`, `AGENT_CALL_ID`, `AGENT_ARGS_SHA256` | tool events. SHA-256 of the arguments' JSON with sorted keys. Arguments are never logged |
@@ -896,7 +897,8 @@ calls between categories or add incidents.
 
 **Diagnostics and enablement records** (§4a, §6b; draft, O16). The host
 writes `diagnosis.report` with the agent's fields; `agent-admin` writes
-`diagnosis.feedback`, `categories.enabled` and `category.refused` with
+`diagnosis.feedback`, `categories.enabled`, `category.refused` and
+`event.skipped` with
 `SYSLOG_IDENTIFIER=custos-promotion`, `AGENT_CONTRACT`, `AGENT_NAME` (empty
 for `categories.enabled`, which is the host's) and these added fields:
 
@@ -911,6 +913,7 @@ for `categories.enabled`, which is the host's) and these added fields:
 | `AGENT_ENABLEMENT_SHA256` | `categories.enabled`: the digest of the state after (§6b) |
 | `AGENT_ENABLEMENT` | `categories.enabled`: the record's id (`n-…`), also in the data's `record` |
 | `AGENT_CATEGORY`, `AGENT_REASON` | `category.refused`: the disabled category, and what was refused (`permissions`, `promote`, `create --template patch-pilot`) |
+| `AGENT_ORIGIN_EVENT`, `AGENT_ORIGIN_BY`, `AGENT_REASON` | `event.skipped`: an event (§14) that started no activity: the event, `unit-failure:<unit>`, and why (its activity for the unit still runs, the minimum interval, or the agent refused) |
 
 | `AGENT_EVENT` | `MESSAGE_ID` |
 |---|---|
@@ -918,6 +921,7 @@ for `categories.enabled`, which is the host's) and these added fields:
 | `diagnosis.feedback` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a671` |
 | `categories.enabled` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a672` |
 | `category.refused` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a673` |
+| `event.skipped` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a674` |
 
 ## 11. Interaction (chat as one mode)
 
@@ -998,7 +1002,7 @@ aggregation, policy distribution and approvals across hosts) is parked
 | `/usr/libexec/custos/agent-delegate` | root 0755 | the gateway's `agents` server (§9) |
 | `/usr/sbin/agent-admin` (and a link in the libexec directory) | root 0755 | administration (§17) |
 | `/usr/sbin/custos-setup` | root 0755 | the bundled diagnostics install's setup (§17a; package `custos-diagnostics`) |
-| `/usr/lib/systemd/system/agent@.{service,socket}`, `agent-schedule@.{service,timer}` | root 0644 | unit templates |
+| `/usr/lib/systemd/system/agent@.{service,socket}`, `agent-schedule@.{service,timer}`, `agent-event@.service` | root 0644 | unit templates |
 | `/usr/share/mcp-gateway/policy/custos/agents.rego` | root 0644 | the autonomy modes (§6) |
 | `/usr/share/mcp-gateway/policy/custos/owners.rego` | root 0644 | owners approve their agents' calls, and see their sessions and tasks (§7) |
 | `/usr/share/custos/gateway/servers.d/agents.yaml` | root 0644 | the `agents` server definition; copy to `/etc/mcp-gateway/servers.d/` to allow delegation |
@@ -1016,6 +1020,8 @@ aggregation, policy distribution and approvals across hosts) is parked
 | `/etc/credstore.encrypted/agent-<name>.<cred>` | root 0600 | secrets (`systemd-creds encrypt`) |
 | `/etc/systemd/system/agent@<name>.service.d/` | root | sandbox changes; Cockpit writes `50-cockpit.conf` only |
 | `/etc/systemd/system/agent-schedule@<name>_<schedule>.timer.d/schedule.conf` | root | a schedule's `OnCalendar=` |
+| `/etc/systemd/system/<unit>.d/50-custos-event-<name>_<event>.conf` | root 0644 | an event's `OnFailure=agent-event@<name>_<event>_<unit>.service` on a unit it watches (§14, §15) |
+| `/run/custos/events/<name>_<event>_<unit>` | root 0600 | when the event last started an activity for the unit (gone at boot) |
 | `/var/lib/agents/<name>/sessions.db` | agent-`<name>` 0600 | ADK sessions (SQLite) |
 | `/var/lib/agents/<name>/activities.json` | agent-`<name>` 0600 | the ended activities (§5), at most 200 of the last 30 days |
 
@@ -1047,6 +1053,12 @@ interaction:
 schedules:
   - {name: compliance, on_calendar: "Mon..Fri 06:00", prompt: "List pending security patches; install nothing."}
   - {name: health, on_calendar: daily, playbook: failed-units}   # a playbook (§14c); prompt optional
+events:                               # activities started when a unit fails (§15)
+  - name: web-down
+    on_unit_failure: [nginx.service, php-fpm.service]
+    prompt: "The unit {unit} failed. Find out why."   # {unit}: the one that failed
+    playbook: service-health          # optional, as for a schedule
+    min_interval_seconds: 600         # optional: the default; per unit
 sessions: {retention_days: 30}
 sandbox: {kind: systemd}             # or {kind: openshell, openshell_gateway: openshell} (§3a, §16a)
 ```
@@ -1216,6 +1228,24 @@ schedule's prompt as root with `origin.kind: schedule`. (Not
 `agent-launcher`: systemd would run its program in `agent_t`, which may
 not reach agents' sockets.)
 
+An event (§14) watches systemd units: `agent-admin` puts a drop-in
+`50-custos-event-<name>_<event>.conf` with
+`OnFailure=agent-event@<name>_<event>_<unit>.service` on each unit it
+names, and removes it when the event or the agent goes. When the unit
+fails, systemd starts that unit, which runs `agent-admin event
+<name>_<event>_<unit>`: it posts the event's prompt, `{unit}` filled in
+and systemd's account of the failure added (`MONITOR_SERVICE_RESULT`,
+`MONITOR_EXIT_CODE`, `MONITOR_EXIT_STATUS`), as root with
+`origin: {kind: event, by: "unit-failure:<unit>", event: <event>}`.
+It is damped per event and unit: it starts nothing while the event's
+activity for the unit still runs, nor within `min_interval_seconds`
+(default 600) after it last started one, and records each skip
+(`event.skipped`, §10). An event may not watch Custos's own units
+(`agent@…`, `agent-…`, `custos-…`), so it cannot start itself, nor a
+template instance (`getty@tty1.service`). Pause, the emergency stop and a
+stopped agent refuse its activity like any other; the refusal fails the
+event's unit and is recorded too.
+
 `custos-demote.timer` runs `custos-demote.service` (`agent-admin
 evaluate`, as root, outside any agent) every 5 minutes and 2 minutes
 after boot: the demotion evaluator (§6a). `agent-admin promote` enables
@@ -1306,6 +1336,7 @@ standard error:
 | `stop-all`, `release-all` | the emergency stop (§8) and its end. `release-all` starts again the agents' sockets and schedule timers that are enabled: what an administrator disabled stays stopped. Both record who (`_control.by`: the person behind `sudo`, `SUDO_USER`, else `USER`) and when (`at`) |
 | `delete NAME [--keep-state]` | disables and stops units; removes configuration, gateway data, credentials, drop-ins, timers and, unless kept, state. The user stays, since uids are not reused while files may still belong to them |
 | `trigger NAME_SCHEDULE` | starts the schedule's activity (run by `agent-schedule@.service`) |
+| `event NAME_EVENT_UNIT` | starts the event's activity for a unit that failed, damped (run by `agent-event@.service`, §15) |
 | `list` | the agents |
 | `show [NAME…]` | the gateway data (§6) of the named agents, or of all, and the emergency stop (§8), as JSON: `{"agents": {"<name>": {"mode", "paused", "paused_by"?, "permissions", "categories"?}}, "control": {"stopped", "by"?, "at"?}, "enablement"?: {"state", "enabled", "changed_by", "record", "tampered"?}}`, where `categories` is §6a's entries and `enablement` §6b's state (absent: every category), with `tampered` saying why it does not match its record. Needs no root: the files are readable by everyone; without access to the journal there is no tamper check |
 | `categories` | the catalog (§6a), as JSON: `{"<category>": {"title", "description"?}}`. Needs no root |
@@ -1394,7 +1425,7 @@ repository ships runs in a domain the policy accounts for:
 |---|---|---|
 | `agent-launcher` | systemd (`agent@.service`) | `agent_t` |
 | `agent-delegate` | mcp-gateway (the `agents` server) | `mcpsrv_agents_t` |
-| `agent-admin` | an administrator, Cockpit, `agent-schedule@.service` | the caller's (`unconfined_t`, `unconfined_service_t`) |
+| `agent-admin` | an administrator, Cockpit, `agent-schedule@.service`, `agent-event@.service` | the caller's (`unconfined_t`, `unconfined_service_t`) |
 | `fakemodel`, `testsrv` (`-tests`) | the functional tests; mcp-gateway | `unconfined_service_t`; `mcpsrv_generic_t` |
 
 CI builds the module and runs the functional tests on Leap 16 with SELinux

@@ -277,6 +277,26 @@ func TestApprovalFlow(t *testing.T) {
 	}
 }
 
+// An event's activity (§14, started by agent-admin event as root): its
+// origin keeps the event's name, in the activity and in invocation.start.
+func TestEventActivity(t *testing.T) {
+	e := newEnv(t, testutil.Text("nginx: the config test fails."))
+	res, b := e.do("POST", "/v1/activities", "0:root", map[string]any{"prompt": "The unit nginx.service failed.",
+		"origin": map[string]any{"kind": "event", "by": "unit-failure:nginx.service", "event": "web-down"}, "wait": true})
+	if res.StatusCode != 200 {
+		t.Fatalf("%d %s", res.StatusCode, b)
+	}
+	var act governance.Activity
+	json.Unmarshal(b, &act)
+	if act.Origin.Kind != "event" || act.Origin.By != "unit-failure:nginx.service" || act.Origin.Event != "web-down" || act.User != "system:event" {
+		t.Errorf("event activity %s", b)
+	}
+	st := e.log.Events(journal.InvocationStart)
+	if f := st[len(st)-1].Fields; f["ORIGIN"] != "event" || f["ORIGIN_BY"] != "unit-failure:nginx.service" || f["ORIGIN_EVENT"] != "web-down" {
+		t.Errorf("journal origin %v", f)
+	}
+}
+
 func TestScheduledActivityAndSessionsGuard(t *testing.T) {
 	e := newEnv(t, testutil.Text("Compliance check: 0 findings."))
 	res, b := e.do("POST", "/v1/activities", "1001:mallory", map[string]any{"prompt": "x", "origin": map[string]any{"kind": "schedule", "by": "fake"}})
