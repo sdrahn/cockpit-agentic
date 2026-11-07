@@ -35,6 +35,12 @@ type Admin struct {
 	Root string // "" on a host; a temporary directory in tests
 	// Run runs a command (systemctl, systemd-sysusers, systemd-creds).
 	Run func(stdin io.Reader, name string, args ...string) error
+	// HTTP reaches an agent's identity provider (check-token); nil: a
+	// client with a timeout.
+	HTTP *http.Client
+	// GatewayConfig, when set, is the gateway configuration idp-client and
+	// check-token read instead of the installed one (--gateway-config).
+	GatewayConfig string
 	// Output runs a command and returns its output (systemd-creds
 	// decrypt, the seal's key); nil: run it.
 	Output func(stdin io.Reader, name string, args ...string) ([]byte, error)
@@ -339,7 +345,8 @@ func (a *Admin) createOpenShell(cfg *config.Config) error {
 		return fmt.Errorf("importing the provider profile: %w", err)
 	}
 	if cfg.Gateway.OAuth != nil {
-		fmt.Fprintf(a.Out, "agent %s: set its OAuth client's secret next: agent-admin set-credential %s gateway-client-secret < secret\n", cfg.Name, cfg.Name)
+		fmt.Fprintf(a.Out, "agent %[1]s: set its OAuth client's secret next: agent-admin set-credential %[1]s gateway-client-secret < secret\n"+
+			"  (the client it needs: agent-admin idp-client %[1]s; its token checked first: agent-admin check-token %[1]s < secret)\n", cfg.Name)
 	} else {
 		fmt.Fprintf(a.Out, "agent %s: set its gateway token next: agent-admin set-credential %s gateway-token < token\n", cfg.Name, cfg.Name)
 	}

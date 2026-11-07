@@ -281,6 +281,18 @@ printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server
 check "agent-admin permissions sb (supervised: change needs an approval)" agent-admin permissions sb <"$work/perms.yaml"
 check "the sandbox policy is written" test -s /etc/custos/agents/sb/openshell-policy.yaml
 check "the provider profile is imported" eventually 10 bash -c 'openshell -g openshell profile list -o json 2>/dev/null | grep -q custos-gateway-sb'
+# #111: the client's tokens checked before OpenShell gets the secret. The
+# installed gateway's settings as the gateway reads them (its listener is
+# a gateway.d drop-in), else the spike's own gateway's file.
+gwcfg=()
+[ -n "$system" ] || gwcfg=(--gateway-config "$work/gw/gateway.yaml")
+idp=$(agent-admin idp-client sb "${gwcfg[@]}")
+check "agent-admin idp-client sb: its client id" grep -qF 'client id     agent-sb' <<<"$idp"
+check "agent-admin idp-client sb: the gateway's audience" grep -qF "$aud" <<<"$idp"
+check "agent-admin check-token sb: the issuer's token is what the gateway expects" \
+	agent-admin check-token sb "${gwcfg[@]}" <"$work/client-secret"
+refused() { local out; out=$(agent-admin check-token sb "${gwcfg[@]}" <<<wrong 2>&1) && return 1; grep -qF 'refused client agent-sb' <<<"$out"; }
+check "agent-admin check-token sb with a wrong secret: the issuer refuses it" refused
 n0=$(minted)
 check "agent-admin set-credential sb gateway-client-secret (OpenShell mints the token, creates the sandbox)" \
 	agent-admin set-credential sb gateway-client-secret <"$work/client-secret"

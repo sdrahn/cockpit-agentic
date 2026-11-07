@@ -30,6 +30,11 @@ const usage = `usage: agent-admin COMMAND …
   edit NAME --from FILE                  replace its configuration and apply it (restart; OpenShell: its sandbox; FILE -: stdin)
   delete NAME [--keep-state]             remove an agent (its user stays)
   set-credential NAME CRED               encrypt a secret read from stdin
+  idp-client NAME [--keycloak]           the OAuth client an OpenShell agent needs at the gateway's identity
+                                         provider; --keycloak: a script that creates it there (kcadm.sh)
+  check-token NAME < secret              mint a token with the agent's OAuth client and check its claims
+                                         as the gateway will (iss, sub, aud, scope, lifetime)
+                                         (both: --gateway-config FILE instead of the installed gateway's)
   credentials [NAME…]                    the agents' credentials: names, what uses them, missing ones; never
                                          the values (JSON)
   remove-credential NAME CRED [--force]  remove a stored credential (--force: one its model uses)
@@ -357,6 +362,18 @@ func run(a *admin.Admin, args []string) error {
 			return err
 		}
 		return a.Trigger(args[0])
+	case "idp-client":
+		if err := need(1); err != nil {
+			return err
+		}
+		a.GatewayConfig, _ = flag("--gateway-config")
+		return a.IDPClient(args[0], has("--keycloak"))
+	case "check-token":
+		if err := need(1); err != nil {
+			return err
+		}
+		a.GatewayConfig, _ = flag("--gateway-config")
+		return a.CheckToken(args[0], os.Stdin)
 	case "event":
 		if err := need(1); err != nil {
 			return err
