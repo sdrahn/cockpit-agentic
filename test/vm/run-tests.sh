@@ -791,7 +791,7 @@ systemctl stop custos-second-host-mock.service >/dev/null 2>&1
 check "the second host runs (systemd-run)" systemd-run --quiet --unit=custos-second-host-mock.service \
 	"$dir/secondhost" -name mock -service custos-second-host-mock.service
 check "its socket is the contract's: /run/agents/mock/api.sock, root:agent-clients 660" eventually 10 \
-	stat_is /run/agents/mock/api.sock "root:$sock_group:660"
+	stat_is /run/agents/mock/api.sock root:agent-clients:660
 check "a member of agent-clients reads its status: contract 1, its implementation, its unit" bash -c \
 	"$(declare -f mock); mock custos-tester /v1/status | jq -e '.contract == 1 and .implementation == \"custos-test/second-host\" and
 		.lifecycle.kind == \"systemd\" and .lifecycle.service == \"custos-second-host-mock.service\"' >/dev/null"
