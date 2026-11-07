@@ -9,6 +9,10 @@ removed.
 
 ### Changed
 
+- A tool in `gateway.tools` whose server is not in `gateway.servers`:
+  the check's message says the fix ("add agents to gateway.servers"),
+  and Cockpit's create form and configuration editor offer a button that
+  adds the server and checks again (#116).
 - A delegation (`agents__delegate`) answers with the other agent's full
   response (up to 32 KiB), its diagnosis report if it wrote one, and why
   its activity did not finish, instead of the first 500 characters of

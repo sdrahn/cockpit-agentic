@@ -472,6 +472,19 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.click("#create-agent button[name=check]");
     await page.waitForFunction(() => document.querySelector("#create-note").textContent.includes("valid"));
     if (shots) await page.screenshot({ path: path.join(shots, "create.png"), fullPage: true });
+    // A tool whose server gateway.servers lacks (#116): the message names the
+    // fix, and a button adds the server and checks again.
+    await page.fill("#create-agent textarea", (await page.inputValue("#create-agent textarea"))
+        .replace(/^  servers: \[zypp\]$/m, "  servers: [zypp]\n  tools: [zypp__check_updates, agents__delegate]"));
+    await page.click("#create-agent button[name=check]");
+    await page.waitForSelector("#create-note .server-fix");
+    check((await page.textContent("#create-note")).includes('its server "agents" is not in gateway.servers: add agents to gateway.servers') &&
+          (await page.textContent("#create-note .server-fix")) === "Add agents to gateway.servers",
+          "a tool whose server is missing: the message says the fix, and Cockpit offers it");
+    await page.click("#create-note .server-fix");
+    await page.waitForFunction(() => document.querySelector("#create-note").textContent.includes("valid"));
+    check((await page.inputValue("#create-agent textarea")).includes("  servers: [zypp, agents]\n"),
+          "the button adds the server to gateway.servers, and the check passes");
     await page.fill("#create-name", "Bad Name");
     await page.click("#create-agent button[name=create]");
     check((await page.textContent("#create-note")).includes("lower-case"), "an invalid name is refused before agent-admin");

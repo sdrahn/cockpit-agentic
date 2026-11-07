@@ -424,8 +424,17 @@
                 if (cmd === "defaults" && args.length === 2) return new Promise(r => setTimeout(() => r(JSON.stringify(defaults)), 300));
                 // A configuration is valid with a version, its name and a model;
                 // check needs no root, changes need the root bridge.
+                // A tool whose server gateway.servers ([…]) lacks: agent-admin's
+                // message names the fix (#116).
+                const toolServer = text => {
+                    const m = text.match(/servers:[ \t]*\[([^\]\n]*)\]/);
+                    const servers = m ? m[1].split(",").map(s => s.trim()) : [];
+                    const lines = [...text.matchAll(/\b([a-z][a-z0-9-]*)__[a-z_]+/g)].filter(t => !servers.includes(t[1]))
+                        .map(t => `gateway.tools: "${t[0]}": its server "${t[1]}" is not in gateway.servers: add ${t[1]} to gateway.servers`);
+                    return lines.length ? "agent-admin: " + lines.join("\n") : null;
+                };
                 const invalid = text => !/^version: 1$/m.test(text) ? "agent-admin: version: want 1"
-                    : !/^model:/m.test(text) ? "agent-admin: model: missing" : null;
+                    : !/^model:/m.test(text) ? "agent-admin: model: missing" : toolServer(text);
                 if (cmd !== "check" && opts.superuser !== "require") return Promise.reject({ problem: "access-denied" });
                 const d = posture.agents[name];
                 const by = ((opts.environ || []).find(e => e.startsWith("SUDO_USER=")) || "SUDO_USER=root").slice(10);
