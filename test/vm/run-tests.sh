@@ -603,7 +603,10 @@ check "evaluate leaves a healthy category bounded" bash -c \
 	"agent-admin evaluate >/dev/null && agent-admin show t1 | jq -e '.agents.t1.categories[\"patch-errata\"].mode == \"bounded\"' >/dev/null"
 rm -f /run/custos-test-healthy
 quiet_evaluator
-check "evaluate demotes it when its health check fails" bash -c "agent-admin evaluate | tee $work/evaluate.out | grep -q 'category patch-errata demoted: rollback health_check_failed'"
+# The whole output first, then the check: grep -q on a pipe through tee
+# would end tee (SIGPIPE) before the notice line reached the file.
+check "evaluate demotes it when its health check fails" bash -c \
+	"agent-admin evaluate >$work/evaluate.out; grep -q 'category patch-errata demoted: rollback health_check_failed' $work/evaluate.out"
 # The approvers hear of it through the gateway's notices (its R3), where
 # the gateway takes them.
 if gw /v1/notices | jq -e 'type == "array"' >/dev/null 2>&1; then
