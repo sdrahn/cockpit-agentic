@@ -7,6 +7,13 @@ removed.
 
 ## Unreleased
 
+### Fixed
+
+- Cockpit's permissions editor closed, and lost what was typed, within
+  five seconds: the Agents tab rebuilt the agent's view and kept the
+  editor only while its text field had the focus. It now stays open with
+  the edit until it is saved; so does the owners field.
+
 ### Changed
 
 - A tool in `gateway.tools` whose server is not in `gateway.servers`:
