@@ -780,6 +780,41 @@ check "but not another user's sessions (403)" code_is 403 as_tester http://agent
 check "and cannot pause the agent (403)" code_is 403 as_tester -X POST http://agent/v1/pause
 check "ADK's builder endpoint is not reachable (404)" code_is 404 api t1 /builder/save -X POST
 
+section "A second host (the contract alone)"
+# CONTRACT.md Part I, #112: a host that is not Custos's launcher, built on
+# the standard library from the contract alone, serves the control API
+# and writes the records; the control plane's tools find and use it as
+# they do the launcher. Its activities are scripted: WAIT runs until
+# cancelled.
+mock() { local caller=$1 p=$2; shift 2; runuser -u "$caller" -- curl -s --max-time 30 --unix-socket /run/agents/mock/api.sock "http://agent$p" "$@"; }
+systemctl stop custos-second-host-mock.service >/dev/null 2>&1
+check "the second host runs (systemd-run)" systemd-run --quiet --unit=custos-second-host-mock.service \
+	"$dir/secondhost" -name mock -service custos-second-host-mock.service
+check "its socket is the contract's: /run/agents/mock/api.sock, root:agent-clients 660" eventually 10 \
+	stat_is /run/agents/mock/api.sock root:agent-clients:660
+check "a member of agent-clients reads its status: contract 1, its implementation, its unit" bash -c \
+	"$(declare -f mock); mock custos-tester /v1/status | jq -e '.contract == 1 and .implementation == \"custos-test/second-host\" and
+		.lifecycle.kind == \"systemd\" and .lifecycle.service == \"custos-second-host-mock.service\"' >/dev/null"
+check "nobody else reaches it" not as_nobody curl -sf --max-time 5 --unix-socket /run/agents/mock/api.sock http://agent/v1/status
+m=$(mock custos-tester /v1/activities -X POST -d '{"prompt":"hello","wait":true}')
+check "custos-tester's activity: origin api, by custos-tester (SO_PEERCRED)" json_ok "$m" \
+	'.state == "finished" and .origin.kind == "api" and .origin.by == "custos-tester" and .summary == "echo: hello"'
+check "journal: invocation.start of the second host, with the contract's fields" eventually 10 journal_has mock invocation.start \
+	'.AGENT_CONTRACT == "1" and .AGENT_ORIGIN == "api" and .AGENT_ORIGIN_BY == "custos-tester" and .SYSLOG_IDENTIFIER == "agent-mock"'
+w=$(mock custos-tester /v1/activities -X POST -d '{"prompt":"WAIT until cancelled"}' | jq -r .id)
+check "a running activity is listed first" bash -c \
+	"$(declare -f mock); mock custos-tester /v1/activities | jq -e '.activities[0] | .id == \"$w\" and .state == \"running\"' >/dev/null"
+check "its user cancels it (204)" code_is 204 mock custos-tester "/v1/activities/$w/cancel" -X POST
+check "cancelled" bash -c "$(declare -f mock); mock custos-tester /v1/activities/$w | jq -e '.state == \"cancelled\"' >/dev/null"
+check "a supervisor cannot pause it (403)" code_is 403 mock custos-tester /v1/pause -X POST
+check "root pauses it" code_is 204 api mock /v1/pause -X POST
+check "paused, it refuses a new activity (409)" code_is 409 mock custos-tester /v1/activities -X POST -d '{"prompt":"x"}'
+check "root resumes it" code_is 204 api mock /v1/resume -X POST
+check "journal: agent.paused by root" eventually 10 journal_has mock agent.paused '.AGENT_BY == "root"'
+check "journal: agent.resumed by root" eventually 10 journal_has mock agent.resumed '.AGENT_BY == "root"'
+systemctl stop custos-second-host-mock.service >/dev/null 2>&1
+rm -rf /run/agents/mock
+
 section Delegation
 cp /usr/share/custos/gateway/servers.d/agents.yaml /etc/mcp-gateway/servers.d/agents.yaml
 eventually 30 servers_have agents

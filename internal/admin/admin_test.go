@@ -889,3 +889,22 @@ func TestTriggerPlaybook(t *testing.T) {
 		t.Errorf("body %v", got)
 	}
 }
+
+// Pausing an agent the gateway has no data for (another host's, #112):
+// the host is told; without its host either, it is an error.
+func TestPauseWithoutGatewayData(t *testing.T) {
+	a, r := newAdmin(t)
+	if err := a.Pause("mock", "alice", true); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.cmds) != 1 || r.cmds[0] != "POST /run/agents/mock/api.sock/v1/pause" {
+		t.Errorf("cmds %v", r.cmds)
+	}
+	if _, err := os.Stat(a.gatewayFile("mock")); !errors.Is(err, os.ErrNotExist) {
+		t.Error("gateway data was written for it")
+	}
+	a.Control = func(string, string) error { return errors.New("connection refused") }
+	if err := a.Pause("mock", "alice", false); err == nil || !strings.Contains(err.Error(), "no data for it, and its host was not reached") {
+		t.Errorf("unreachable: %v", err)
+	}
+}

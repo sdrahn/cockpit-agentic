@@ -13,6 +13,12 @@ removed.
   five seconds: the Agents tab rebuilt the agent's view and kept the
   editor only while its text field had the focus. It now stays open with
   the edit until it is saved; so does the owners field.
+- An activity without tool calls had `calls: null` instead of `[]`
+  (§4); found by the second host's conformance checks (#112).
+- Cockpit stopped and started a socket unit that does not exist for a
+  host whose lifecycle names only its service (§3).
+- `agent-admin pause` and `resume` refused an agent the gateway has no
+  data for; they now tell its host (§8).
 
 ### Changed
 
@@ -29,6 +35,10 @@ removed.
 
 ### Added
 
+- A second agent host for tests (#112): `test/vm/secondhost`, built from
+  the contract alone, and conformance checks (`test/contract`) that it
+  and the launcher pass; the functional and Cockpit tests use it as an
+  agent of its own. In `custos-tests`.
 - The way back from enabling task categories (#110): `agent-admin
   disable CATEGORY…` disables them again, and `disable --all` returns the
   host to diagnostics-only; Cockpit's **Disable…** does the same. It is

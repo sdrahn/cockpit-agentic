@@ -337,7 +337,7 @@ func (g *Governor) Activity(id string) (Activity, bool) {
 // snapshot must be called with g.mu held.
 func (g *Governor) snapshot(in *invocation) Activity {
 	a := copyActivity(in.act)
-	a.Calls = nil
+	a.Calls = []Call{} // an array, never null (§4), also without calls
 	for _, c := range in.calls {
 		a.Calls = append(a.Calls, *c)
 	}
@@ -356,7 +356,7 @@ func (g *Governor) snapshot(in *invocation) Activity {
 
 func copyActivity(a *Activity) Activity {
 	c := *a
-	c.Calls = append([]Call(nil), a.Calls...)
+	c.Calls = append([]Call{}, a.Calls...)
 	return c
 }
 

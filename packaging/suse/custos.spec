@@ -265,6 +265,7 @@ done
 %{_libexecdir}/custos/tests/fakemodel
 %{_libexecdir}/custos/tests/testsrv
 %{_libexecdir}/custos/tests/testidp
+%{_libexecdir}/custos/tests/secondhost
 
 %files selinux
 %dir %{_datadir}/selinux/packages/%{selinuxtype}

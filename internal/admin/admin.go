@@ -976,7 +976,22 @@ func (a *Admin) Pause(name, by string, on bool) error {
 	if err := checkName(name); err != nil {
 		return err
 	}
+	path := "/v1/resume"
+	if on {
+		path = "/v1/pause"
+	}
+	sock := filepath.Join(SocketDir, name, "api.sock")
 	d, err := a.readGateway(name)
+	if errors.Is(err, os.ErrNotExist) {
+		// An agent the gateway has no data for (another host's, §3): the
+		// gateway denies it everything already; the host's part (§8) is
+		// all there is.
+		if err := a.Control(sock, path); err != nil {
+			return fmt.Errorf("agent %s: the gateway has no data for it, and its host was not reached: %w", name, err)
+		}
+		fmt.Fprintf(a.Out, "agent %s: the gateway has no data for it (it denies it everything); its host was told\n", name)
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -987,11 +1002,7 @@ func (a *Admin) Pause(name, by string, on bool) error {
 	if err := a.writeGateway(name, d); err != nil {
 		return err
 	}
-	path := "/v1/resume"
-	if on {
-		path = "/v1/pause"
-	}
-	if err := a.Control(filepath.Join(SocketDir, name, "api.sock"), path); err != nil {
+	if err := a.Control(sock, path); err != nil {
 		fmt.Fprintf(a.Out, "agent %s: the gateway denies its calls; the agent itself was not reached (%v)\n", name, err)
 	}
 	return nil
