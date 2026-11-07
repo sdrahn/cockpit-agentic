@@ -7,7 +7,7 @@
  *
  * Environment: COCKPIT_URL, COCKPIT_USER, COCKPIT_PASSWORD; SSH (the ssh
  * command to run a command in the VM, as a JSON array); WAITING_ACTIVITY,
- * WAITING_APPROVAL, DECLINED_APPROVAL, T0 (from vm-setup.sh); CHROME
+ * WAITING_APPROVAL, DECLINED_APPROVAL, MOCK_ACTIVITY, T0 (from vm-setup.sh); CHROME
  * (optional); SHOTS (optional). Prints PASS/FAIL lines and exits 1 if any
  * failed.
  */
@@ -33,6 +33,7 @@ const sshCmd = JSON.parse(env("SSH"));
 const waiting = env("WAITING_ACTIVITY");
 const approval = env("WAITING_APPROVAL");
 const declined = env("DECLINED_APPROVAL");
+const mockRun = env("MOCK_ACTIVITY");
 const t0 = env("T0");
 const shots = process.env.SHOTS;
 if (shots) fs.mkdirSync(shots, { recursive: true });
@@ -306,6 +307,36 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
                  "systemctl is-active -q agent@doctor.socket") !== null,
               "the agent is created from the template: its configuration, permissions and mode, its socket");
         vm("agent-admin delete doctor; agent-admin defaults --clear");
+    });
+
+    await step("a second host (the contract alone)", async () => {
+        // #112: custos-second-host serves the control API and nothing of
+        // Custos's launcher; the page lists it and works with it as with
+        // the launcher's agents.
+        await go("/agents/mock");
+        const detail = frame().locator("#agent-detail");
+        await detail.getByText("custos-test/second-host").waitFor({ timeout: 60000 });
+        const d = await detail.textContent();
+        check(d.includes("custos-test/second-host · contract 1") && d.includes("custos-second-host-mock.service"),
+              "the page lists the second host: its implementation, contract and unit", d.slice(0, 300));
+        check(d.includes("The gateway has no data for this agent"), "and says the gateway has no data for it");
+        check(!d.includes("agent@mock."), "its lifecycle names only a service: the page invents no agent@mock unit", d.slice(0, 300));
+        // Pause: the gateway has no data for it, so the host's part (§8).
+        await detail.locator("button:text-is('Pause')").click();
+        check(await vmEventually(30, "curl -s --unix-socket /run/agents/mock/api.sock http://a/v1/status | jq -e '.paused == true' >/dev/null"),
+              "Pause pauses the second host (POST /v1/pause)");
+        await detail.locator("button:text-is('Resume')").waitFor({ timeout: 60000 });
+        await detail.locator("button:text-is('Resume')").click();
+        check(await vmEventually(30, "curl -s --unix-socket /run/agents/mock/api.sock http://a/v1/status | jq -e '.paused == false' >/dev/null"),
+              "and Resume resumes it");
+        await go("/activity/mock/" + mockRun);
+        await frame().locator("#activity-mock-" + mockRun).waitFor({ timeout: 60000 });
+        check((await frame().locator("#activity-detail").textContent()).includes("api · root"), "its running activity, started by root");
+        await frame().locator("#activity-detail button:has-text('Cancel activity')").click();
+        check(await vmEventually(30, `[ "$(curl -s --unix-socket /run/agents/mock/api.sock http://a/v1/activities/${mockRun} | jq -r .state)" = cancelled ]`),
+              "Cancel activity ends it, through the root bridge (root started it)");
+        await shot("second-host");
+        vm("systemctl stop custos-second-host-mock.service; rm -rf /run/agents/mock");
     });
 
     await step("an agent that does not answer", async () => {

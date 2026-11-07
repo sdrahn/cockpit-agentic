@@ -28,12 +28,16 @@ function modeBadge(mode) {
 /* unitsOf are the units that stop and start the agent (§3a lifecycle):
  * its socket and service, so that a stopped agent stays stopped (a
  * request to a listening socket would start it again), and its socket to
- * start it, which starts the service on the next request. For a stopped
- * agent, which has no status, the lifecycle refreshState found. */
+ * start it, which starts the service on the next request. A systemd host
+ * that is not socket-activated names only its service (§3): that one
+ * stops and starts it. (An OpenShell agent's lifecycle names no socket,
+ * but has one: agent-openshell@<name>.socket.) For a stopped agent, which has no status, the lifecycle
+ * refreshState found. */
 function unitsOf(a) {
     const l = (a.status && a.status.lifecycle) || a.lifecycle || {};
     const openshell = l.kind === "openshell";
     const service = l.service || (openshell ? "agent-openshell@" : "agent@") + a.name + ".service";
+    if (l.kind === "systemd" && l.service && !l.socket) return { stop: [service], start: [service], service };
     const socket = l.socket || (openshell ? "agent-openshell@" : "agent@") + a.name + ".socket";
     return { stop: [socket, service], start: [socket], service };
 }

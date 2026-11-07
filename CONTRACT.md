@@ -85,7 +85,8 @@ plane needs to find agents. `/v1/status` says how the agent is started
 and stopped (`lifecycle`, §3a) and names the host implementation
 (`implementation`). The ADK launcher reports `custos/adk-go`.
 A host that is not socket-activated still creates the socket while it
-runs, and names its lifecycle. (`units` is the `systemd` lifecycle's
+runs, and names its lifecycle: a `systemd` one without a socket names
+only its service, which a control plane then stops and starts. (`units` is the `systemd` lifecycle's
 units, kept for version 1 clients.)
 
 `/run/agents/` is `root:root 0755`. Each socket is `root:agent-clients
@@ -166,6 +167,7 @@ started them.
 | `origin.event` | events only: the name of the agent's event (§14) that started it |
 | `parent`, `root` | delegation (§9): the activity that delegated this one, and the first one of the chain. `root` is the activity itself when nothing delegated it |
 | `state` | `running`, `waiting_approval` (a call waits for the gateway's approval), `paused`, `finished`, `failed`, `cancelled`, `limit` (a local limit ended it) |
+| `calls` | the activity's tool calls: always an array, `[]` when it made none |
 | `calls[].state` | `running`, `waiting_approval`, `ok`, `error` |
 | `calls[].approval` | `pending`, `approved`, `declined` |
 | `calls[].rationale` | the model's text that came with the call: its stated reason and expected impact. **Self-asserted by the agent**; the control plane labels it so |
@@ -799,7 +801,8 @@ user, who is not necessarily allowed to approve.
 | **Emergency stop** | every agent | `/etc/mcp-gateway/policy/agents/_control.yaml` with `_control: {stopped: true}` (the gateway denies every agent everything, on every backend), then stop every agent by its lifecycle and every schedule timer | gateway, systemd, OpenShell |
 
 `agent-admin` implements pause, resume, `stop-all` and `release-all`
-(Part II). The emergency stop works even if an agent's host ignores
+(Part II). An agent the gateway has no data for (another host's, which
+the gateway denies everything anyway) is paused by its host alone. The emergency stop works even if an agent's host ignores
 everything: the gateway denies the calls, and systemd stops the
 processes. Every intervention is journaled (`agent.paused`,
 `agent.resumed`, `activity.cancel`, the gateway's policy change
@@ -1526,7 +1529,7 @@ too) and `mcp-gateway-exec-server`, recommending `custos-cockpit` and
 | See autonomy mode and policy; adjust where permitted | §6 | gateway data + `agent-admin mode/permissions/show`; Cockpit Agents and Policy tabs done, smoke-tested against a stub of Cockpit (O9) |
 | Stop / pause / override in-flight or scheduled activity; emergency stop | §8 | cancel, pause (host and gateway), stop-all done; tested on the host side and in policy |
 | On-premises, air-gapped | §14 (`provider: openai` with a local server), §19 (OBS) | done; no external service needed |
-| Independent of kit / any host | Part I is host-independent; §3 discovery by contract only | contract done; a second host (kit adapter or a mock) to demonstrate (O8) |
+| Independent of kit / any host | Part I is host-independent; §3 discovery by contract only | done: a second host (`test/vm/secondhost`, the standard library and the contract alone) passes the same conformance checks as the launcher (`test/contract`), and the Cockpit page lists, pauses and cancels on it in a real Cockpit (O8) |
 | Fleet scope addressed | §12 | out of scope for 16.2, not precluded |
 
 ## 20a. Requirement: agentic systems management as a GA component (SLES 16.2)
@@ -1614,9 +1617,17 @@ inherited, not specified again.
   (a convention for the model's text, or a tool for it).
 - **O7 — fleet.** A cross-host delegation transport, a host part in the
   trace, and an aggregated view.
-- **O8 — second host.** Demonstrating host independence: a mock host
-  (or a kit adapter) serving §5, §10 and §11 for the Cockpit page to run
-  against.
+- **O8 — second host.** Done (#112): `test/vm/secondhost`, a mock
+  host built from the standard library and this contract alone, serves
+  §5 and writes §10's records (no AG-UI: `interaction.agui` false). The
+  conformance checks in `test/contract` run against it and against the
+  launcher; the functional tests run it as a unit and use it as a
+  supervisor and as root; the Cockpit page lists, pauses and cancels on
+  it in a real Cockpit. What it found: the launcher sent `calls: null`
+  for an activity without calls (now `[]`, §4); the page made up a
+  socket unit for a lifecycle without one (now the service, §3);
+  `agent-admin pause` refused an agent without gateway data (now its
+  host alone, §8). Open: an adapter for another runtime (kit).
 - **O10 — OpenShell backend.** §3a and §16a are a draft. CI runs the
   backend with a real OpenShell on Docker (`test/openshell/run-spike.sh`,
   job `openshell`), against mcp-gateway's own HTTPS listener (in its

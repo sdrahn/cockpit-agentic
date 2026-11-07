@@ -127,6 +127,16 @@ done
 approval=$(approval_of patch-pilot "$waiting")
 [ -n "$approval" ] || die "the waiting change has no approval id"
 
+# A second host (#112): no Custos launcher, the contract alone; root's
+# activity on it runs until it is cancelled.
+systemctl stop custos-second-host-mock.service >/dev/null 2>&1 || true
+systemd-run --quiet --unit=custos-second-host-mock.service "$tests/secondhost" -name mock -service custos-second-host-mock.service
+eventually 10 test -S /run/agents/mock/api.sock || die "the second host has no socket"
+api mock /v1/activities -X POST -d '{"prompt":"hello from the second host","wait":true}' >/dev/null
+mockrun=$(api mock /v1/activities -X POST -d '{"prompt":"WAIT for the page"}' | jq -r .id)
+[ -n "$mockrun" ] || die "the second host started no activity"
+
+echo "MOCK_ACTIVITY=$mockrun"
 echo "WAITING_ACTIVITY=$waiting"
 echo "WAITING_APPROVAL=$approval"
 echo "DECLINED_APPROVAL=$(api patch-pilot "/v1/activities/$declined" | jq -r '[.calls[] | select(.approval_id != null)][0].approval_id')"

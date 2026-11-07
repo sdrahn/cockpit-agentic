@@ -24,6 +24,7 @@ import (
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/peercred"
 	"github.com/sdrahn/custos/internal/testutil"
+	"github.com/sdrahn/custos/test/contract"
 )
 
 type env struct {
@@ -655,4 +656,24 @@ func TestModelCallRecords(t *testing.T) {
 		f["PROMPT_BYTES"] == "" || f["PROMPT_BYTES"] == "0" || !strings.Contains(mc[1].Message, "failed") {
 		t.Errorf("failed call %+v %q", f, mc[1].Message)
 	}
+}
+
+// The reference launcher passes the contract's checks (test/contract), as
+// the second host does (test/vm/secondhost, #112).
+func TestContract(t *testing.T) {
+	e := newEnv(t)
+	contract.Check(t, contract.Host{
+		Name: "patch-pilot",
+		Do: func(method, path, caller string, body any) (int, []byte) {
+			res, b := e.do(method, path, caller, body)
+			return res.StatusCode, b
+		},
+		Records: func(event string) []map[string]string {
+			var out []map[string]string
+			for _, r := range e.log.Events(event) {
+				out = append(out, r.Fields)
+			}
+			return out
+		},
+	})
 }
