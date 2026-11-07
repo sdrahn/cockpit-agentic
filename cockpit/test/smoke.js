@@ -136,7 +136,14 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check((await spawned("agent-admin pause patch-pilot")).length === 1, "pause runs agent-admin pause");
     check(await effect("zypp__list_*") === "denied (paused)", "paused: the gateway denies everything");
     await page.click("#agent-detail summary");
+    // The editor outlives the tab's refreshes (every 5 s), open and with
+    // what was typed, also when the focus is elsewhere.
     await page.fill("#permissions-yaml", '- {"server":"zypp","tool":"list_*","read_only":true}\n');
+    await page.click("#agent-detail h2");
+    await page.waitForTimeout(6000);
+    check(await page.$eval(".permissions-edit", d => d.open) &&
+          (await page.inputValue("#permissions-yaml")) === '- {"server":"zypp","tool":"list_*","read_only":true}\n',
+          "the permissions editor stays open, with the edit, across a refresh");
     await page.click("#agent-detail button:has-text('Save permissions')");
     await page.waitForFunction(() => document.querySelectorAll("#boundaries tbody tr").length === 1);
     const perms = (await calls()).find(c => c[1] === "agent-admin permissions patch-pilot");
@@ -787,6 +794,9 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.waitForSelector("#owners-input");
     check((await page.textContent("#owners")).includes("No owners"), "without owners, the servers' approvers decide");
     await page.fill("#owners-input", "user:alice group:web-team");
+    await page.click("#owners h3");
+    await page.waitForTimeout(6000);
+    check((await page.inputValue("#owners-input")) === "user:alice group:web-team", "the owners typed outlive a refresh");
     await page.click("#owners button:text-is('Save owners')");
     await page.waitForFunction(() => document.querySelector("#owners").textContent.includes("user:alice, group:web-team may approve"));
     const ow = await spawned("agent-admin owners patch-pilot user:alice group:web-team");
