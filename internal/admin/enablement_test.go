@@ -204,13 +204,16 @@ func TestShowEnablementTampered(t *testing.T) {
 	os.WriteFile(f, []byte(strings.Replace(strings.Replace(string(b), "state: diagnostics-only", "state: categories", 1),
 		"- diagnostics", "- diagnostics\n    - patch-errata", 1)), 0o644)
 	p, _ = a.Show()
-	if p.Enablement.State != SomeCategories || !strings.Contains(p.Enablement.Tampered, "differs from its record") {
+	// The host is sealed (#109): show reports what the gateway enforces,
+	// diagnostics-only, and both accounts of the edit.
+	if p.Enablement.State != DiagnosticsOnly || !p.Enablement.Sealed || !strings.Contains(p.Enablement.Tampered, "does not match its seal") ||
+		!strings.Contains(p.Enablement.Tampered, "differs from its record") || !strings.Contains(p.Enablement.Tampered, `"state":"categories"`) {
 		t.Errorf("tampered: %+v", p.Enablement)
 	}
 	// An agent writes a record that matches the edited state: it is not
 	// root's, so the state is still tampered.
 	b2, _ := json.Marshal(map[string]string{"_UID": "981", "SYSLOG_IDENTIFIER": "custos-promotion", "AGENT_ENABLEMENT": p.Enablement.Record,
-		"AGENT_ENABLEMENT_SHA256": p.Enablement.Digest()})
+		"AGENT_ENABLEMENT_SHA256": (&Enablement{State: SomeCategories, Enabled: []string{Diagnostics, "patch-errata"}}).Digest()})
 	forged = append(forged, string(b2))
 	if p, _ = a.Show(); !strings.Contains(p.Enablement.Tampered, "differs from its record") {
 		t.Errorf("an agent's record covered the edit: %+v", p.Enablement)

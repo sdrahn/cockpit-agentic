@@ -38,8 +38,13 @@ type Enablement struct {
 	Enabled   []string `yaml:"enabled" json:"enabled"`
 	ChangedBy string   `yaml:"changed_by,omitempty" json:"changed_by,omitempty"`
 	Record    string   `yaml:"record,omitempty" json:"record,omitempty"`
-	// Tampered: show's check against the last enablement record; "" when
-	// it matches or the journal cannot be read.
+	// Signature is agent-admin's over state, enabled and record (the
+	// seal, #109): the gateway counts a sealed host's state only with it.
+	Signature string `yaml:"signature,omitempty" json:"-"`
+	// Sealed: the host has a seal (show).
+	Sealed bool `yaml:"-" json:"sealed"`
+	// Tampered: show's check against the last enablement record and the
+	// seal; "" when both match or the journal cannot be read.
 	Tampered string `yaml:"-" json:"tampered,omitempty"`
 }
 
@@ -116,16 +121,29 @@ func (a *Admin) writeEnablement(from, to *Enablement, by, msg string, event ...s
 	}
 	to.ChangedBy = by + " " + a.Now().UTC().Format(time.RFC3339Nano)
 	to.Record = id
+	key, err := a.sealKey()
+	if err != nil {
+		return err
+	}
+	if to.Signature, err = sign(key, to); err != nil {
+		return err
+	}
 	var buf bytes.Buffer
 	buf.WriteString("# The task categories this host may use (custos CONTRACT.md §6b), written\n" +
-		"# by agent-admin. Change it only with agent-admin enable or disable: a change without\n" +
-		"# its record is reported as tampered.\n")
+		"# by agent-admin. Change it only with agent-admin enable or disable: a change\n" +
+		"# without its record is reported as tampered, and one its signature does not\n" +
+		"# cover counts as diagnostics-only (the seal, _seal.yaml).\n")
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 	if err := enc.Encode(map[string]*Enablement{"_enablement": to}); err != nil {
 		return err
 	}
 	if err := writeFile(a.p(GatewayEnablement), buf.Bytes(), 0o644); err != nil {
+		return err
+	}
+	// The seal after the state: in between the gateway sees a signed
+	// state without a seal, which counts as it is.
+	if err := a.writeSeal(key); err != nil {
 		return err
 	}
 	fromJSON := `{"state":"","enabled":"all"}` // the broader install's
@@ -144,7 +162,7 @@ func (a *Admin) writeEnablement(from, to *Enablement, by, msg string, event ...s
 // that has enablement data, or an agent that uses another category or a
 // permission without one.
 func (a *Admin) InitDiagnosticsOnly(by string) error {
-	e, err := a.GetEnablement()
+	e, err := a.currentEnablement()
 	if err != nil {
 		return err
 	}
@@ -192,7 +210,7 @@ func (a *Admin) Enable(by string, cats []string, all bool) error {
 			return err
 		}
 	}
-	from, err := a.GetEnablement()
+	from, err := a.currentEnablement()
 	if err != nil {
 		return err
 	}
@@ -253,7 +271,7 @@ func (a *Admin) Disable(by string, cats []string, all bool) error {
 			return errors.New("disable: diagnostics is always enabled; --all leaves only it")
 		}
 	}
-	from, err := a.GetEnablement()
+	from, err := a.currentEnablement()
 	if err != nil {
 		return err
 	}
@@ -362,7 +380,7 @@ func (a *Admin) Disable(by string, cats []string, all bool) error {
 // refusal (category.refused) for the person, once per disabled category.
 // what names the action. The error names everything that is disabled.
 func (a *Admin) checkEnabled(name, what string, perms []map[string]any) error {
-	e, err := a.GetEnablement()
+	e, err := a.currentEnablement()
 	if err != nil || e == nil {
 		return err
 	}
@@ -405,7 +423,7 @@ func (a *Admin) checkEnabled(name, what string, perms []map[string]any) error {
 
 // checkCategoryEnabled refuses a disabled category for promote.
 func (a *Admin) checkCategoryEnabled(name, cat string) error {
-	e, err := a.GetEnablement()
+	e, err := a.currentEnablement()
 	if err != nil || e.Usable(cat) {
 		return err
 	}

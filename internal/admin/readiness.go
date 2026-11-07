@@ -84,7 +84,7 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 	r := &Report{Agent: name, Thresholds: th, Categories: map[string]readiness.Measures{}, Diagnostics: readiness.DiagnosticsOf(recs)}
 	// A host has an enablement state only when it started diagnostics-only
 	// (§6b): there, what the diagnostics agent did is part of readiness.
-	e, err := a.GetEnablement()
+	e, err := a.currentEnablement()
 	if err != nil {
 		return nil, err
 	}

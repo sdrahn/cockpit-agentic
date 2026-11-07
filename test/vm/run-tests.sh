@@ -1193,12 +1193,34 @@ else
 	skip "the denial's reasons (this mcp-gateway's policy has no deny_reasons)"
 fi
 check "the gateway hides the disabled category's tool from the agent" eventually 30 runs_with dg CHANGE 'not offered: custos-test__change'
-# Tampering shows.
+# Tampering shows, and the seal (#109) makes it ineffective: agent-admin
+# signed the state with a key kept as a systemd credential; the gateway
+# checks the signature with _seal.yaml's public key, and a state edited by
+# hand counts as diagnostics-only.
+seal=/etc/mcp-gateway/policy/agents/_seal.yaml
+check "the seal: its public key is gateway data" grep -q 'BEGIN PUBLIC KEY' "$seal"
+check "the seal's private key is an encrypted credential, root's alone" stat_is /etc/credstore.encrypted/custos-enablement-seal root:root:600
+check "the state is signed" grep -q '^  signature: ' "$enablement"
+check "show: sealed" enablement_is '.sealed == true'
 cp "$enablement" "$work/enablement.yaml"
-sed -i 's/state: diagnostics-only/state: categories/' "$enablement"
+sed -i -e 's/state: diagnostics-only/state: categories/' -e 's/^    - diagnostics$/    - diagnostics\n    - patch-errata/' "$enablement"
 check "show reports an enablement state changed by hand" enablement_is '.tampered | length > 0'
+check "show reports what the gateway enforces: diagnostics-only" enablement_is \
+	'.state == "diagnostics-only" and (.tampered | contains("does not match its seal"))'
+if gateway_reasons; then
+	check "the gateway ignores the edited state: patch-errata is still denied, for the broken seal" eventually 30 reason_is dg change \
+		"the task categories' state does not match its seal (changed outside agent-admin): only diagnostics is usable until agent-admin enable or disable writes it again"
+else
+	sleep 5
+	check "the gateway ignores the edited state: patch-errata is still denied" effect_is dg change deny
+fi
+check "the diagnostics call is still allowed" effect_is dg probe allow
+mv "$enablement" "$work/enablement-edited.yaml"
+check "show: a removed state on a sealed host is diagnostics-only" enablement_is \
+	'.state == "diagnostics-only" and (.tampered | contains("was removed"))'
+check "the gateway denies patch-errata without a state, too" eventually 30 effect_is dg change deny
 cp "$work/enablement.yaml" "$enablement"
-check "show: the restored state matches its record" enablement_is 'has("tampered") | not'
+check "show: the restored state matches its record and its seal" enablement_is '(has("tampered") | not) and .sealed == true'
 # Enabling: one action, recorded; the category starts supervised.
 check "agent-admin enable patch-errata" agent-admin enable patch-errata
 check "journal: categories.enabled from diagnostics-only" eventually 10 promotion_record categories.enabled '.AGENT_ENABLEMENT_FROM | contains("diagnostics-only")'
@@ -1232,7 +1254,10 @@ cp "$work/dg-patch.yaml" "$dgdata"
 # broader install).
 check "agent-admin enable --all" agent-admin enable --all
 all="$(opa_effect dg probe) $(opa_effect dg change)"
-rm -f "$enablement"
+# The broader install has neither a state nor a seal (removing only the
+# state would leave the host diagnostics-only); the next section needs a
+# fresh host, too.
+rm -f "$enablement" "$seal" /etc/credstore.encrypted/custos-enablement-seal
 broader() { [ "$(opa_effect dg probe) $(opa_effect dg change)" = "$all" ] && [ "$all" = "allow ask" ]; }
 sleep 2
 check "every category enabled decides as the broader install: $all" eventually 30 broader
@@ -1341,7 +1366,9 @@ if command -v custos-setup >/dev/null; then
 	check "custos-setup again changes nothing but the key" setup_again
 	agent-admin delete health-check >/dev/null 2>&1
 	agent-admin defaults --clear >/dev/null 2>&1
-	rm -f /etc/mcp-gateway/policy/agents/_enablement.yaml /etc/mcp-gateway/exec.d/exec.d-diagnostics.yaml /etc/mcp-gateway/exec.d/exec.d-disk-usage.yaml
+	# The state and its seal (#109): the host as fresh as before.
+	rm -f /etc/mcp-gateway/policy/agents/_enablement.yaml /etc/mcp-gateway/policy/agents/_seal.yaml /etc/credstore.encrypted/custos-enablement-seal \
+		/etc/mcp-gateway/exec.d/exec.d-diagnostics.yaml /etc/mcp-gateway/exec.d/exec.d-disk-usage.yaml
 else
 	skip "custos-setup (custos-diagnostics is not installed)"
 fi

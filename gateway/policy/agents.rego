@@ -86,7 +86,35 @@ perms contains q if {
 # enabled; an unknown state enables none.
 enablement := object.get(data.mcp.agents, "_enablement", {})
 
-enablement_state := object.get(enablement, "state", "")
+# The seal (§6b, #109): data.mcp.agents._seal.public_key (agents/_seal.yaml)
+# is the public key agent-admin signs the state with (ES256; its private
+# key is a systemd credential, root's). Once a host has one, the state
+# counts only with a signature over its state, enabled and record: edited
+# by hand, unsigned or deleted, the host is diagnostics-only. Without a
+# seal (a host installed before it, or with the full capability and never
+# changed), the state counts as it is.
+seal_key := object.get(object.get(data.mcp.agents, "_seal", {}), "public_key", "")
+
+default enablement_signed := false
+
+enablement_signed if {
+	io.jwt.verify_es256(enablement.signature, seal_key)
+	[_, payload, _] := io.jwt.decode(enablement.signature)
+	payload.state == enablement.state
+	payload.enabled == object.get(enablement, "enabled", [])
+	payload.record == enablement.record
+}
+
+default enablement_seal_broken := false
+
+enablement_seal_broken if {
+	seal_key != ""
+	not enablement_signed
+}
+
+enablement_state := object.get(enablement, "state", "") if not enablement_seal_broken
+
+enablement_state := "diagnostics-only" if enablement_seal_broken
 
 permission_enabled(p) if {
 	not misdeclared_diagnostics(p)
@@ -283,11 +311,21 @@ unmatched_reasons contains sprintf("task category %s is not enabled on this host
 	some p in unusable_naming
 	has_category(p)
 	not misdeclared_diagnostics(p)
+	not enablement_seal_broken
 }
 
 unmatched_reasons contains sprintf("permissions without a task category are not enabled on this host (%s)", [enablement_state]) if {
 	some p in unusable_naming
 	not has_category(p)
+	not enablement_seal_broken
+}
+
+# A broken seal says so: the state on file is not the one agent-admin
+# signed, and the host is diagnostics-only until it signs one again.
+unmatched_reasons contains "the task categories' state does not match its seal (changed outside agent-admin): only diagnostics is usable until agent-admin enable or disable writes it again" if {
+	some p in unusable_naming
+	not misdeclared_diagnostics(p)
+	enablement_seal_broken
 }
 
 unmatched_reasons contains "a diagnostics permission that is not read-only is no permission (diagnostics only reads)" if {

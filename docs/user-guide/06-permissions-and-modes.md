@@ -204,6 +204,19 @@ record in the journal and reports a state changed by hand
 the file (every host installed with the full capability) has every
 category enabled.
 
+The state is also **sealed**: `agent-admin` signs it, with a key it
+keeps encrypted as a systemd credential (with the TPM, where the host
+has one), and the gateway checks the signature with the public key in
+`_seal.yaml`. A state edited by hand, or deleted, does not take effect:
+the gateway treats the host as diagnostics-only until `agent-admin
+enable` or `disable` writes a signed state again, and its denials say why ("the task
+categories' state does not match its seal"). `agent-admin show` reports
+the same (`"sealed": true`, and `tampered` when the seal is broken). The
+first change made with this version seals the host; a host set up
+before it keeps an unsealed state until then. Root can still decrypt
+the key and sign a state by hand: the seal makes a change past
+`agent-admin` deliberate, not impossible.
+
 `agent-admin diagnostics-only` makes a freshly installed host
 diagnostics-only; the installer's setup runs it. It refuses a host that
 has an enablement state already, or an agent with permissions outside

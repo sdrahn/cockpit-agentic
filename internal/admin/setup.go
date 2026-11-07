@@ -151,7 +151,7 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 
 	// 1. diagnostics-only first: it needs a fresh host, and nothing else
 	// is written if it is not one.
-	e, err := a.GetEnablement()
+	e, err := a.currentEnablement()
 	if err != nil {
 		return steps, err
 	}
