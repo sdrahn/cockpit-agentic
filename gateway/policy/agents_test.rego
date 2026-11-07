@@ -358,3 +358,72 @@ test_discovery_hides_disabled_categories if {
 		with data.mcp.agents as object.union(diag_agents, {"_enablement": {"state": "diagnostics-only"}})
 		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
 }
+
+# The seal (#109). A test key: the private one signs as agent-admin
+# would, the public one is the host's seal; other_seal_key is another
+# host's.
+seal_jwk := `{"crv":"P-256","d":"fzwgA5ipXkInjL5YbSdY5CrySDvoLG2w1Foo5kjP7kE","kty":"EC","x":"YzczqQqXxemy45f5ORLObSB7m9ciW0oTjlfDvr84Zks","y":"0hLVnpCi_K5jBUdkRMhQsb-3Z8Fw874VJaxmgzPYSYs"}`
+
+seal_pem := "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYzczqQqXxemy45f5ORLObSB7m9ci\nW0oTjlfDvr84ZkvSEtWekKL8rmMFR2REyFCxv7dnwXDzvhUlrGaDM9hJiw==\n-----END PUBLIC KEY-----\n"
+
+other_seal_key := "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEkreF/wgF7MlBi6q1u3/vxPC5JvNv\nXowOlQ2xIzvPqPfe2fL1wyuoJIWDLNEgWEAdPlsWGvRUQaqq5GUNCQgCGg==\n-----END PUBLIC KEY-----\n"
+
+signed(state, enabled, record) := {"state": state, "enabled": enabled, "record": record, "signature": io.jwt.encode_sign(
+	{"alg": "ES256", "typ": "JWT"},
+	{"state": state, "enabled": enabled, "record": record},
+	json.unmarshal(seal_jwk),
+)}
+
+sealed(e) := object.union({"_seal": {"public_key": seal_pem}}, e)
+
+# A signed state counts as it says.
+test_sealed_state_signed if {
+	d := sealed({"_enablement": signed("categories", ["diagnostics", "patch-errata"], "n-1")})
+	enabled_effect(d, "zypp", "patch") == "ask"
+	enabled_effect(d, "zypp", "list_updates") == "allow"
+	enabled_effect(d, "systemd", "restart_unit") == "deny"
+}
+
+# Edited by hand (its state, its list or its record), unsigned, deleted,
+# or signed with another key: the host is diagnostics-only.
+test_sealed_state_tampered_is_diagnostics_only if {
+	s := signed("diagnostics-only", ["diagnostics"], "n-1")
+	every e in [
+		object.union(s, {"state": "categories", "enabled": ["diagnostics", "patch-errata"]}),
+		object.union(signed("categories", ["diagnostics"], "n-1"), {"enabled": ["diagnostics", "patch-errata"]}),
+		object.union(signed("categories", ["diagnostics", "patch-errata"], "n-1"), {"record": "n-2"}),
+		object.remove(signed("categories", ["diagnostics", "patch-errata"], "n-1"), ["signature"]),
+	] {
+		d := sealed({"_enablement": e})
+		enabled_effect(d, "zypp", "patch") == "deny"
+		enabled_effect(d, "zypp", "list_updates") == "deny"
+		enabled_effect(d, "systemd", "list_units") == "allow"
+	}
+
+	# Deleted: no state at all, but a seal.
+	enabled_effect(sealed({}), "zypp", "patch") == "deny"
+	enabled_effect(sealed({}), "systemd", "list_units") == "allow"
+
+	# Another host's key.
+	other := {"_seal": {"public_key": other_seal_key}, "_enablement": signed("categories", ["diagnostics", "patch-errata"], "n-1")}
+	enabled_effect(other, "zypp", "patch") == "deny"
+}
+
+# Without a seal the state counts as it is, as before #109.
+test_unsealed_state_counts_as_it_is if {
+	d := {"_enablement": {"state": "categories", "enabled": ["diagnostics", "patch-errata"]}}
+	enabled_effect(d, "zypp", "patch") == "ask"
+}
+
+# A broken seal is the reason given, not the category.
+test_sealed_state_tampered_reason if {
+	e := object.union(signed("diagnostics-only", ["diagnostics"], "n-1"), {"state": "categories", "enabled": ["diagnostics", "patch-errata"]})
+	reasons := authz.unmatched_reasons with input as call(pp, "zypp", "patch", {})
+		with data.mcp.agents as object.union(diag_agents, sealed({"_enablement": e}))
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+	some r in reasons
+	contains(r, "does not match its seal")
+	every r2 in reasons {
+		not contains(r2, "agent-admin enable patch-errata")
+	}
+}

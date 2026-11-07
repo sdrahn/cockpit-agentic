@@ -27,13 +27,26 @@ func newAdmin(t *testing.T) (*Admin, *rec) {
 	r := &rec{}
 	a := &Admin{
 		Root: t.TempDir(),
-		Run: func(_ io.Reader, name string, args ...string) error {
+		Run: func(stdin io.Reader, name string, args ...string) error {
 			c := name + " " + strings.Join(args, " ")
 			r.cmds = append(r.cmds, c)
 			if r.fail != nil && r.fail(c) {
 				return errors.New("failed")
 			}
+			// The seal's key (#109): "encrypted" as it is, for Output's
+			// decrypt below.
+			if name == "systemd-creds" && len(args) == 4 && args[0] == "encrypt" && args[1] == "--name="+SealCredential {
+				b, _ := io.ReadAll(stdin)
+				return os.WriteFile(args[3], b, 0o600)
+			}
 			return nil
+		},
+		Output: func(_ io.Reader, name string, args ...string) ([]byte, error) {
+			r.cmds = append(r.cmds, name+" "+strings.Join(args, " "))
+			if name == "systemd-creds" && len(args) == 4 && args[0] == "decrypt" {
+				return os.ReadFile(args[2])
+			}
+			return nil, errors.New("no output of " + name)
 		},
 		Out: io.Discard, Now: func() time.Time { return time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC) },
 		Control: func(sock, path string) error {

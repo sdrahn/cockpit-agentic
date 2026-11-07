@@ -514,8 +514,10 @@ function renderEnablement() {
             el("div", { class: "toolbar" }, el("h2", null, "Task categories on this host"), el("span", { class: "actions" }, open, close)),
             el("p", null, what),
             e && e.tampered ? el("p", { class: "error-text", id: "enablement-tampered" },
-                "The state was changed outside agent-admin: " + e.tampered + ". The gateway enforces what the file says now.") : null,
-            e ? el("p", { class: "muted" }, "Changed by " + (e.changed_by || "?") + " (record " + (e.record || "none") + ").") : null,
+                "The state was changed outside agent-admin: " + e.tampered + "." +
+                (e.sealed ? "" : " The gateway enforces what the file says now.")) : null,
+            e ? el("p", { class: "muted" }, "Changed by " + (e.changed_by || "?") + " (record " + (e.record || "none") + ")." +
+               (e.sealed ? " Sealed: the gateway counts this state only with agent-admin's signature; edited by hand, the host is diagnostics-only." : "")) : null,
             list, enableForm, disableForm]));
     });
 }

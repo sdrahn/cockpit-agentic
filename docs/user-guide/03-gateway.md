@@ -54,7 +54,9 @@ patch-pilot:
 a change within seconds, and `agent-admin` waits (up to 20 seconds) until
 OPA has it before it returns, so a change is in force when the command
 ends. If mcp-gateway's OPA is not running at all, `agent-admin` says so
-and returns: the change is in force once OPA starts. The same directory holds `_control.yaml` (the emergency stop) and
+and returns: the change is in force once OPA starts. The same directory holds `_control.yaml` (the emergency stop),
+`_enablement.yaml` and `_seal.yaml` (the task categories' state and its
+seal, [chapter 6](06-permissions-and-modes.md#diagnostics-only)) and
 `_http.yaml` (the token issuers of agents over HTTPS). OPA watches only
 directories it loaded a file from at start, which is why all of them
 live in this one directory.

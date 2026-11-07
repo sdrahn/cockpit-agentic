@@ -27,6 +27,12 @@ removed.
   host to diagnostics-only; Cockpit's **Disable…** does the same. It is
   refused, naming what is in the way, while an agent has a permission in
   the category or has it promoted, and recorded as `categories.disabled`.
+- The task categories' state is sealed (#109): `agent-admin` signs it
+  with a key kept as a systemd credential (the TPM's, where there is
+  one), and the gateway counts it only with a valid signature. A state
+  edited by hand, unsigned or deleted counts as diagnostics-only, and
+  the denials say why; `agent-admin show` reports it (`sealed`,
+  `tampered`). A host set up before is sealed by its next change.
 - Events: an agent's `events:` start its activities when a systemd unit
   fails (`on_unit_failure`). `agent-admin` puts an `OnFailure=` drop-in
   on each unit, which starts `agent-event@<agent>_<event>_<unit>.service`;

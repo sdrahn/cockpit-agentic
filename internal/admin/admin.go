@@ -35,7 +35,10 @@ type Admin struct {
 	Root string // "" on a host; a temporary directory in tests
 	// Run runs a command (systemctl, systemd-sysusers, systemd-creds).
 	Run func(stdin io.Reader, name string, args ...string) error
-	Out io.Writer
+	// Output runs a command and returns its output (systemd-creds
+	// decrypt, the seal's key); nil: run it.
+	Output func(stdin io.Reader, name string, args ...string) ([]byte, error)
+	Out    io.Writer
 	// In is read for a configuration given as "-" (--from -, check -).
 	In io.Reader
 	// Now is the clock (tests).
@@ -1220,6 +1223,9 @@ func (a *Admin) Show(names ...string) (*Posture, error) {
 	}
 	if p.Enablement != nil {
 		p.Enablement.Tampered = a.enablementTampered(p.Enablement)
+	}
+	if err := a.checkSeal(p); err != nil {
+		return nil, err
 	}
 	return p, nil
 }

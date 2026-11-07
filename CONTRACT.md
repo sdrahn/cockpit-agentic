@@ -665,8 +665,28 @@ keys). `agent-admin show` and the control plane compare the data in
 force with the last enablement record (`categories.enabled` or
 `categories.disabled`) and report a state that was
 changed without one; only a record root wrote counts (§10, trusted
-records). On one host root can still edit any file; sealing
-the state (for instance to the TPM) is open (O16).
+records).
+
+**The seal** (#109) makes such a change ineffective, not only visible.
+`agent-admin` signs the state it writes: a JWS (ES256) over `state`,
+`enabled` and `record`, in the state's `signature`. The private key is
+the systemd credential `custos-enablement-seal`
+(`/etc/credstore.encrypted/`, `systemd-creds encrypt` with its default
+key: the TPM's and the host's where there is a TPM), made by the first
+change. Its public key is gateway data, `_seal.yaml`
+(`data.mcp.agents._seal.public_key`). Once a host has a seal, the agents
+module counts the state only when the signature verifies and covers it:
+a state edited by hand, unsigned, or removed counts as
+`diagnostics-only` (fail closed), and the module's reason for a denial
+says the seal is broken. `agent-admin show` and every decision
+`agent-admin` makes (enable, disable, permissions, promote, readiness,
+`custos-setup`) use the state the gateway enforces; `show` reports the
+broken seal (`tampered`) and `sealed`. A host without a seal (one set up
+before 0.5, until its next change, or one installed with the full
+capability and never changed) counts its state as it is. On one host
+root can still decrypt the key and sign a state of its own: the seal
+turns a change past `agent-admin` into a deliberate forgery; it cannot
+stop root, which only an outside party could (the fleet, O13).
 
 **Trust evidence.** What the diagnostics agent did before another
 category was enabled is that category's starting evidence: the readiness
@@ -1040,7 +1060,9 @@ aggregation, policy distribution and approvals across hosts) is parked
 | `/etc/custos/templates/<template>/` | root 0644 | the administrator's templates: one of a shipped name replaces it, one without `template.yaml` hides it |
 | `/etc/custos/defaults.yaml` | root 0644 | the model for new agents (§14b); absent: none |
 | `/usr/share/custos/playbooks/*.yaml`, `/etc/custos/playbooks/*.yaml` | root 0644 | the diagnostic playbooks (§14c; O16): the package's, and the administrator's |
-| `/etc/mcp-gateway/policy/agents/_enablement.yaml` | root 0644 | the enablement state (§6b; O16); absent: every category enabled |
+| `/etc/mcp-gateway/policy/agents/_enablement.yaml` | root 0644 | the enablement state (§6b; O16), signed (`signature`) once sealed; absent: every category enabled, or diagnostics-only on a sealed host |
+| `/etc/mcp-gateway/policy/agents/_seal.yaml` | root 0644 | the seal's public key (§6b, #109) |
+| `/etc/credstore.encrypted/custos-enablement-seal` | root 0600 | the seal's private key (`systemd-creds encrypt`) |
 | `/etc/custos/agents/<name>/agent.yaml` | root:agent-`<name>` 0640 | configuration (§14) |
 | `/etc/sysusers.d/agent-<name>.conf` | root 0644 | the agent's user |
 | `/etc/mcp-gateway/policy/agents/<name>.yaml` | root 0644 | mode, pause, permissions (§6). All agents' files, the emergency stop's `_control.yaml` and the agents' token issuers' `_http.yaml` (§6; both shipped by the package) are in this one directory: mcp-gateway's OPA (`--watch`) watches only directories it loaded a file from when it started |
@@ -1738,6 +1760,8 @@ inherited, not specified again.
   (§17a), tested on a fresh host in the functional tests; the reason in
   the gateway's audit for a denial ("task category … is not enabled on
   this host", §6), with mcp-gateway's R1; the way back, `agent-admin
-  disable` and `disable --all` (#110). Open: sealing the enablement
-  state against root (the TPM, say; #109). Sealing the state is not
-  needed for 0.3.0 (detection is enough).
+  disable` and `disable --all` (#110); the seal (#109): the gateway
+  counts only a state `agent-admin` signed, with a key kept as a systemd
+  credential (the TPM's where there is one). Against root on one host
+  the seal makes a change a deliberate forgery; stopping root needs an
+  outside party (O13).
